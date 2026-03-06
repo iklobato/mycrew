@@ -1,0 +1,21 @@
+analyze_task:
+  description: >
+    Parse the following issue card into structured requirements:
+
+    {task}
+
+    Extract and produce output with these exact sections:
+    ## Summary
+    (one-line description)
+    ## Acceptance Criteria
+    1. (first criterion)
+    2. (second criterion)
+    ...
+    ## Scope
+    (in-scope vs out-of-scope)
+    ## Technical Hints
+    (suggested areas, modules, or patterns if mentioned)
+  expected_output: >
+    A structured document with sections: Summary, Acceptance Criteria,
+    Scope, Technical Hints. Acceptance criteria must be numbered.
+  agent: issue_analyst
