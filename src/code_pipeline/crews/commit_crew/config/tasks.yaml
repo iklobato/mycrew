@@ -4,9 +4,14 @@ commit_task:
     Branch: {branch}
     Dry run: {dry_run}
 
-    If dry_run is "true", do NOT run git commit. Only report what you would do.
+    If dry_run is "true", do NOT run git commit. List files that would be
+    staged and the commit message you would use.
     If dry_run is "false", run: git add -A && git commit -m "your message"
-    Use a clear commit message that describes the changes.
+
+    Commit message should summarize the changes (e.g. "Add user auth" or
+    "Fix login validation"). Avoid committing .env, secrets, or large binaries;
+    check git status first.
   expected_output: >
-    Either the git commit output or a message describing what would be committed (if dry_run).
+    Either the git commit output or a message listing files to stage and
+    the proposed commit message (if dry_run).
   agent: git_agent
