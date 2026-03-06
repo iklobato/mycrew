@@ -162,9 +162,21 @@ class CodePipelineFlow(Flow[PipelineState]):
 
     @router(review)
     def route_verdict(self):
-        """Route based on verdict: commit, retry, or abort."""
+        """Route based on verdict: commit, retry, or abort. Run verification when APPROVED."""
         verdict = self.state.review_verdict.strip()
         if verdict.upper().startswith("APPROVED"):
+            if self.state.test_command:
+                passed, output = self._run_quality_check(self.state.test_command)
+                self.state.verification_passed = passed
+                self.state.verification_output = output
+                if not passed:
+                    self.state.retry_count += 1
+                    if self.state.retry_count >= self.state.max_retries:
+                        return "abort"
+                    self.state.prior_issues = (
+                        "Tests failed after approval. Fix:\n\n" + output
+                    )
+                    return "retry"
             return "commit"
 
         self.state.retry_count += 1
