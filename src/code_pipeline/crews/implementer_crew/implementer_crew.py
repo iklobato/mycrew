@@ -26,7 +26,7 @@ class ImplementerCrew:
             config=self.agents_config["implementer"],  # type: ignore[index]
             tools=[
                 RepoShellTool(repo_path=repo_path),
-                FileWriterTool(),
+                FileWriterTool(directory=repo_path),
             ],
             verbose=True,
         )
