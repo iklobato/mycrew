@@ -44,14 +44,47 @@ class PipelineState(BaseModel):
 class CodePipelineFlow(Flow[PipelineState]):
     """Event-driven coding pipeline: explore 1 plan 1 implement 1 review 1 commit."""
 
+    def _run_quality_check(self, test_command: str) -> tuple[bool, str]:
+        """Run test command in repo. Return (passed, output)."""
+        if not test_command:
+            return True, ""
+        try:
+            result = subprocess.run(
+                test_command,
+                shell=True,
+                cwd=self.state.repo_path,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            output = (result.stdout or "") + (result.stderr or "")
+            return result.returncode == 0, output
+        except subprocess.TimeoutExpired:
+            return False, "Error: command timed out after 300 seconds."
+        except Exception as e:
+            return False, str(e)
+
     @start()
+    def analyze_issue(self):
+        """Run IssueAnalystCrew to parse issue into structured requirements."""
+        result = IssueAnalystCrew().crew().kickoff(inputs={"task": self.state.task})
+        raw = result.raw if hasattr(result, "raw") else str(result)
+        self.state.issue_analysis = raw
+        return raw
+
+    @listen(analyze_issue)
     def explore(self):
         """Run ExplorerCrew and set REPO_PATH for all crews."""
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
         os.environ["REPO_PATH"] = repo_path
         self.state.repo_path = repo_path
 
-        result = ExplorerCrew().crew().kickoff(inputs={"repo_path": repo_path})
+        result = ExplorerCrew().crew().kickoff(
+            inputs={
+                "repo_path": repo_path,
+                "issue_analysis": self.state.issue_analysis,
+            }
+        )
         raw = result.raw if hasattr(result, "raw") else str(result)
         self.state.exploration = raw
         return raw
