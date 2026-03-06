@@ -96,6 +96,7 @@ class CodePipelineFlow(Flow[PipelineState]):
             inputs={
                 "task": self.state.task,
                 "exploration": self.state.exploration,
+                "issue_analysis": self.state.issue_analysis,
             }
         )
         raw = result.raw if hasattr(result, "raw") else str(result)
