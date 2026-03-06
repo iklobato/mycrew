@@ -1,0 +1,14 @@
+plan_task:
+  description: >
+    Given the task and exploration:
+
+    Task: {task}
+
+    Exploration: {exploration}
+
+    Produce a file-level implementation plan. Specify which files to create
+    or modify and what changes to make. Do NOT write any code.
+  expected_output: >
+    A file-level plan listing files to create/modify and the changes needed.
+    No code.
+  agent: architect

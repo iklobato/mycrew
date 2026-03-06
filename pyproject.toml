@@ -1,0 +1,26 @@
+[project]
+name = "code_pipeline"
+version = "0.1.0"
+description = "code_pipeline using crewAI"
+authors = [{ name = "Your Name", email = "you@example.com" }]
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "crewai[tools]==1.9.3"
+]
+
+[project.scripts]
+kickoff = "code_pipeline.main:kickoff"
+run_crew = "code_pipeline.main:kickoff"
+plot = "code_pipeline.main:plot"
+run_with_trigger = "code_pipeline.main:run_with_trigger"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.crewai]
+type = "flow"
+
+[tool.uv]
+# onnxruntime 1.24+ dropped macOS x86_64 wheels; 1.19.2 has universal2 (Intel + ARM)
+override-dependencies = ["onnxruntime==1.19.2"]

@@ -1,0 +1,21 @@
+review_task:
+  description: >
+    Review the implementation for the task: {task}
+
+    Plan:
+    {plan}
+
+    Implementation summary:
+    {implementation}
+
+    Use the repo shell tool to inspect the actual files changed. Verify the implementation
+    matches the plan, follows project conventions, and has no obvious issues.
+
+    Your output MUST start with exactly one of:
+    - APPROVED
+    - ISSUES:
+
+    If ISSUES:, list each problem on a new line as "- path: problem description"
+  expected_output: >
+    First line is exactly APPROVED or ISSUES:. Nothing else. If ISSUES:, subsequent lines list problems as "- path: problem".
+  agent: reviewer

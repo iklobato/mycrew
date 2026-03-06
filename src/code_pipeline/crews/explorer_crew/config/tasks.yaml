@@ -1,0 +1,11 @@
+explore_task:
+  description: >
+    Explore the repository at {repo_path}. Use the Repo Shell Tool to:
+    - List directory structure
+    - Identify tech stack (languages, frameworks, build tools)
+    - Find key config files and entry points
+    - Note coding conventions and structure
+  expected_output: >
+    A structured repo summary including: tech stack, main files and directories,
+    conventions, and any notable patterns.
+  agent: repo_explorer

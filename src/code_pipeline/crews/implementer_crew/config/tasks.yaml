@@ -1,0 +1,16 @@
+implement_task:
+  description: >
+    Task: {task}
+
+    Plan: {plan}
+
+    {prior_issues}
+
+    Repository path: {repo_path}
+
+    Implement the plan. Use the File Writer Tool with directory={repo_path}
+    to create or modify files. Use the Repo Shell Tool to run tests or
+    other commands as needed.
+  expected_output: >
+    Implementation complete. All files created or modified as per the plan.
+  agent: implementer

@@ -1,0 +1,12 @@
+commit_task:
+  description: >
+    Repository: {repo_path}
+    Branch: {branch}
+    Dry run: {dry_run}
+
+    If dry_run is "true", do NOT run git commit. Only report what you would do.
+    If dry_run is "false", run: git add -A && git commit -m "your message"
+    Use a clear commit message that describes the changes.
+  expected_output: >
+    Either the git commit output or a message describing what would be committed (if dry_run).
+  agent: git_agent

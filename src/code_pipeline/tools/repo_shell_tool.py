@@ -1,0 +1,104 @@
+"""RepoShellTool: run shell commands in a repo with safety checks."""
+
+import os
+import re
+import subprocess
+from typing import Type
+
+from crewai.tools import BaseTool
+from pydantic import BaseModel, Field
+
+
+# Dangerous patterns to block
+_DANGEROUS_PATTERNS = [
+    r"rm\s+-rf\s+/",
+    r"rm\s+-rf\s+/\*",
+    r":\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;",
+    r"mkfs",
+    r"dd\s+if=",
+    r">\s*/dev/sd",
+    r">\s*/dev/hd",
+    r"chmod\s+-R\s+777\s+/",
+    r"format\s+[a-z]:",
+    r"del\s+/[sf]\s+",
+    r"wmic\s+disk",
+    r"shutdown\s+-",
+    r"reboot",
+    r"init\s+[06]",
+    r"systemctl\s+(poweroff|reboot)",
+    r"\|\s*bash\s*$",
+    r"\|\s*sh\s*$",
+]
+
+
+class RepoShellToolInput(BaseModel):
+    """Input schema for RepoShellTool."""
+
+    command: str = Field(..., description="Shell command to run in the repository.")
+
+
+class RepoShellTool(BaseTool):
+    """Tool to run shell commands in a repository with safety checks."""
+
+    name: str = "Repo Shell Tool"
+    description: str = (
+        "Run shell commands in the repository. Use for listing files, "
+        "reading files, running tests, etc. Commands run with cwd=repo_path. "
+        "Dangerous commands (rm -rf /, mkfs, etc.) are blocked."
+    )
+    args_schema: Type[BaseModel] = RepoShellToolInput
+
+    repo_path: str = ""
+
+    def _run(self, command: str) -> str:
+        """Execute a shell command in the repo with safety checks."""
+        if not self.repo_path:
+            return "Error: repo_path is not set."
+
+        repo_path = os.path.abspath(self.repo_path)
+        if not os.path.isdir(repo_path):
+            return f"Error: repo_path does not exist or is not a directory: {repo_path}"
+
+        command = command.strip()
+        if not command:
+            return "Error: empty command."
+
+        # Block dangerous patterns
+        cmd_lower = command.lower()
+        for pattern in _DANGEROUS_PATTERNS:
+            if re.search(pattern, cmd_lower, re.IGNORECASE):
+                return f"Error: command blocked for safety (pattern: {pattern})"
+
+        # Reject absolute paths escaping repo_path
+        repo_norm = os.path.normpath(repo_path)
+        for part in command.split():
+            part_clean = part.strip("'\"").rstrip("/")
+            is_abs = part_clean.startswith("/") or (
+                len(part_clean) >= 2 and part_clean[1] == ":"
+            )
+            if is_abs:
+                try:
+                    resolved = os.path.normpath(os.path.abspath(part_clean))
+                    common = os.path.commonpath([resolved, repo_norm])
+                    if common != repo_norm:
+                        return f"Error: absolute path outside repo is not allowed: {part_clean}"
+                except (ValueError, OSError):
+                    return f"Error: path outside repo is not allowed: {part_clean}"
+
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                cwd=repo_path,
+                timeout=120,
+                capture_output=True,
+                text=True,
+            )
+            output = (result.stdout or "") + (result.stderr or "")
+            if len(output) > 8000:
+                output = output[:8000] + "\n... (truncated)"
+            return output
+        except subprocess.TimeoutExpired:
+            return "Error: command timed out after 120 seconds."
+        except Exception as e:
+            return f"Error: {e}"
