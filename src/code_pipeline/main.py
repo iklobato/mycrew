@@ -112,6 +112,7 @@ class CodePipelineFlow(Flow[PipelineState]):
                 "plan": self.state.plan,
                 "prior_issues": self.state.prior_issues,
                 "repo_path": self.state.repo_path,
+                "issue_analysis": self.state.issue_analysis,
             }
         )
         raw = result.raw if hasattr(result, "raw") else str(result)
@@ -119,6 +120,31 @@ class CodePipelineFlow(Flow[PipelineState]):
         return raw
 
     @listen(implement)
+    def quality_gate(self):
+        """Run quality check (tests) if test_command is set."""
+        passed, output = self._run_quality_check(self.state.test_command)
+        self.state.quality_gate_passed = passed
+        self.state.quality_gate_output = output
+        return passed
+
+    @router(quality_gate)
+    def route_after_implement(self):
+        """Route to review or retry based on quality gate."""
+        if not self.state.test_command:
+            return "review"
+        if self.state.quality_gate_passed:
+            return "review"
+
+        self.state.retry_count += 1
+        if self.state.retry_count >= self.state.max_retries:
+            return "abort"
+
+        self.state.prior_issues = (
+            "Quality gate failed (tests/lint):\n\n" + self.state.quality_gate_output
+        )
+        return "retry"
+
+    @listen("review")
     def review(self):
         """Run ReviewerCrew; sets review_verdict (APPROVED or ISSUES:...)."""
         result = ReviewerCrew().crew().kickoff(
@@ -127,6 +153,7 @@ class CodePipelineFlow(Flow[PipelineState]):
                 "plan": self.state.plan,
                 "implementation": self.state.implementation,
                 "repo_path": self.state.repo_path,
+                "issue_analysis": self.state.issue_analysis,
             }
         )
         raw = result.raw if hasattr(result, "raw") else str(result)
