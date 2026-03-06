@@ -6,9 +6,18 @@ plan_task:
 
     Exploration: {exploration}
 
-    Produce a file-level implementation plan. Specify which files to create
-    or modify and what changes to make. Do NOT write any code.
+    Produce a file-level implementation plan. Do NOT write any code. Only
+    describe what to add or change. Use Repo Shell Tool to confirm paths
+    exist before listing them.
+
+    Use this exact structure:
+    ## Files to Create
+    (path + brief description for each)
+    ## Files to Modify
+    (path + list of changes for each)
+    ## Order
+    (if dependencies matter, list the order to implement)
   expected_output: >
-    A file-level plan listing files to create/modify and the changes needed.
-    No code.
+    A file-level plan with sections: Files to Create, Files to Modify, Order.
+    No code. Only descriptions of changes.
   agent: architect
