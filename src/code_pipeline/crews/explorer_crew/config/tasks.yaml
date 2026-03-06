@@ -1,6 +1,10 @@
 explore_task:
   description: >
-    Explore the repository at {repo_path}. Use the Repo Shell Tool to:
+    Explore the repository at {repo_path}.
+
+    Issue context (use to focus exploration): {issue_analysis}
+
+    Use the Repo Shell Tool to:
     - List directory structure
     - Identify tech stack (languages, frameworks, build tools)
     - Find key config files and entry points
