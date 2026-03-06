@@ -3,6 +3,9 @@ commit_task:
     Repository: {repo_path}
     Branch: {branch}
     Dry run: {dry_run}
+    Issue ID (include in commit message if provided): {issue_id}
+
+    If issue_id is provided, include "fixes #X" or similar in the commit message.
 
     If dry_run is "true", do NOT run git commit. List files that would be
     staged and the commit message you would use.

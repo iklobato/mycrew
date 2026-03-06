@@ -2,6 +2,8 @@ review_task:
   description: >
     Review the implementation for the task: {task}
 
+    Acceptance criteria (verify each is satisfied): {issue_analysis}
+
     Plan:
     {plan}
 
@@ -10,7 +12,7 @@ review_task:
 
     Use the Repo Shell Tool to read changed files and run tests if applicable.
 
-    Verify:
+    For each acceptance criterion, confirm it is satisfied. Verify:
     (1) All planned files created/modified
     (2) Changes match the plan
     (3) Code follows project conventions
