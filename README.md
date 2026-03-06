@@ -1,48 +1,85 @@
 # mycrew
 
-Welcome to the mycrew project, powered by [crewAI](https://crewai.com). This template is designed to help you set up a multi-agent AI system with ease, leveraging the powerful and flexible framework provided by crewAI. Our goal is to enable your agents to collaborate effectively on complex tasks, maximizing their collective intelligence and capabilities.
+A software development crew powered by [crewAI](https://crewai.com). mycrew runs an event-driven pipeline that explores a codebase, plans changes, implements them, reviews the work, and commits—all driven by a single task description. Use it exclusively for software development workflows.
 
 ## Installation
 
-Ensure you have Python >=3.10 <3.14 installed on your system. This project uses [UV](https://docs.astral.sh/uv/) for dependency management and package handling, offering a seamless setup and execution experience.
+**Requirements:** Python >=3.10, <3.13
 
-First, if you haven't already, install uv:
+This project uses [UV](https://docs.astral.sh/uv/) for dependency management.
+
+1. Install uv (if needed):
 
 ```bash
 pip install uv
 ```
 
-Next, navigate to your project directory and install the dependencies:
+2. Clone the repo and install dependencies from the project root:
 
-(Optional) Lock the dependencies and install them by using the CLI command:
+```bash
+cd mycrew  # or your project directory
+uv sync
+```
+
+Or use the crewAI CLI:
+
 ```bash
 crewai install
 ```
 
-### Customizing
+3. Create a `.env` file in the project root and add your API key:
 
-**Add your `OPENAI_API_KEY` into the `.env` file**
-
-- Modify `src/code_pipeline/config/agents.yaml` to define your agents
-- Modify `src/code_pipeline/config/tasks.yaml` to define your tasks
-- Modify `src/code_pipeline/crew.py` to add your own logic, tools and specific args
-- Modify `src/code_pipeline/main.py` to add custom inputs for your agents and tasks
-
-## Running the Project
-
-To kickstart your flow and begin execution, run this from the root folder of your project:
-
-```bash
-crewai run
+```
+OPENAI_API_KEY=your_key_here
 ```
 
-This command initializes the mycrew flow as defined in your configuration.
+## How to Use
 
-This example, unmodified, will run the create a `report.md` file with the output of a research on LLMs in the root folder.
+Run the pipeline from the project root with `uv run kickoff`. You must provide a task and the target repository path.
 
-## Understanding Your Crew
+**Basic usage:**
 
-The mycrew crew is composed of multiple AI agents, each with unique roles, goals, and tools. These agents collaborate on a series of tasks, defined in `config/tasks.yaml`, leveraging their collective skills to achieve complex objectives. The `config/agents.yaml` file outlines the capabilities and configurations of each agent in your crew.
+```bash
+uv run kickoff --task "add a hello world function" --repo-path /path/to/your/repo
+```
+
+**All options:**
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--task` | `-t` | (required) | Task description for the pipeline |
+| `--repo-path` | `-r` | current dir | Repository to work in |
+| `--branch` | `-b` | main | Git branch for commits |
+| `--retries` | `-n` | 3 | Max implement→review retries |
+| `--dry-run` | — | false | Skip actual git commit |
+
+**Examples:**
+
+```bash
+# Dry run: explore, plan, implement, review—but do not commit
+uv run kickoff -t "add user login" -r ~/projects/myapp --dry-run
+
+# Full run on dev branch, up to 5 retries
+uv run kickoff -t "fix the auth bug" -r ~/projects/myapp -b dev -n 5
+```
+
+**Plot the flow diagram:**
+
+```bash
+uv run plot
+```
+
+## Pipeline Overview
+
+The flow runs five crews in sequence:
+
+1. **Explore** — Scans the repo structure, tech stack, and conventions
+2. **Plan** — Designs the implementation approach
+3. **Implement** — Writes and edits code
+4. **Review** — Validates changes; on rejection, loops back to Implement (up to `--retries`)
+5. **Commit** — Stages and commits (skipped when `--dry-run` is set)
+
+Agents use a `RepoShellTool` to run safe shell commands inside the target repository.
 
 ## Support
 
