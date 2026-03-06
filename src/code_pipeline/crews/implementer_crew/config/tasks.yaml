@@ -2,13 +2,16 @@ implement_task:
   description: >
     Task: {task}
 
+    Acceptance criteria from issue (satisfy each): {issue_analysis}
+
     Plan: {plan}
 
     {prior_issues}
 
     Repository path: {repo_path}
 
-    Implement the plan. The File Writer Tool is configured with the repository
+    Implement the plan. Satisfy each acceptance criterion. The File Writer Tool
+    is configured with the repository
     as base directory. Use relative paths for all file writes. Use the Repo Shell
     Tool to run the project's test command (e.g. pytest, npm test, cargo test)
     and fix any failures before finishing.

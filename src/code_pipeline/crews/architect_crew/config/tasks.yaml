@@ -1,14 +1,16 @@
 plan_task:
   description: >
-    Given the task and exploration:
+    Given the task, issue analysis, and exploration:
 
     Task: {task}
 
+    Issue analysis with acceptance criteria: {issue_analysis}
+
     Exploration: {exploration}
 
-    Produce a file-level implementation plan. Do NOT write any code. Only
-    describe what to add or change. Use Repo Shell Tool to confirm paths
-    exist before listing them.
+    Produce a file-level implementation plan. Map your plan to the acceptance
+    criteria above. Do NOT write any code. Only describe what to add or change.
+    Use Repo Shell Tool to confirm paths exist before listing them.
 
     Use this exact structure:
     ## Files to Create
