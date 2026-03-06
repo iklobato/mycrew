@@ -71,6 +71,42 @@ uv run kickoff -t "Fix PROJ-123: null pointer" -r ./api --issue-id "PROJ-123"
 
 ## Pipeline Overview
 
+```mermaid
+flowchart TB
+    subgraph phase1 [Analysis and Planning]
+        task[task input]
+        analyze[Analyze Issue]
+        explore[Explore]
+        plan[Plan]
+    end
+    subgraph phase2 [Implementation and Quality]
+        implement[Implement]
+        qualityGate[Quality Gate]
+        review[Review]
+        verify[Verify Tests]
+        commit[Commit]
+        abort[Abort]
+    end
+
+    task --> analyze
+    analyze -->|issue_analysis| explore
+    explore -->|exploration| plan
+    plan -->|plan| implement
+
+    implement --> qualityGate
+    qualityGate -->|pass or no test_command| review
+    qualityGate -->|fail| implement
+
+    review -->|APPROVED| verify
+    review -->|ISSUES| implement
+    verify -->|pass or no test_command| commit
+    verify -->|fail| implement
+    commit --> done[Done]
+    review -->|max retries| abort
+    qualityGate -->|max retries| abort
+    verify -->|max retries| abort
+```
+
 The flow runs multiple stages with quality gates:
 
 1. **Analyze Issue** — Parses the task/issue card into structured requirements (summary, acceptance criteria, scope)
