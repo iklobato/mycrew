@@ -1,20 +1,18 @@
 # mycrew
 
-A software development crew powered by [crewAI](https://crewai.com). mycrew runs an event-driven pipeline that explores a codebase, plans changes, implements them, reviews the work, and commits—all driven by a single task description. Use it exclusively for software development workflows.
+A software development crew powered by [crewAI](https://crewai.com). mycrew runs an event-driven pipeline that explores a codebase, plans changes, implements them, reviews the work, and commits—exclusively for software development tasks.
 
 ## Installation
 
 **Requirements:** Python >=3.10, <3.13
 
-This project uses [UV](https://docs.astral.sh/uv/) for dependency management.
-
-1. Install uv (if needed):
+1. Install [uv](https://docs.astral.sh/uv/):
 
 ```bash
 pip install uv
 ```
 
-2. Clone the repo and install dependencies from the project root:
+2. Clone this repository and install dependencies:
 
 ```bash
 cd mycrew  # or your project directory
@@ -45,49 +43,39 @@ uv run kickoff --task "add a hello world function" --repo-path /path/to/your/rep
 
 **All options:**
 
-| Option | Short | Default | Description |
-|--------|-------|---------|-------------|
-| `--task` | `-t` | (required) | Task description for the pipeline |
-| `--repo-path` | `-r` | current dir | Repository to work in |
-| `--branch` | `-b` | main | Git branch for commits |
-| `--retries` | `-n` | 3 | Max implement→review retries |
-| `--dry-run` | — | false | Skip actual git commit |
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--task` | `-t` | Task description for the pipeline (required) | — |
+| `--repo-path` | `-r` | Path to the repository to modify | Current directory |
+| `--branch` | `-b` | Git branch for commits | `main` |
+| `--retries` | `-n` | Max implement→review retries | `3` |
+| `--dry-run` | — | Skip actual git commit; only report what would be committed | `false` |
 
 **Examples:**
 
 ```bash
-# Dry run: explore, plan, implement, review—but do not commit
-uv run kickoff -t "add user login" -r ~/projects/myapp --dry-run
+# Dry run: explore, plan, implement, review, but do not commit
+uv run kickoff -t "add user authentication" -r ./my-app --dry-run
 
-# Full run on dev branch, up to 5 retries
-uv run kickoff -t "fix the auth bug" -r ~/projects/myapp -b dev -n 5
-```
+# Full run on a specific branch
+uv run kickoff -t "fix login bug" -r /Users/me/projects/api -b dev
 
-**Plot the flow diagram:**
-
-```bash
-uv run plot
+# Allow up to 5 implement→review cycles before aborting
+uv run kickoff -t "refactor payment module" -r ./backend -n 5
 ```
 
 ## Pipeline Overview
 
 The flow runs five crews in sequence:
 
-1. **Explore** — Scans the repo structure, tech stack, and conventions
+1. **Explore** — Scans the repository structure, tech stack, and conventions
 2. **Plan** — Designs the implementation approach
-3. **Implement** — Writes and edits code
-4. **Review** — Validates changes; on rejection, loops back to Implement (up to `--retries`)
-5. **Commit** — Stages and commits (skipped when `--dry-run` is set)
-
-Agents use a `RepoShellTool` to run safe shell commands inside the target repository.
+3. **Implement** — Writes and applies code changes
+4. **Review** — Validates the implementation; on rejection, loops back to Implement (up to `--retries`)
+5. **Commit** — Stages and commits the changes (skipped when `--dry-run` is set)
 
 ## Support
 
-For support, questions, or feedback regarding the mycrew or crewAI.
-
-- Visit our [documentation](https://docs.crewai.com)
-- Reach out to us through our [GitHub repository](https://github.com/joaomdmoura/crewai)
-- [Join our Discord](https://discord.com/invite/X4JWnZnxPb)
-- [Chat with our docs](https://chatg.pt/DWjSBZn)
-
-Let's create wonders together with the power and simplicity of crewAI.
+- [crewAI documentation](https://docs.crewai.com)
+- [crewAI GitHub](https://github.com/joaomdmoura/crewai)
+- [crewAI Discord](https://discord.com/invite/X4JWnZnxPb)
