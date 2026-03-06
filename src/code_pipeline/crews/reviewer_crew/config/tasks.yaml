@@ -8,14 +8,21 @@ review_task:
     Implementation summary:
     {implementation}
 
-    Use the repo shell tool to inspect the actual files changed. Verify the implementation
-    matches the plan, follows project conventions, and has no obvious issues.
+    Use the Repo Shell Tool to read changed files and run tests if applicable.
+
+    Verify:
+    (1) All planned files created/modified
+    (2) Changes match the plan
+    (3) Code follows project conventions
+    (4) No obvious bugs
 
     Your output MUST start with exactly one of:
     - APPROVED
     - ISSUES:
 
-    If ISSUES:, list each problem on a new line as "- path: problem description"
+    If ISSUES:, each issue MUST be: - <file_path>: <concise description>
+    so the implementer can fix them.
   expected_output: >
-    First line is exactly APPROVED or ISSUES:. Nothing else. If ISSUES:, subsequent lines list problems as "- path: problem".
+    First line is exactly APPROVED or ISSUES:. If ISSUES:, each subsequent
+    line is "- <file_path>: <description>".
   agent: reviewer
