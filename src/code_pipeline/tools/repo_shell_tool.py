@@ -34,7 +34,13 @@ _DANGEROUS_PATTERNS = [
 class RepoShellToolInput(BaseModel):
     """Input schema for RepoShellTool."""
 
-    command: str = Field(..., description="Shell command to run in the repository.")
+    command: str = Field(
+        ...,
+        description=(
+            "Single shell command. Use relative paths. Read-only preferred "
+            "(ls, find, cat, head, grep). For tests use project's test runner."
+        ),
+    )
 
 
 class RepoShellTool(BaseTool):
@@ -42,8 +48,9 @@ class RepoShellTool(BaseTool):
 
     name: str = "Repo Shell Tool"
     description: str = (
-        "Run shell commands in the repository. Use for listing files, "
-        "reading files, running tests, etc. Commands run with cwd=repo_path. "
+        "Run shell commands in the repository. Use relative paths. "
+        "Examples: 'ls -la', 'cat path/to/file', 'pytest', 'npm test'. "
+        "Commands run with cwd=repo_path. Output is truncated at 8000 chars. "
         "Dangerous commands (rm -rf /, mkfs, etc.) are blocked."
     )
     args_schema: Type[BaseModel] = RepoShellToolInput
