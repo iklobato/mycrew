@@ -8,9 +8,14 @@ implement_task:
 
     Repository path: {repo_path}
 
-    Implement the plan. Use the File Writer Tool with directory={repo_path}
-    to create or modify files. Use the Repo Shell Tool to run tests or
-    other commands as needed.
+    Implement the plan. The File Writer Tool is configured with the repository
+    as base directory. Use relative paths for all file writes. Use the Repo Shell
+    Tool to run the project's test command (e.g. pytest, npm test, cargo test)
+    and fix any failures before finishing.
+
+    If prior_issues above is non-empty, it means a previous implementation was
+    rejected. You MUST fix all listed issues before submitting.
   expected_output: >
     Implementation complete. All files created or modified as per the plan.
+    Tests must pass.
   agent: implementer
