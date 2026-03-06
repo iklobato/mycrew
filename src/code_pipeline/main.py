@@ -196,6 +196,7 @@ class CodePipelineFlow(Flow[PipelineState]):
                 "repo_path": self.state.repo_path,
                 "branch": self.state.branch,
                 "dry_run": "true" if self.state.dry_run else "false",
+                "issue_id": self.state.issue_id,
             }
         )
         raw = result.raw if hasattr(result, "raw") else str(result)
