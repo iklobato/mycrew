@@ -328,4 +328,6 @@ if __name__ == "__main__":
         branch=args.branch,
         max_retries=args.retries,
         dry_run=args.dry_run,
+        test_command=getattr(args, "test_command", ""),
+        issue_id=getattr(args, "issue_id", ""),
     )
