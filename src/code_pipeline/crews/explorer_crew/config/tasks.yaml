@@ -5,7 +5,16 @@ explore_task:
     - Identify tech stack (languages, frameworks, build tools)
     - Find key config files and entry points
     - Note coding conventions and structure
+
+    Example commands: ls -la, find . -name 'package.json' -o -name 'pyproject.toml',
+    cat package.json, cat pyproject.toml, head -50 path/to/main.py
+
+    Produce your summary with these exact sections:
+    ## Tech Stack
+    ## Directory Layout
+    ## Key Files
+    ## Conventions
   expected_output: >
-    A structured repo summary including: tech stack, main files and directories,
-    conventions, and any notable patterns.
+    A structured repo summary with sections: Tech Stack, Directory Layout,
+    Key Files, Conventions. Each section must be present.
   agent: repo_explorer

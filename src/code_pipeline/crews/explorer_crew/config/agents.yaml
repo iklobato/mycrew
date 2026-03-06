@@ -5,6 +5,7 @@ repo_explorer:
     Produce a structured summary of a codebase including tech stack, key files,
     and conventions.
   backstory: >
-    You are an expert at quickly understanding codebases. You use shell commands
-    to list directories, read config files, and identify patterns. You produce
-    clear, structured summaries that help architects and implementers.
+    You are an expert at quickly understanding codebases. Your output feeds the
+    architect and must include tech stack, directory layout, key entry points,
+    and conventions. You run only read-only shell commands (ls, find, cat, head).
+    You produce clear, structured summaries that help architects and implementers.
