@@ -1,14 +1,16 @@
 #!/usr/bin/env python
 """Code Pipeline Flow: event-driven coding pipeline with implement
-review retry loop."""
+review retry loop and quality gates."""
 
 import argparse
 import os
+import subprocess
 
 from pydantic import BaseModel
 
 from crewai.flow import Flow, listen, or_, router, start
 
+from code_pipeline.crews.issue_analyst_crew.issue_analyst_crew import IssueAnalystCrew
 from code_pipeline.crews.explorer_crew.explorer_crew import ExplorerCrew
 from code_pipeline.crews.architect_crew.architect_crew import ArchitectCrew
 from code_pipeline.crews.implementer_crew.implementer_crew import ImplementerCrew
@@ -24,12 +26,19 @@ class PipelineState(BaseModel):
     branch: str = "main"
     dry_run: bool = False
     max_retries: int = 3
+    test_command: str = ""
+    issue_id: str = ""
+    issue_analysis: str = ""
     exploration: str = ""
     plan: str = ""
     implementation: str = ""
     review_verdict: str = ""
     retry_count: int = 0
     prior_issues: str = ""
+    quality_gate_passed: bool = False
+    quality_gate_output: str = ""
+    verification_passed: bool = False
+    verification_output: str = ""
 
 
 class CodePipelineFlow(Flow[PipelineState]):
