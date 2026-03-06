@@ -9,8 +9,12 @@ plan_task:
     Exploration: {exploration}
 
     Produce a file-level implementation plan. Map your plan to the acceptance
-    criteria above. Do NOT write any code. Only describe what to add or change.
-    Use Repo Shell Tool to confirm paths exist before listing them.
+    criteria above. MINIMUM CHANGES: Only list files and changes strictly
+    needed for the acceptance criteria. Prefer editing existing code over
+    adding new modules, helpers, or abstractions. One targeted change per
+    criterion when possible. Do not add speculative improvements. Do NOT
+    write any code. Only describe what to add or change. Use Repo Shell
+    Tool to confirm paths exist before listing them.
 
     Use this exact structure:
     ## Files to Create

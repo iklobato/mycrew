@@ -15,6 +15,9 @@ analyze_task:
     (in-scope vs out-of-scope)
     ## Technical Hints
     (suggested areas, modules, or patterns if mentioned)
+
+    Keep acceptance criteria minimal. Do not add criteria beyond what
+    the issue explicitly states.
   expected_output: >
     A structured document with sections: Summary, Acceptance Criteria,
     Scope, Technical Hints. Acceptance criteria must be numbered.

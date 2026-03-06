@@ -17,6 +17,11 @@ review_task:
     (2) Changes match the plan
     (3) Code follows project conventions
     (4) No obvious bugs
+    (5) No overengineering: changes are minimal and match the plan; no extra
+        features, refactors, or speculative improvements
+
+    If the implementation does more than the plan requires (extra files,
+    abstractions, features), output ISSUES: listing the excess changes.
 
     Your output MUST start with exactly one of:
     - APPROVED

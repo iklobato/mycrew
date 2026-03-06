@@ -4,6 +4,9 @@ explore_task:
 
     Issue context (use to focus exploration): {issue_analysis}
 
+    Focus exploration on areas relevant to the issue. Do not exhaustively
+    document the entire codebase—only what is needed for the plan.
+
     Use the Repo Shell Tool to:
     - List directory structure
     - Identify tech stack (languages, frameworks, build tools)
