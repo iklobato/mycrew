@@ -246,6 +246,16 @@ def _parse_args():
         action="store_true",
         help="Skip actual git commit",
     )
+    parser.add_argument(
+        "--test-command",
+        default="",
+        help="Command to run for quality gate and verification (e.g. pytest, npm test)",
+    )
+    parser.add_argument(
+        "--issue-id",
+        default="",
+        help="Issue ID for commit message (e.g. PROJ-123, fixes #42)",
+    )
     return parser.parse_args()
 
 
@@ -255,6 +265,8 @@ def kickoff(
     branch: str | None = None,
     max_retries: int | None = None,
     dry_run: bool | None = None,
+    test_command: str | None = None,
+    issue_id: str | None = None,
     inputs: dict | None = None,
 ):
     """Run the code pipeline flow. Uses argparse when invoked from CLI."""
@@ -264,6 +276,10 @@ def kickoff(
     branch = branch if branch is not None else args.branch
     max_retries = max_retries if max_retries is not None else args.retries
     dry_run = dry_run if dry_run is not None else args.dry_run
+    test_command = (
+        test_command if test_command is not None else getattr(args, "test_command", "")
+    )
+    issue_id = issue_id if issue_id is not None else getattr(args, "issue_id", "")
 
     if not task:
         raise ValueError("task is required (use --task / -t)")
@@ -274,6 +290,8 @@ def kickoff(
     flow_inputs.setdefault("branch", branch)
     flow_inputs.setdefault("dry_run", dry_run)
     flow_inputs.setdefault("max_retries", max_retries)
+    flow_inputs.setdefault("test_command", test_command)
+    flow_inputs.setdefault("issue_id", issue_id)
 
     flow = CodePipelineFlow()
     return flow.kickoff(inputs=flow_inputs)
