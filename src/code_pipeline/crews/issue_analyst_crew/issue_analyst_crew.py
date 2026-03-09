@@ -32,7 +32,7 @@ class IssueAnalystCrew:
         return Agent(
             config=self.agents_config["issue_analyst"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("analyze_issue"),
+            llm=get_llm_for_stage("analyze_issue", "issue_analyst"),
             verbose=False,
         )
 
@@ -43,7 +43,7 @@ class IssueAnalystCrew:
         return Agent(
             config=self.agents_config["scope_validator"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("analyze_issue", "scope_validator"),
             verbose=False,
         )
 
@@ -54,7 +54,7 @@ class IssueAnalystCrew:
         return Agent(
             config=self.agents_config["similar_issues_synthesizer"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("analyze_issue", "similar_issues_synthesizer"),
             verbose=False,
         )
 
@@ -65,7 +65,7 @@ class IssueAnalystCrew:
         return Agent(
             config=self.agents_config["acceptance_criteria_normalizer"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("analyze_issue", "acceptance_criteria_normalizer"),
             verbose=False,
         )
 

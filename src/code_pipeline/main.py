@@ -153,8 +153,10 @@ def _log_crew_context(crew_name: str, inputs: dict, exclude_keys: tuple = ()) ->
         s = str(v).strip()
         if not s:
             continue
-        if len(s) > 120:
-            s = s[:117] + "..."
+        # Convert multi-line values to single line and truncate to 500 chars
+        s = " ".join(s.splitlines())
+        if len(s) > 500:
+            s = s[:497] + "..."
         parts.append(f"  {k}: {s}")
     if parts:
         logger.info("%s context:", crew_name)

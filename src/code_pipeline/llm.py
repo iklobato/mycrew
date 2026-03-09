@@ -2,8 +2,11 @@
 
 import logging
 import os
+import yaml
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
+from typing import Any
 
 from crewai import LLM
 
@@ -75,42 +78,34 @@ class StageModelConfig:
     fallbacks: tuple[OpenRouterModel, ...]
 
 
-# Prefer stable models as primary; preview models (gpt-5-nano, trinity-mini) can return empty
-PIPELINE_MODELS: dict[PipelineStage, StageModelConfig] = {
+# Default model configuration
+DEFAULT_PIPELINE_MODELS: dict[PipelineStage, StageModelConfig] = {
     PipelineStage.ANALYZE_ISSUE: StageModelConfig(
-        primary=OpenRouterModel.GEMINI_3_FLASH,
+        primary=OpenRouterModel.DEEPSEEK_R1,
         fallbacks=(
-            OpenRouterModel.DEEPSEEK_R1,
-            OpenRouterModel.GPT_5_NANO,
-            OpenRouterModel.QWEN3_NEXT_80B,
+            OpenRouterModel.QWEN3_CODER,
+            OpenRouterModel.GEMINI_3_FLASH,
         ),
     ),
     PipelineStage.EXPLORE: StageModelConfig(
-        primary=OpenRouterModel.GEMINI_3_FLASH,
+        primary=OpenRouterModel.DEEPSEEK_R1,
         fallbacks=(
-            OpenRouterModel.DEEPSEEK_R1,
-            OpenRouterModel.GPT_5_NANO,
-            OpenRouterModel.KIMI_K25,
             OpenRouterModel.QWEN3_CODER,
+            OpenRouterModel.GEMINI_3_FLASH,
         ),
     ),
     PipelineStage.PLAN: StageModelConfig(
-        # Prefer Gemini for plan—better at structured output and tool use
         primary=OpenRouterModel.GEMINI_3_FLASH,
         fallbacks=(
             OpenRouterModel.DEEPSEEK_V3_2,
             OpenRouterModel.DEEPSEEK_R1,
-            OpenRouterModel.QWEN3_235B_THINKING,
         ),
     ),
     PipelineStage.IMPLEMENT: StageModelConfig(
-        # Prefer Gemini for implement—better at tool use (Clarify uses it successfully)
-        primary=OpenRouterModel.GEMINI_3_FLASH,
+        primary=OpenRouterModel.DEEPSEEK_V3_2,
         fallbacks=(
-            OpenRouterModel.DEEPSEEK_V3_2,
-            OpenRouterModel.KIMI_K25,
-            OpenRouterModel.DEEPSEEK_R1,
             OpenRouterModel.QWEN3_CODER,
+            OpenRouterModel.GEMINI_3_FLASH,
         ),
     ),
     PipelineStage.REVIEW: StageModelConfig(
@@ -118,42 +113,198 @@ PIPELINE_MODELS: dict[PipelineStage, StageModelConfig] = {
         fallbacks=(
             OpenRouterModel.GEMINI_3_FLASH,
             OpenRouterModel.DEEPSEEK_R1,
-            OpenRouterModel.QWEN3_235B_THINKING,
         ),
     ),
     PipelineStage.COMMIT: StageModelConfig(
-        primary=OpenRouterModel.GEMINI_3_FLASH,
+        primary=OpenRouterModel.QWEN3_CODER,
         fallbacks=(
-            OpenRouterModel.GPT_5_NANO,
             OpenRouterModel.TRINITY_MINI,
-            OpenRouterModel.DEEPSEEK_R1,
+            OpenRouterModel.GEMINI_3_FLASH,
         ),
     ),
     PipelineStage.PUBLISH: StageModelConfig(
-        primary=OpenRouterModel.GPT_5_NANO,
+        primary=OpenRouterModel.TRINITY_MINI,
         fallbacks=(
-            OpenRouterModel.GEMINI_3_FLASH,
-            OpenRouterModel.TRINITY_MINI,
-            OpenRouterModel.DEEPSEEK_R1,
+            OpenRouterModel.QWEN3_CODER,
+            OpenRouterModel.GPT_5_NANO,
         ),
     ),
     PipelineStage.AUXILIARY: StageModelConfig(
-        primary=OpenRouterModel.GPT_5_NANO,
+        primary=OpenRouterModel.TRINITY_MINI,
         fallbacks=(
-            OpenRouterModel.TRINITY_MINI,
-            OpenRouterModel.GEMINI_3_FLASH,
-            OpenRouterModel.DEEPSEEK_R1,
+            OpenRouterModel.QWEN3_CODER,
+            OpenRouterModel.GPT_5_NANO,
         ),
     ),
     PipelineStage.SECURITY: StageModelConfig(
-        primary=OpenRouterModel.GPT_5_NANO,
+        primary=OpenRouterModel.TRINITY_MINI,
         fallbacks=(
+            OpenRouterModel.GPT_5_NANO,
             OpenRouterModel.GEMINI_3_FLASH,
-            OpenRouterModel.TRINITY_MINI,
-            OpenRouterModel.DEEPSEEK_R1,
         ),
     ),
 }
+
+
+def _load_model_config_from_file(
+    config_path: str | Path | None = None,
+) -> dict[PipelineStage, StageModelConfig]:
+    """Load model configuration from YAML config file, falling back to defaults."""
+    if config_path is None:
+        config_path = Path(__file__).parent.parent.parent / "config.yaml"
+
+    config_path = Path(config_path)
+    if not config_path.exists():
+        logger.debug("Config file not found at %s, using default models", config_path)
+        return DEFAULT_PIPELINE_MODELS
+
+    try:
+        with open(config_path, "r") as f:
+            config_data = yaml.safe_load(f)
+
+        models_config = config_data.get("models", {})
+        if not models_config:
+            logger.debug("No 'models' section found in config, using default models")
+            return DEFAULT_PIPELINE_MODELS
+
+        pipeline_models = DEFAULT_PIPELINE_MODELS.copy()
+
+        for stage_name, stage_config in models_config.items():
+            try:
+                stage_enum = PipelineStage(stage_name)
+                primary = stage_config.get("primary", "")
+                fallbacks = stage_config.get("fallbacks", [])
+
+                if not primary:
+                    logger.warning(
+                        "No primary model specified for stage %s, keeping default",
+                        stage_name,
+                    )
+                    continue
+
+                # Convert string to OpenRouterModel enum if it exists
+                primary_model = None
+                for model in OpenRouterModel:
+                    if model.value == primary:
+                        primary_model = model
+                        break
+
+                if primary_model is None:
+                    # If not in enum, use as string
+                    primary_model = primary
+                    logger.info("Using custom model not in enum: %s", primary)
+
+                # Convert fallbacks to OpenRouterModel enums or strings
+                fallback_models = []
+                for fb in fallbacks:
+                    fb_model = None
+                    for model in OpenRouterModel:
+                        if model.value == fb:
+                            fb_model = model
+                            break
+                    if fb_model is None:
+                        fb_model = fb
+                        logger.info("Using custom fallback model not in enum: %s", fb)
+                    fallback_models.append(fb_model)
+
+                pipeline_models[stage_enum] = StageModelConfig(
+                    primary=primary_model, fallbacks=tuple(fallback_models)
+                )
+                logger.info(
+                    "Loaded model config for stage %s: primary=%s", stage_name, primary
+                )
+
+            except ValueError:
+                logger.warning("Invalid pipeline stage name in config: %s", stage_name)
+                continue
+
+        logger.info("Successfully loaded model configuration from %s", config_path)
+        return pipeline_models
+
+    except Exception as e:
+        logger.error("Failed to load model config from %s: %s", config_path, e)
+        return DEFAULT_PIPELINE_MODELS
+
+
+# Load models on module import
+PIPELINE_MODELS = _load_model_config_from_file()
+
+# Agent-specific configuration cache
+_agent_model_cache: dict[str, StageModelConfig] = {}
+
+
+def _get_agent_model_config(stage: PipelineStage, agent_name: str) -> StageModelConfig:
+    """Get model configuration for a specific agent, falling back to stage configuration."""
+    cache_key = f"{stage.value}:{agent_name}"
+
+    if cache_key in _agent_model_cache:
+        return _agent_model_cache[cache_key]
+
+    # Try to load agent-specific config from config file
+    config_path = Path(__file__).parent.parent.parent / "config.yaml"
+    if config_path.exists():
+        try:
+            with open(config_path, "r") as f:
+                config_data = yaml.safe_load(f)
+
+            models_config = config_data.get("models", {})
+            stage_config = models_config.get(stage.value, {})
+
+            # Check if there's an agent-specific configuration
+            agents_config = stage_config.get("agents", {})
+            agent_config = agents_config.get(agent_name, {})
+
+            if agent_config and agent_config.get("primary"):
+                primary = agent_config.get("primary", "")
+                fallbacks = agent_config.get("fallbacks", [])
+
+                # Convert string to OpenRouterModel enum if it exists
+                primary_model = None
+                for model in OpenRouterModel:
+                    if model.value == primary:
+                        primary_model = model
+                        break
+
+                if primary_model is None:
+                    primary_model = primary
+                    logger.info(
+                        "Using custom agent model not in enum: %s for %s",
+                        primary,
+                        agent_name,
+                    )
+
+                # Convert fallbacks to OpenRouterModel enums or strings
+                fallback_models = []
+                for fb in fallbacks:
+                    fb_model = None
+                    for model in OpenRouterModel:
+                        if model.value == fb:
+                            fb_model = model
+                            break
+                    if fb_model is None:
+                        fb_model = fb
+                    fallback_models.append(fb_model)
+
+                agent_model_config = StageModelConfig(
+                    primary=primary_model, fallbacks=tuple(fallback_models)
+                )
+                _agent_model_cache[cache_key] = agent_model_config
+                logger.info(
+                    "Loaded agent-specific config for %s in stage %s",
+                    agent_name,
+                    stage.value,
+                )
+                return agent_model_config
+
+        except Exception as e:
+            logger.error("Failed to load agent-specific config: %s", e)
+
+    # Fall back to stage configuration
+    stage_config = PIPELINE_MODELS.get(
+        stage, DEFAULT_PIPELINE_MODELS[PipelineStage.ANALYZE_ISSUE]
+    )
+    _agent_model_cache[cache_key] = stage_config
+    return stage_config
 
 
 def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
@@ -163,8 +314,8 @@ def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
         os.environ["OPENROUTER_API_KEY"] = api_key
     last_error = None
     for model in models:
+        model_str = str(model)
         try:
-            model_str = str(model)
             llm = LLM(
                 model=model_str,
                 num_retries=5,
@@ -192,14 +343,21 @@ def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
     raise Exception("All models failed")
 
 
-def get_llm_for_stage(stage: str | PipelineStage) -> LLM:
+def get_llm_for_stage(stage: str | PipelineStage, agent_name: str | None = None) -> LLM:
     """Return LLM for the given pipeline stage. Uses primary + fallbacks from PIPELINE_MODELS."""
     stage_enum = PipelineStage(stage) if isinstance(stage, str) else stage
-    logger.debug("get_llm_for_stage: stage=%s", stage_enum)
-    config = PIPELINE_MODELS.get(
-        stage_enum, PIPELINE_MODELS[PipelineStage.ANALYZE_ISSUE]
-    )
-    models: tuple[OpenRouterModel, ...] = (config.primary,) + config.fallbacks
+    logger.debug("get_llm_for_stage: stage=%s, agent=%s", stage_enum, agent_name)
+
+    if agent_name:
+        # Use agent-specific configuration if available
+        config = _get_agent_model_config(stage_enum, agent_name)
+    else:
+        # Use stage-level configuration
+        config = PIPELINE_MODELS.get(
+            stage_enum, DEFAULT_PIPELINE_MODELS[PipelineStage.ANALYZE_ISSUE]
+        )
+
+    models: tuple[str | OpenRouterModel, ...] = (config.primary,) + config.fallbacks
     return llm_with_fallback(*models)
 
 

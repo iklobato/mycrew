@@ -17,3 +17,88 @@ issue_id: ""
 github_repo: ""   # owner/repo for GithubSearchTool
 issue_url: ""     # URL for ScrapeWebsiteTool
 docs_url: ""      # URL for CodeDocsSearchTool
+
+# Model configuration for pipeline stages and agents
+# 
+# Two-level configuration:
+# 1. Stage-level: All agents in a crew use the same model configuration
+# 2. Agent-level: Override for specific agents within a crew
+#
+# Example structure:
+# models:
+#   stage_name:
+#     primary: "model_id"
+#     fallbacks: ["model1", "model2"]
+#     agents:
+#       specific_agent_name:
+#         primary: "different_model"
+#         fallbacks: ["alt1", "alt2"]
+
+models:
+  # Issue Analyst Crew
+  analyze_issue:
+    primary: "openrouter/deepseek/deepseek-r1"
+    fallbacks:
+      - "openrouter/qwen/qwen3-coder:free"
+      - "openrouter/google/gemini-3-flash-preview"
+    # Optional: agent-level overrides
+    # agents:
+    #   issue_analyst:
+    #     primary: "openrouter/google/gemini-3-flash-preview"
+    #     fallbacks: ["openrouter/deepseek/deepseek-r1"]
+  
+  # Explorer Crew
+  explore:
+    primary: "openrouter/deepseek/deepseek-r1"
+    fallbacks:
+      - "openrouter/qwen/qwen3-coder:free"
+      - "openrouter/google/gemini-3-flash-preview"
+  
+  # Architect Crew
+  plan:
+    primary: "openrouter/google/gemini-3-flash-preview"
+    fallbacks:
+      - "openrouter/deepseek/deepseek-v3.2"
+      - "openrouter/deepseek/deepseek-r1"
+  
+  # Implementer Crew
+  implement:
+    primary: "openrouter/deepseek/deepseek-v3.2"
+    fallbacks:
+      - "openrouter/qwen/qwen3-coder:free"
+      - "openrouter/google/gemini-3-flash-preview"
+  
+  # Reviewer Crew
+  review:
+    primary: "openrouter/deepseek/deepseek-v3.2"
+    fallbacks:
+      - "openrouter/google/gemini-3-flash-preview"
+      - "openrouter/deepseek/deepseek-r1"
+  
+  # Commit Crew
+  commit:
+    primary: "openrouter/qwen/qwen3-coder:free"
+    fallbacks:
+      - "openrouter/arcee-ai/trinity-mini:free"
+      - "openrouter/google/gemini-3-flash-preview"
+  
+  # Publish stage
+  publish:
+    primary: "openrouter/arcee-ai/trinity-mini:free"
+    fallbacks:
+      - "openrouter/qwen/qwen3-coder:free"
+      - "openrouter/openai/gpt-5-nano"
+  
+  # Auxiliary stage (used by various agents)
+  auxiliary:
+    primary: "openrouter/arcee-ai/trinity-mini:free"
+    fallbacks:
+      - "openrouter/qwen/qwen3-coder:free"
+      - "openrouter/openai/gpt-5-nano"
+  
+  # Security stage
+  security:
+    primary: "openrouter/arcee-ai/trinity-mini:free"
+    fallbacks:
+      - "openrouter/openai/gpt-5-nano"
+      - "openrouter/google/gemini-3-flash-preview"

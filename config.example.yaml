@@ -19,3 +19,74 @@ issue_url: ""     # URL for ScrapeWebsiteTool
 docs_url: ""      # URL for CodeDocsSearchTool
 focus_paths: ""   # comma-separated paths to prioritize (e.g. src,lib)
 exclude_paths: "" # comma-separated paths to skip (e.g. node_modules,vendor)
+
+# Model configuration for pipeline stages and agents
+# 
+# Two-level configuration:
+# 1. Stage-level: All agents in a crew use the same model configuration
+# 2. Agent-level: Override for specific agents within a crew
+#
+# Example structure:
+# models:
+#   stage_name:
+#     primary: "model_id"
+#     fallbacks: ["model1", "model2"]
+#     agents:
+#       specific_agent_name:
+#         primary: "different_model"
+#         fallbacks: ["alt1", "alt2"]
+
+# models:
+#   analyze_issue:
+#     primary: "openrouter/deepseek/deepseek-r1"
+#     fallbacks:
+#       - "openrouter/qwen/qwen3-coder:free"
+#       - "openrouter/google/gemini-3-flash-preview"
+#   
+#   explore:
+#     primary: "openrouter/deepseek/deepseek-r1"
+#     fallbacks:
+#       - "openrouter/qwen/qwen3-coder:free"
+#       - "openrouter/google/gemini-3-flash-preview"
+#   
+#   plan:
+#     primary: "openrouter/google/gemini-3-flash-preview"
+#     fallbacks:
+#       - "openrouter/deepseek/deepseek-v3.2"
+#       - "openrouter/deepseek/deepseek-r1"
+#   
+#   implement:
+#     primary: "openrouter/deepseek/deepseek-v3.2"
+#     fallbacks:
+#       - "openrouter/qwen/qwen3-coder:free"
+#       - "openrouter/google/gemini-3-flash-preview"
+#   
+#   review:
+#     primary: "openrouter/deepseek/deepseek-v3.2"
+#     fallbacks:
+#       - "openrouter/google/gemini-3-flash-preview"
+#       - "openrouter/deepseek/deepseek-r1"
+#   
+#   commit:
+#     primary: "openrouter/qwen/qwen3-coder:free"
+#     fallbacks:
+#       - "openrouter/arcee-ai/trinity-mini:free"
+#       - "openrouter/google/gemini-3-flash-preview"
+#   
+#   publish:
+#     primary: "openrouter/arcee-ai/trinity-mini:free"
+#     fallbacks:
+#       - "openrouter/qwen/qwen3-coder:free"
+#       - "openrouter/openai/gpt-5-nano"
+#   
+#   auxiliary:
+#     primary: "openrouter/arcee-ai/trinity-mini:free"
+#     fallbacks:
+#       - "openrouter/qwen/qwen3-coder:free"
+#       - "openrouter/openai/gpt-5-nano"
+#   
+#   security:
+#     primary: "openrouter/arcee-ai/trinity-mini:free"
+#     fallbacks:
+#       - "openrouter/openai/gpt-5-nano"
+#       - "openrouter/google/gemini-3-flash-preview"

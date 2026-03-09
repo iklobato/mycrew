@@ -27,7 +27,7 @@ class ExplorerCrew:
         return Agent(
             config=self.agents_config["repo_explorer"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("explore"),
+            llm=get_llm_for_stage("explore", "repo_explorer"),
             verbose=False,
         )
 
@@ -38,7 +38,7 @@ class ExplorerCrew:
         return Agent(
             config=self.agents_config["dependency_analyzer"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("explore", "dependency_analyzer"),
             verbose=False,
         )
 
@@ -49,7 +49,7 @@ class ExplorerCrew:
         return Agent(
             config=self.agents_config["test_layout_scout"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("explore", "test_layout_scout"),
             verbose=False,
         )
 
@@ -60,7 +60,7 @@ class ExplorerCrew:
         return Agent(
             config=self.agents_config["convention_extractor"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("explore", "convention_extractor"),
             verbose=False,
         )
 
@@ -71,7 +71,7 @@ class ExplorerCrew:
         return Agent(
             config=self.agents_config["api_boundary_scout"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("explore", "api_boundary_scout"),
             verbose=False,
         )
 
