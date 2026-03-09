@@ -7,11 +7,17 @@ explore_task:
     Focus exploration on areas relevant to the issue. Do not exhaustively
     document the entire codebase—only what is needed for the plan.
 
-    Use DirectoryReadTool to list the repo structure, DirectorySearchTool to
-    search within directories, FileReadTool to read config files (package.json,
-    pyproject.toml, etc.), and CodeDocsSearchTool to search existing
-    documentation and conventions. Also use Repo Shell Tool for commands like
-    ls -la, find, cat, head when needed.
+    ## Tools
+
+    - **Repo Shell Tool** — Param: command. Runs shell in repo. Use: ls -la,
+      find src -name "*.py", cat pyproject.toml, head -50 path/to/file, grep -r "pattern" src.
+      Read-only preferred. Lists structure, reads configs (package.json, pyproject.toml).
+
+    - **CodeDocsSearchTool** — Param: search_query. Semantic search over docs_url.
+      Use for framework conventions, architecture docs, coding standards.
+
+    Use Repo Shell Tool to list structure and read files. Use CodeDocsSearchTool
+    for documentation and conventions.
 
     Example: Read package.json, pyproject.toml, key source files. Use
     CodeDocsSearchTool for framework-specific conventions.

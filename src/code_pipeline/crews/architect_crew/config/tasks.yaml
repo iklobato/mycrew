@@ -8,10 +8,26 @@ plan_task:
 
     Exploration: {exploration}
 
+    CLARIFICATIONS & DEVELOPMENT GUIDELINES (authoritative — override any assumption):
+    {clarifications}
+    Treat every answer above as a hard constraint. Do not deviate from it.
+
+    PRIOR ISSUES TO FIX (from previous attempt — human flagged these):
+    {prior_issues}
+
+    ## Tools
+
+    - **GithubSearchTool** — Params: search_query, content_types. Semantic search.
+      Find similar past implementations in the repo.
+    - **CodeDocsSearchTool** — Param: search_query. Semantic search over docs.
+      Reference architecture docs, conventions.
+    - **Repo Shell Tool** — Param: command. Read files: cat path, head -50 path.
+      Confirm paths exist: ls dir, find . -name "*.py".
+
     Produce a file-level implementation plan. Map your plan to the acceptance
-    criteria above. Use GithubSearchTool to find similar past implementations
-    in the repo. Use CodeDocsSearchTool to reference architecture docs.
-    Use FileReadTool to read relevant source files. MINIMUM CHANGES: Only
+    criteria above. Use GithubSearchTool to find similar implementations.
+    Use CodeDocsSearchTool to reference architecture docs.
+    Use Repo Shell Tool to read relevant source files and confirm paths. MINIMUM CHANGES: Only
     list files and changes strictly needed for the acceptance criteria.
     Prefer editing existing code over adding new modules. One targeted change
     per criterion when possible. Do not add speculative improvements. Do NOT

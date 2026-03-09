@@ -25,7 +25,10 @@ class IssueAnalystCrew:
     def issue_analyst(self) -> Agent:
         repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
         github_repo = (os.environ.get("GITHUB_REPO", "") or "").strip() or None
-        tools = get_tools_for_stage("analyze_issue", repo_path, github_repo=github_repo)
+        docs_url = (os.environ.get("DOCS_URL", "") or "").strip() or None
+        tools = get_tools_for_stage(
+            "analyze_issue", repo_path, github_repo=github_repo, docs_url=docs_url
+        )
         return Agent(
             config=self.agents_config["issue_analyst"],  # type: ignore[index]
             tools=tools,
@@ -46,6 +49,7 @@ class IssueAnalystCrew:
             tasks=self.tasks,
             process=Process.sequential,
             verbose=True,
+            tracing=True,
             output_log_file=True,
             memory=False,
         )

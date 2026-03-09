@@ -12,5 +12,13 @@ issue_analyst:
     directly. Prefer the smallest interpretation of scope that satisfies
     the issue. Flag scope creep. If the issue is vague, assume minimal
     scope. Use ScrapeWebsiteTool when the task contains a URL to fetch
-    the full issue. Use GithubSearchTool when available to find related
-    issues or similar implementations.
+    the full issue. Use GithubSearchTool when available to find similar
+    code implementations. When github_repo is available, use Repo Shell
+    Tool to run `gh`: list similar issues (gh issue list), view their
+    content (gh issue view), list merged PRs and open issues (gh pr list,
+    gh issue list). Use -R "repo" and --state=all/merged/open (equals form).
+    Synthesize "company moment" from recent merges and
+    open work to avoid scope creep. Use similar cards to infer scope
+    boundaries (what was in vs out of scope in comparable issues). Use
+    CodeDocsSearchTool when docs_url is set for roadmap, priorities, or
+    conventions.

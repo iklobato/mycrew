@@ -1,5 +1,6 @@
 """RepoShellTool: run shell commands in a repo with safety checks."""
 
+import logging
 import os
 import re
 import subprocess
@@ -7,6 +8,8 @@ from typing import Type
 
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 # Dangerous patterns to block
@@ -59,11 +62,14 @@ class RepoShellTool(BaseTool):
 
     def _run(self, command: str) -> str:
         """Execute a shell command in the repo with safety checks."""
+        logger.debug("RepoShellTool: command=%r", command[:200] if command else "")
         if not self.repo_path:
+            logger.warning("RepoShellTool: repo_path not set")
             return "Error: repo_path is not set."
 
         repo_path = os.path.abspath(self.repo_path)
         if not os.path.isdir(repo_path):
+            logger.warning("RepoShellTool: repo_path not found: %s", repo_path)
             return f"Error: repo_path does not exist or is not a directory: {repo_path}"
 
         command = command.strip()
@@ -74,6 +80,7 @@ class RepoShellTool(BaseTool):
         cmd_lower = command.lower()
         for pattern in _DANGEROUS_PATTERNS:
             if re.search(pattern, cmd_lower, re.IGNORECASE):
+                logger.warning("RepoShellTool: blocked dangerous command (pattern=%s)", pattern)
                 return f"Error: command blocked for safety (pattern: {pattern})"
 
         # Reject absolute paths escaping repo_path
@@ -89,7 +96,8 @@ class RepoShellTool(BaseTool):
                     common = os.path.commonpath([resolved, repo_norm])
                     if common != repo_norm:
                         return f"Error: absolute path outside repo is not allowed: {part_clean}"
-                except (ValueError, OSError):
+                except (ValueError, OSError) as e:
+                    logger.error("RepoShellTool: path validation failed for %s: %s", part_clean, e, exc_info=True)
                     return f"Error: path outside repo is not allowed: {part_clean}"
 
         try:
@@ -104,8 +112,11 @@ class RepoShellTool(BaseTool):
             output = (result.stdout or "") + (result.stderr or "")
             if len(output) > 8000:
                 output = output[:8000] + "\n... (truncated)"
+            logger.debug("RepoShellTool: exit=%d, output_len=%d", result.returncode, len(output))
             return output
         except subprocess.TimeoutExpired:
+            logger.error("RepoShellTool: command timed out: %r", command[:80], exc_info=True)
             return "Error: command timed out after 120 seconds."
         except Exception as e:
+            logger.error("RepoShellTool: %s", e, exc_info=True)
             return f"Error: {e}"

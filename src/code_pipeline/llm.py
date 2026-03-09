@@ -1,10 +1,15 @@
 """Shared LLM configuration for OpenRouter with stage-specific models and fallbacks."""
 
+import logging
 import os
 from dataclasses import dataclass
 from enum import StrEnum
 
 from crewai import LLM
+
+from code_pipeline.utils import log_exceptions
+
+logger = logging.getLogger(__name__)
 
 # LiteLLM: when True, inserts user continue message if last message is assistant
 # (fixes Anthropic "assistant message prefill" error when using OpenRouter/Claude)
@@ -12,19 +17,20 @@ try:
     import litellm
 
     litellm.modify_params = True
-except ImportError:
-    pass
+except ImportError as e:
+    logging.getLogger(__name__).error(
+        "litellm import failed (modify_params unavailable): %s", e, exc_info=True
+    )
 
 # Monkey-patch: Anthropic requires the conversation to end with a user message.
 # CrewAI only fixes the first message; we add the last-message fix (like Mistral/Ollama).
 _original_format_messages = LLM._format_messages_for_provider
 
 
+@log_exceptions("_patched_format_messages")
 def _patched_format_messages(self, messages):
     result = _original_format_messages(self, messages)
     # Many providers (Anthropic, Mistral, Ollama) require the last message to be user.
-    # Apply universally to avoid "assistant message prefill" errors when OpenRouter
-    # routes to Anthropic or when model config changes.
     if result and result[-1].get("role") == "assistant":
         return [*result, {"role": "user", "content": "Please continue."}]
     return result
@@ -126,12 +132,11 @@ def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
     api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if api_key:
         os.environ["OPENROUTER_API_KEY"] = api_key
-
     last_error = None
     for model in models:
         try:
             model_str = str(model)
-            return LLM(
+            llm = LLM(
                 model=model_str,
                 num_retries=5,
                 time_between_retries=8,
@@ -147,8 +152,11 @@ def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
                     "ensure_alternating_roles": True,
                 },
             )
+            logger.info("LLM initialized: %s", model_str)
+            return llm
         except Exception as e:
             last_error = e
+            logger.error("LLM model %s failed: %s", model_str, e, exc_info=True)
             continue
     if last_error is not None:
         raise Exception("All models failed") from last_error
@@ -158,6 +166,7 @@ def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
 def get_llm_for_stage(stage: str | PipelineStage) -> LLM:
     """Return LLM for the given pipeline stage. Uses primary + fallbacks from PIPELINE_MODELS."""
     stage_enum = PipelineStage(stage) if isinstance(stage, str) else stage
+    logger.debug("get_llm_for_stage: stage=%s", stage_enum)
     config = PIPELINE_MODELS.get(
         stage_enum, PIPELINE_MODELS[PipelineStage.ANALYZE_ISSUE]
     )

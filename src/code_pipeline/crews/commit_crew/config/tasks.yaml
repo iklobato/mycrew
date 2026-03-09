@@ -6,6 +6,11 @@ commit_task:
     Dry run: {dry_run}
     Issue ID (include in commit message if provided): {issue_id}
 
+    ## Tools
+
+    - **Repo Shell Tool** — Param: command. Run git: git checkout, git add, git commit.
+      Check status: git status. Commands run with cwd=repo_path.
+
     Create a proper feature branch for this task. Steps:
     1. git checkout {branch}  (ensure we're on base branch)
     2. git checkout -b {feature_branch}  (create and switch to feature branch)

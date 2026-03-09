@@ -1,0 +1,86 @@
+clarify_task:
+  description: >
+    You are running the CLARIFY phase of a code pipeline.
+
+    The codebase has been fully explored. You now have both the structured requirements
+    AND the actual repository layout, conventions, and key files. Your job is to resolve
+    any ambiguities that the explorer surfaced before the architect creates the plan.
+
+    ## Task description
+    {task}
+
+    ## Structured issue analysis
+    {issue_analysis}
+
+    ## Codebase exploration results (tech stack, layout, conventions, key files)
+    {exploration}
+
+    ## Your process
+
+    1. Read all three inputs carefully — task, requirements, and exploration results.
+    2. Cross-reference: look for tensions between what the spec asks for and what the
+       codebase currently looks like. Flag anything that could cause the architect to
+       make a wrong assumption. Focus on:
+       - **File/module ownership** — the spec touches an area that has multiple candidate
+         locations (e.g., two versions of a module, a legacy and a new path)
+       - **Convention conflicts** — the spec implies a pattern that doesn't match what
+         the explorer found (e.g., spec says "add a new endpoint" but the router style
+         differs from what was found)
+       - **Scope boundaries grounded in the repo** — e.g., "should I touch `auth/legacy.py`
+         or only `auth/core.py`?"
+       - **Test strategy for this specific codebase** — e.g., "the explorer found no tests
+         for module X — should I add them or leave testing out of scope?"
+       - **Migration or compatibility concerns** — e.g., "there are two DB schema versions
+         in the repo — which one should the new feature target?"
+       - **Development guidelines** — any preferences on how to implement, what to avoid,
+         what patterns to follow or not follow based on what you see in the codebase
+    3. For each open question, call ask_human with ONE focused question.
+       **ask_human** — Param: question (str). One question per call. Returns human answer.
+       Always ground the question in something specific you found in the exploration
+       (mention the file, pattern, or convention you're referring to).
+       Offer 2–4 concrete answer options when possible. Order them from top
+       recommendation to last (best option first, least preferred last).
+    4. Based on the answers, decide if follow-ups are needed. Keep asking until
+       you have no remaining open assumptions.
+    5. Do NOT ask about things already clearly answered in the issue analysis.
+    6. Do NOT ask generic questions that ignore the exploration findings.
+    7. Do NOT ask more than one question per tool call.
+
+    ## Output format
+
+    Produce a structured Clarifications & Development Guidelines document:
+
+    ```
+    # Clarifications & Development Guidelines
+
+    ## Module / File Ownership
+    Q: <your question, referencing specific files found in exploration>
+    A: <human answer>
+
+    ## Conventions & Patterns
+    Q: ...
+    A: ...
+
+    ## Test Strategy
+    Q: ...
+    A: ...
+
+    ## Scope Boundaries
+    Q: ...
+    A: ...
+
+    ## Development Guidelines
+    (any constraints or preferences stated by the human that are not a direct Q&A)
+    - ...
+
+    (include only sections where you actually asked questions or received guidelines)
+    ```
+
+    Start your first question now using the ask_human tool.
+  expected_output: >
+    A structured Clarifications & Development Guidelines document in Markdown.
+    Every question must reference a specific file, pattern, or finding from the exploration.
+    Every answer must be recorded verbatim.
+    This document is the authoritative source of truth for the architect —
+    it overrides any assumptions the architect might otherwise make.
+  agent: clarifier

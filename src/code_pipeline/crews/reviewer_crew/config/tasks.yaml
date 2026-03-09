@@ -1,5 +1,8 @@
 review_task:
   description: >
+    CRITICAL: Your FIRST LINE must be exactly one of: APPROVED or ISSUES:
+    Nothing else may appear before it. Then add a blank line before any analysis.
+
     Review the implementation for the task: {task}
 
     Acceptance criteria (verify each is satisfied): {issue_analysis}
@@ -10,9 +13,14 @@ review_task:
     Implementation summary:
     {implementation}
 
-    Use FileReadTool to read changed files, DirectorySearchTool to verify file
-    placement, and CodeDocsSearchTool to validate against coding standards.
-    Use Repo Shell Tool to run tests if applicable.
+    ## Tools
+
+    - **Repo Shell Tool** — Param: command. Read files: cat path, head path.
+      List/verify: ls -la, find . -name "*.py". Run tests: pytest, npm test.
+    - **CodeDocsSearchTool** — Param: search_query. Validate against coding standards.
+
+    Use Repo Shell Tool to read changed files and verify placement; run tests if applicable.
+    Use CodeDocsSearchTool to validate against coding standards.
 
     For each acceptance criterion, confirm it is satisfied. Verify:
     (1) All planned files created/modified
@@ -25,12 +33,10 @@ review_task:
     If the implementation does more than the plan requires (extra files,
     abstractions, features), output ISSUES: listing the excess changes.
 
-    Your output MUST start with exactly one of:
-    - APPROVED
-    - ISSUES:
-
-    If ISSUES:, each issue MUST be: - <file_path>: <concise description>
-    so the implementer can fix them.
+    OUTPUT FORMAT (mandatory):
+    - First line: exactly APPROVED or exactly ISSUES:
+    - If ISSUES:, each subsequent line: - <file_path>: <concise description>
+    - So the implementer can fix them.
   expected_output: >
     First line is exactly APPROVED or ISSUES:. If ISSUES:, each subsequent
     line is "- <file_path>: <description>".

@@ -1,9 +1,29 @@
 """Tool factory for creating repo-scoped and optional tools."""
 
+import logging
 import os
+
 from crewai.tools import BaseTool
 
 from code_pipeline.tools.repo_shell_tool import RepoShellTool
+from code_pipeline.utils import log_exceptions
+
+logger = logging.getLogger(__name__)
+
+
+def _repo_shell_plus_optional(
+    repo_path: str,
+    *,
+    docs_url: str | None = None,
+    github_repo: str | None = None,
+) -> list[BaseTool]:
+    """RepoShellTool plus optional CodeDocsSearch and GithubSearch. Avoids crewai_tools segfault on macOS."""
+    tools: list[BaseTool] = [RepoShellTool(repo_path=repo_path)]
+    if docs_url and (cd := get_code_docs_search_tool(docs_url)):
+        tools.append(cd)
+    if github_repo and (gh := get_github_search_tool(github_repo)):
+        tools.append(gh)
+    return tools
 
 
 def get_tools_for_stage(
@@ -16,82 +36,66 @@ def get_tools_for_stage(
     repo_path = os.path.abspath(repo_path)
     github_repo = (github_repo or "").strip() or None
     docs_url = (docs_url or "").strip() or None
+    logger.debug("get_tools_for_stage: stage=%s, repo_path=%s", stage, repo_path)
 
     if stage == "analyze_issue":
-        tools: list[BaseTool] = [get_scrape_website_tool()]
+        tools: list[BaseTool] = [
+            get_scrape_website_tool(),
+            RepoShellTool(repo_path=repo_path),
+        ]
         gh = get_github_search_tool(github_repo)
+        cd = get_code_docs_search_tool(docs_url)
         if gh:
             tools.append(gh)
+        if cd:
+            tools.append(cd)
+        logger.debug(
+            "Stage %s: %d tools (scrape, RepoShell, github=%s, docs=%s)",
+            stage,
+            len(tools),
+            gh is not None,
+            cd is not None,
+        )
         return tools
 
     if stage == "explore":
-        # Use RepoShellTool only for explore to avoid segfault from crewai_tools
-        # (DirectoryReadTool/DirectorySearchTool/FileReadTool can crash on macOS).
-        tools: list[BaseTool] = [RepoShellTool(repo_path=repo_path)]
-        cd = get_code_docs_search_tool(docs_url)
-        if cd:
-            tools.append(cd)
+        tools = _repo_shell_plus_optional(repo_path, docs_url=docs_url)
+        logger.debug("Stage %s: %d tools (RepoShell, docs=%s)", stage, len(tools), bool(docs_url))
         return tools
 
     if stage == "plan":
-        tools = [
-            RepoShellTool(repo_path=repo_path),
-            *get_repo_scoped_tools(repo_path),
-        ]
-        cd = get_code_docs_search_tool(docs_url)
-        if cd:
-            tools.append(cd)
-        gh = get_github_search_tool(github_repo)
-        if gh:
-            tools.append(gh)
+        tools = _repo_shell_plus_optional(repo_path, docs_url=docs_url, github_repo=github_repo)
+        logger.debug("Stage %s: %d tools", stage, len(tools))
         return tools
 
     if stage == "implement":
         from crewai_tools import FileWriterTool
 
+        # RepoShellTool + FileWriterTool only — avoid crewai_tools DirectoryReadTool/FileReadTool segfault on macOS
         tools = [
             RepoShellTool(repo_path=repo_path),
             FileWriterTool(),
-            *get_repo_scoped_tools(repo_path),
         ]
         ci = get_code_interpreter_tool()
         if ci:
             tools.append(ci)
+        logger.debug("Stage %s: %d tools (FileWriter, CodeInterpreter=%s)", stage, len(tools), ci is not None)
         return tools
 
     if stage == "review":
-        tools = [
-            RepoShellTool(repo_path=repo_path),
-            *get_repo_scoped_tools(repo_path),
-        ]
-        cd = get_code_docs_search_tool(docs_url)
-        if cd:
-            tools.append(cd)
+        tools = _repo_shell_plus_optional(repo_path, docs_url=docs_url)
+        logger.debug("Stage %s: %d tools", stage, len(tools))
         return tools
 
     if stage == "commit":
+        logger.debug("Stage %s: RepoShell only", stage)
         return [RepoShellTool(repo_path=repo_path)]
 
+    logger.warning("Unknown stage %s, returning empty tools", stage)
     return []
 
 
-def get_repo_scoped_tools(repo_path: str) -> list[BaseTool]:
-    """Create DirectoryReadTool, DirectorySearchTool, and FileReadTool for the repo."""
-    from crewai_tools import (
-        DirectoryReadTool,
-        DirectorySearchTool,
-        FileReadTool,
-    )
-
-    repo_path = os.path.abspath(repo_path)
-    tools: list[BaseTool] = [
-        DirectoryReadTool(directory=repo_path),
-        DirectorySearchTool(directory=repo_path),
-        FileReadTool(),
-    ]
-    return tools
-
-
+@log_exceptions("GithubSearchTool")
 def get_github_search_tool(github_repo: str | None) -> BaseTool | None:
     """Return GithubSearchTool if GITHUB_TOKEN and github_repo are set."""
     if not github_repo or not github_repo.strip():
@@ -104,6 +108,7 @@ def get_github_search_tool(github_repo: str | None) -> BaseTool | None:
     return GithubSearchTool(gh_token=token, github_repo=github_repo.strip())
 
 
+@log_exceptions("ScrapeWebsiteTool")
 def get_scrape_website_tool() -> BaseTool:
     """Return ScrapeWebsiteTool for web-based issue trackers."""
     from crewai_tools import ScrapeWebsiteTool
@@ -111,6 +116,7 @@ def get_scrape_website_tool() -> BaseTool:
     return ScrapeWebsiteTool()
 
 
+@log_exceptions("CodeDocsSearchTool")
 def get_code_docs_search_tool(docs_url: str | None = None) -> BaseTool | None:
     """Return CodeDocsSearchTool when docs_url is set; otherwise None to avoid loading heavy deps."""
     if not docs_url or not docs_url.strip():
@@ -126,5 +132,6 @@ def get_code_interpreter_tool() -> BaseTool | None:
         from crewai_tools import CodeInterpreterTool
 
         return CodeInterpreterTool()
-    except Exception:
+    except Exception as e:
+        logger.error("CodeInterpreterTool unavailable: %s", e, exc_info=True)
         return None

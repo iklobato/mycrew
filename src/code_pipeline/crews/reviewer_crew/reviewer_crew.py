@@ -1,14 +1,27 @@
 """Reviewer crew: reviews implementation against plan and task."""
 
 import os
-from typing import List
+from typing import List, Literal
 
 from crewai import Agent, Crew, Process, Task
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.project import CrewBase, agent, crew, task
+from pydantic import BaseModel, Field
 
 from code_pipeline.llm import get_llm_for_stage
 from code_pipeline.tools.factory import get_tools_for_stage
+
+
+class ReviewVerdict(BaseModel):
+    """Structured review verdict. Forces LLM to output APPROVED or ISSUES with list."""
+
+    verdict: Literal["APPROVED", "ISSUES"] = Field(
+        description="Exactly APPROVED if implementation meets all criteria, otherwise ISSUES"
+    )
+    issues: List[str] = Field(
+        default_factory=list,
+        description="When ISSUES: list of 'file_path: concise description' for each problem",
+    )
 
 
 @CrewBase
@@ -37,6 +50,7 @@ class ReviewerCrew:
     def review_task(self) -> Task:
         return Task(
             config=self.tasks_config["review_task"],  # type: ignore[index]
+            output_pydantic=ReviewVerdict,
         )
 
     @crew
@@ -47,6 +61,7 @@ class ReviewerCrew:
             tasks=self.tasks,
             process=Process.sequential,
             verbose=True,
+            tracing=True,
             output_log_file=True,
             memory=False,
         )

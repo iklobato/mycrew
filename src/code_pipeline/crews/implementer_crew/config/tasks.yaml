@@ -6,6 +6,11 @@ implement_task:
 
     Plan: {plan}
 
+    CLARIFICATIONS & DEVELOPMENT GUIDELINES (authoritative — override any assumption):
+    {clarifications}
+    Follow every guideline above exactly. If a guideline conflicts with the plan,
+    surface the conflict as a comment but still follow the guideline.
+
     {prior_issues}
 
     Repository path: {repo_path}
@@ -17,12 +22,18 @@ implement_task:
     comments, or optimizations unless explicitly in the plan. Preserve existing
     structure and style. If the plan says "add X", add X—nothing else.
 
-    The File Writer Tool is configured with the repository as base directory.
-    Use FileReadTool to read existing files before modifying. Use
-    CodeInterpreterTool to run and validate code snippets when useful. Use
-    relative paths for all file writes. Use the Repo Shell Tool to run the
-    project's test command (e.g. pytest, npm test, cargo test) and fix any
-    failures before finishing.
+    ## Tools
+
+    - **File Writer Tool** — Params: filename, content, directory (default ./), overwrite (default false).
+      Use relative paths. Set overwrite=true to modify existing files.
+    - **Repo Shell Tool** — Param: command. Read before write: cat path, head path.
+      Run tests: pytest tests/, npm test, cargo test.
+    - **Code Interpreter** (if Docker available) — Params: code, libraries_used.
+      Run Python snippets for validation. Always print the result.
+
+    Use Repo Shell Tool to read existing files before modifying. Use
+    CodeInterpreterTool when useful to validate snippets. Use relative paths
+    for all file writes. Run the project's test command and fix failures before finishing.
 
     If prior_issues above is non-empty, it means a previous implementation was
     rejected. You MUST fix all listed issues before submitting.
