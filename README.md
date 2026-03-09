@@ -75,3 +75,14 @@ A software development crew powered by [crewAI](https://crewai.com). Explores a 
 | **Implementer** | implementer, docstring_writer, type_hint_checker, test_writer, lint_fixer, self_reviewer | • Write code per plan; add docstrings and type hints<br>• Add tests; run linter; self-review plan adherence |
 | **Reviewer** | reviewer, security_reviewer, performance_reviewer, accessibility_checker, backward_compat_checker, convention_checker | • Main review (APPROVED/ISSUES); security, perf, a11y<br>• Check API compat; conventions; merge final verdict |
 | **Commit** | git_agent, commit_message_reviewer, changelog_agent, pr_labels_suggester, publish_agent | • Branch + commit; validate Conventional Commits<br>• Update CHANGELOG; suggest labels; push + create PR |
+
+## TODO
+
+- **Separate pipelines** — Build a dedicated development pipeline (analyze → implement → commit) and a separate code-review pipeline (review PRs on demand), each with its own flow and entry points.
+- **Webhook: development pipeline** — Add webhook handlers to trigger the development pipeline when an issue or project card is assigned (e.g., GitHub issue assigned, Jira/Linear card moved to "In Progress").
+- **Webhook: code review pipeline** — Add webhook handlers to trigger the code-review pipeline when a PR receives a new comment or a code review is submitted.
+- **CrewAI architecture** — Deepen understanding of CrewAI (crews, tasks, agents, tools, flows) and restructure the codebase for better separation of concerns and maintainability.
+- **Model optimization** — Revisit model selection per stage: use cheaper models where sufficient, reserve stronger models for critical steps (e.g., review, plan) to reduce cost without losing quality.
+- **Agent prompting** — Refine role, goal, and backstory for all agents to improve clarity, consistency, and output quality.
+- **Parallelization** — Identify independent steps (e.g., within Explorer, Reviewer crews) and run them in parallel to reduce end-to-end latency.
+- **Ollama integration** — Add Ollama as an LLM backend for local inference and cost savings.
