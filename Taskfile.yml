@@ -4,6 +4,7 @@
 #   1. Default:    task run                    (from scratch + config.yaml)
 #   2. Env params: task run TASK_DESC="..." R=./repo
 #   3. CLI args:   task run-script -- -c config.yaml -v -f
+#   4. Docker:     docker run -it --rm -v $(pwd):/workspace -w /workspace -e OPENROUTER_API_KEY=... iklobato/mycrew -c config.yaml
 #
 # Params: CONFIG (default: config.yaml), TASK_DESC, R, B, V, F (default: 1), DRY_RUN, N, TEST, ISSUE_ID, GITHUB_REPO, ISSUE_URL, DOCS
 
@@ -57,6 +58,9 @@ tasks:
         echo ""
         echo "  # Full example"
         echo "  task run TASK_DESC=\"add validation\" R=./my-app B=dev N=5 TEST=pytest ISSUE_ID=\"#42\" V=1"
+        echo ""
+        echo "  # Docker"
+        echo "  docker run -it --rm -v \$(pwd):/workspace -w /workspace -e OPENROUTER_API_KEY=\$OPENROUTER_API_KEY iklobato/mycrew -c config.yaml"
 
   run-script:
     desc: Run pipeline with CLI args after -- (e.g. task run-script -- -c config.yaml -v -f --dry-run)

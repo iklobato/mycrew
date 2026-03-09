@@ -9,10 +9,12 @@ code_pipeline/
 ├── config.example.yaml       # Template: copy to config.yaml and edit
 ├── config.yaml               # Run config (task run uses by default)
 ├── REMOVED # Example project-specific config
-├── Taskfile.yml               # Task runner (task run, task run-script, etc.)
-├── pyproject.toml             # Python project config and CLI entry points
+├── Dockerfile                # Container image for docker run
+├── docker-compose.yml        # docker compose run --rm run
+├── Taskfile.yml              # Task runner (task run, task run-script, etc.)
+├── pyproject.toml            # Python project config and CLI entry points
 ├── docs/
-│   └── TOOLS_REFERENCE.md     # Tool parameters and example commands
+│   └── TOOLS_REFERENCE.md    # Tool parameters and example commands
 └── src/code_pipeline/
     ├── main.py                # Flow orchestration, kickoff, checkpoint/resume
     ├── llm.py                 # LLM configuration (OpenRouter, OpenAI)
@@ -82,6 +84,10 @@ The Implement stage can use CodeInterpreterTool for running Python code snippets
 See [docs/TOOLS_REFERENCE.md](docs/TOOLS_REFERENCE.md) for tool parameters and example commands.
 
 ## How to Use
+
+- **Option 1: Task** — `task run` (recommended; uses config.yaml by default)
+- **Option 2: CLI** — `uv run kickoff -c config.yaml`
+- **Option 3: Docker** — `docker run -it --rm -v $(pwd):/workspace -w /workspace -e OPENROUTER_API_KEY=... iklobato/mycrew -c config.yaml`
 
 ### Option 1: Task commands (recommended)
 
@@ -219,6 +225,42 @@ uv run kickoff \
   --issue-url "https://github.com/owner/repo/issues/42" \
   --docs-url "https://docs.djangoproject.com"
 ```
+
+### Option 3: Docker
+
+Run the pipeline in a container. Requires Docker and API keys.
+
+**Build (optional, if using pre-built image):**
+
+```bash
+docker build -t iklobato/mycrew .
+```
+
+**Basic run:**
+
+```bash
+docker run -it --rm \
+  -v $(pwd):/workspace \
+  -w /workspace \
+  -e OPENROUTER_API_KEY=$OPENROUTER_API_KEY \
+  iklobato/mycrew -c config.yaml
+```
+
+**Config requirements:** `repo_path` in config must be valid inside the container. Use `"."` (relative to `/workspace`) or `/workspace` or `/workspace/subdir`. Host paths like `/Users/you/...` will not work.
+
+**Optional env vars:**
+- `-e GITHUB_TOKEN=$GITHUB_TOKEN` — For GithubSearchTool when `--github-repo` is in config
+- `-e OPENAI_API_KEY=$OPENAI_API_KEY` — Alternative to OpenRouter
+
+**Optional:** If `.env` is in your workspace, it is included via the volume mount and will be loaded from `/workspace/.env`.
+
+**Docker Compose:** For a simpler run with built-in mounts and env:
+
+```bash
+docker compose run --rm run
+```
+
+**Note:** CodeInterpreterTool requires Docker and is skipped when running inside a container.
 
 ## Pipeline Overview
 

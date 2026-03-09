@@ -3,7 +3,8 @@
 # Use: task run
 # Or:  task run CONFIG=other.yaml
 # Or:  uv run kickoff -c config.yaml
-# CLI/Task args override values from this file.
+# Or:  docker run -it --rm -v $(pwd):/workspace -w /workspace -e OPENROUTER_API_KEY=$OPENROUTER_API_KEY iklobato/mycrew -c config.yaml
+# CLI/Task/Docker args override values from this file.
 
 task: "Add a feature or fix based on the issue"
 repo_path: "."

@@ -1,0 +1,13 @@
+services:
+  run:
+    image: iklobato/mycrew
+    build: .
+    stdin_open: true
+    tty: true
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+    command: ["-c", "config.yaml"]

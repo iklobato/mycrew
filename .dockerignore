@@ -1,0 +1,14 @@
+.git
+.venv
+__pycache__
+*.pyc
+.code_pipeline
+.pytest_cache
+.cursor
+*.md
+config.yaml
+REMOVED
+.env
+.env.example
+Taskfile.yml
+xerxes

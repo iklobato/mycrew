@@ -2,7 +2,12 @@
 
 Reference for all tools used by pipeline crews. Parameters and example commands verified against the current repository.
 
-**Running the pipeline:** Use `task run` (default: from scratch + `config.yaml`) or `uv run kickoff -c config.yaml`. See [README](../README.md) for full usage.
+**Running the pipeline:**
+- `task run` — Default: from scratch + config.yaml
+- `uv run kickoff -c config.yaml` — Direct CLI
+- `docker run -it --rm -v $(pwd):/workspace -w /workspace -e OPENROUTER_API_KEY=$OPENROUTER_API_KEY iklobato/mycrew -c config.yaml` — Docker
+
+See [README](../README.md) for full usage.
 
 ---
 
