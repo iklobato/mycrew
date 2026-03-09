@@ -31,6 +31,7 @@ from crewai.events.event_context import (
     MismatchBehavior,
     _event_context_config,
 )
+
 _event_context_config.set(
     EventContextConfig(
         mismatch_behavior=MismatchBehavior.SILENT,
@@ -49,7 +50,7 @@ from code_pipeline.crews.explorer_crew.explorer_crew import ExplorerCrew
 from code_pipeline.crews.implementer_crew.implementer_crew import ImplementerCrew
 from code_pipeline.crews.issue_analyst_crew.issue_analyst_crew import IssueAnalystCrew
 from code_pipeline.crews.reviewer_crew.reviewer_crew import ReviewerCrew, ReviewVerdict
-from code_pipeline.utils import log_exceptions
+from code_pipeline.utils import build_repo_context, enrich_repo_context, log_exceptions
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +95,12 @@ def _save_checkpoint(repo_path: str, task: str, flow_id: str) -> None:
             data = json.loads(path.read_text())
         except (json.JSONDecodeError, OSError):
             pass
-    data[key] = {"flow_id": flow_id, "updated_at": datetime.now(timezone.utc).isoformat()}
+    data[key] = {
+        "flow_id": flow_id,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
     path.write_text(json.dumps(data, indent=2))
+
 
 # Retry config for rate limits (429) and empty LLM responses
 RATE_LIMIT_MAX_RETRIES = 5
@@ -134,7 +139,13 @@ def _log_section(title: str, body: str, char: str = "─") -> None:
 
 def _log_crew_context(crew_name: str, inputs: dict, exclude_keys: tuple = ()) -> None:
     """Log a brief summary of the context a crew is considering."""
-    exclude = set(exclude_keys) | {"plan", "implementation", "exploration", "issue_analysis", "clarifications"}
+    exclude = set(exclude_keys) | {
+        "plan",
+        "implementation",
+        "exploration",
+        "issue_analysis",
+        "clarifications",
+    }
     parts = []
     for k, v in sorted(inputs.items()):
         if k in exclude or v is None:
@@ -188,7 +199,11 @@ def _log_implementer_summary(implementation: str) -> None:
         return
     # Extract "Wrote path" patterns or bullet points
     lines = impl.split("\n")
-    wrote = [l.strip() for l in lines if "wrote" in l.lower() or "wrote:" in l.lower() or l.strip().startswith("- ")]
+    wrote = [
+        l.strip()
+        for l in lines
+        if "wrote" in l.lower() or "wrote:" in l.lower() or l.strip().startswith("- ")
+    ]
     if wrote:
         logger.info("Implementer changes:")
         for line in wrote[:15]:
@@ -200,7 +215,10 @@ def _log_implementer_summary(implementation: str) -> None:
         # Fallback: first few lines
         preview = "\n  ".join(l.strip() for l in lines[:8] if l.strip())
         if preview:
-            logger.info("Implementer summary:\n  %s", preview[:400] + ("..." if len(preview) > 400 else ""))
+            logger.info(
+                "Implementer summary:\n  %s",
+                preview[:400] + ("..." if len(preview) > 400 else ""),
+            )
 
 
 def _is_retryable_error(e: Exception) -> bool:
@@ -249,9 +267,16 @@ def _fallback_exploration(repo_path: str, issue_analysis: str) -> str:
         try:
             for e in sorted(os.listdir(repo_path))[:30]:
                 st = os.stat(os.path.join(repo_path, e))
-                entries.append(f"{'d' if os.path.isdir(os.path.join(repo_path, e)) else '-'} {e}")
+                entries.append(
+                    f"{'d' if os.path.isdir(os.path.join(repo_path, e)) else '-'} {e}"
+                )
         except OSError as e:
-            logger.error("Fallback exploration: failed to list directory %s: %s", repo_path, e, exc_info=True)
+            logger.error(
+                "Fallback exploration: failed to list directory %s: %s",
+                repo_path,
+                e,
+                exc_info=True,
+            )
             entries = ["(unable to list)"]
         layout = "\n".join(entries)
         return f"""## Tech Stack
@@ -272,28 +297,35 @@ def _fallback_exploration(repo_path: str, issue_analysis: str) -> str:
 """
     except Exception as e:
         logger.error("Fallback exploration failed: %s", e, exc_info=True)
-        return f"Fallback exploration failed: {e}. Issue context: {issue_analysis[:300]}"
+        return (
+            f"Fallback exploration failed: {e}. Issue context: {issue_analysis[:300]}"
+        )
 
 
 def _run_explore_in_process(
     repo_path: str,
     issue_analysis: str,
     *,
+    task: str = "",
     test_command: str = "",
     focus_paths: str = "",
     exclude_paths: str = "",
     github_repo: str = "",
+    repo_context: str = "",
 ) -> str:
     """Run ExplorerCrew in-process. On exception, use fallback exploration."""
     try:
         crew = ExplorerCrew().crew()
         inputs = {
             "repo_path": repo_path,
+            "task": task,
             "issue_analysis": issue_analysis,
             "test_command": test_command,
             "focus_paths": focus_paths,
             "exclude_paths": exclude_paths,
             "github_repo": github_repo,
+            "repo_context": repo_context
+            or build_repo_context(repo_path, github_repo, "", "", test_command),
         }
         result = _kickoff_with_retry(
             crew,
@@ -303,7 +335,9 @@ def _run_explore_in_process(
         raw = result.raw if hasattr(result, "raw") else str(result)
         logger.info("ExplorerCrew completed (output_len=%d)", len(raw))
         if len((raw or "").strip()) < 200:
-            logger.warning("Exploration too short (%d chars), using fallback", len(raw or ""))
+            logger.warning(
+                "Exploration too short (%d chars), using fallback", len(raw or "")
+            )
             return _fallback_exploration(repo_path, issue_analysis)
         return raw
     except Exception as e:
@@ -350,15 +384,26 @@ def _log_crew_metrics(crew, result, crew_name: str = "Crew") -> None:
             for j, to in enumerate(result.tasks_output):
                 s = str(to)
                 summaries.append(f"[{j}] {s[:300]}{'...' if len(s) > 300 else ''}")
-            logger.debug("%s tasks_output (%d tasks): %s", crew_name, len(result.tasks_output), summaries)
+            logger.debug(
+                "%s tasks_output (%d tasks): %s",
+                crew_name,
+                len(result.tasks_output),
+                summaries,
+            )
         if hasattr(result, "token_usage") and result.token_usage is not None:
             logger.debug("%s token_usage: %s", crew_name, result.token_usage)
         agents = getattr(crew, "agents", None) or []
         for i, agent in enumerate(agents):
             um = getattr(agent, "usage_metrics", None)
             if um is not None:
-                agent_name = getattr(agent, "role", None) or getattr(agent, "name", None) or f"agent_{i}"
-                logger.debug("%s agent[%s] usage_metrics: %s", crew_name, agent_name, um)
+                agent_name = (
+                    getattr(agent, "role", None)
+                    or getattr(agent, "name", None)
+                    or f"agent_{i}"
+                )
+                logger.debug(
+                    "%s agent[%s] usage_metrics: %s", crew_name, agent_name, um
+                )
         crew_um = getattr(crew, "usage_metrics", None)
         if crew_um is not None:
             logger.debug("%s crew usage_metrics: %s", crew_name, crew_um)
@@ -375,7 +420,9 @@ def _kickoff_with_retry(crew, inputs: dict, crew_name: str = "Crew"):
             result = crew.kickoff(inputs=inputs)
             _log_crew_metrics(crew, result, crew_name)
             if attempt > 0:
-                logger.info("Crew kickoff succeeded on attempt %d/%d", attempt + 1, max_retries)
+                logger.info(
+                    "Crew kickoff succeeded on attempt %d/%d", attempt + 1, max_retries
+                )
             return result
         except Exception as e:
             last_error = e
@@ -397,10 +444,21 @@ def _kickoff_with_retry(crew, inputs: dict, crew_name: str = "Crew"):
                         delay,
                         str(e)[:80],
                     )
-                logger.error("Crew kickoff attempt %d/%d failed (retrying): %s", attempt + 1, max_retries, e, exc_info=True)
+                logger.error(
+                    "Crew kickoff attempt %d/%d failed (retrying): %s",
+                    attempt + 1,
+                    max_retries,
+                    e,
+                    exc_info=True,
+                )
                 time.sleep(delay)
             else:
-                logger.error("Crew kickoff failed after %d attempts: %s", attempt + 1, e, exc_info=True)
+                logger.error(
+                    "Crew kickoff failed after %d attempts: %s",
+                    attempt + 1,
+                    e,
+                    exc_info=True,
+                )
                 raise
     if last_error is not None:
         raise last_error
@@ -492,17 +550,17 @@ def _parse_args() -> PipelineArgs:
     parser = argparse.ArgumentParser(
         description="Code pipeline: explore -> plan -> implement -> review -> commit"
     )
+    parser.add_argument("-c", "--config", help="Path to YAML config file (all params)")
+    parser.add_argument("-r", "--repo-path", default=None, help="Repository path")
     parser.add_argument(
-        "-c", "--config", help="Path to YAML config file (all params)"
+        "-t", "--task", default=None, help="Task description (required)"
     )
-    parser.add_argument(
-        "-r", "--repo-path", default=None, help="Repository path"
-    )
-    parser.add_argument("-t", "--task", default=None, help="Task description (required)")
     parser.add_argument("-b", "--branch", default=None, help="Git branch")
     parser.add_argument("-n", "--retries", type=int, default=None, help="Max retries")
     parser.add_argument("--dry-run", action="store_true", help="Skip git commit")
-    parser.add_argument("--test-command", default=None, help="Test command (e.g. pytest)")
+    parser.add_argument(
+        "--test-command", default=None, help="Test command (e.g. pytest)"
+    )
     parser.add_argument("--issue-id", default=None, help="Issue ID for commit")
     parser.add_argument(
         "--github-repo", default=None, help="GitHub repo for GithubSearchTool"
@@ -514,18 +572,22 @@ def _parse_args() -> PipelineArgs:
         "--docs-url", default=None, help="Docs URL for CodeDocsSearchTool"
     )
     parser.add_argument(
-        "--focus-paths", default=None,
+        "--focus-paths",
+        default=None,
         help="Comma-separated paths to prioritize in exploration (e.g. src,lib)",
     )
     parser.add_argument(
-        "--exclude-paths", default=None,
+        "--exclude-paths",
+        default=None,
         help="Comma-separated paths to skip in exploration (e.g. node_modules,vendor)",
     )
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="Enable DEBUG logging"
     )
     parser.add_argument(
-        "-f", "--from-scratch", action="store_true",
+        "-f",
+        "--from-scratch",
+        action="store_true",
         help="Ignore checkpoint and run from the beginning",
     )
     ns = parser.parse_args()
@@ -604,6 +666,7 @@ class PipelineState(BaseModel):
     id: str = ""
     from_scratch: bool = False
     repo_path: str = ""
+    repo_context: str = ""  # Shared context (Repository, GitHub, etc.) for agents
     task: str = ""
     branch: str = "main"
     dry_run: bool = False
@@ -657,7 +720,11 @@ class CodePipelineFlow(Flow[PipelineState]):
             )
             output = (result.stdout or "") + (result.stderr or "")
             passed = result.returncode == 0
-            logger.info("Quality gate %s (exit=%d)", "PASSED" if passed else "FAILED", result.returncode)
+            logger.info(
+                "Quality gate %s (exit=%d)",
+                "PASSED" if passed else "FAILED",
+                result.returncode,
+            )
             return passed, output
         except subprocess.TimeoutExpired:
             logger.error("Quality gate timed out after 300s", exc_info=True)
@@ -669,6 +736,15 @@ class CodePipelineFlow(Flow[PipelineState]):
     def _run_crew(self, crew_class, inputs: dict, state_attr: str | None = None):
         """Run a crew and optionally store result in state. Returns raw output."""
         crew_name = crew_class.__name__
+        if "repo_context" not in inputs:
+            inputs = dict(inputs)
+            inputs["repo_context"] = build_repo_context(
+                inputs.get("repo_path", "") or self.state.repo_path,
+                inputs.get("github_repo", "") or self.state.github_repo,
+                inputs.get("issue_url", "") or self.state.issue_url,
+                inputs.get("docs_url", "") or self.state.docs_url,
+                inputs.get("test_command", "") or self.state.test_command,
+            )
         logger.info("Running crew: %s", crew_name)
         _log_crew_context(crew_name, inputs)
         try:
@@ -686,7 +762,12 @@ class CodePipelineFlow(Flow[PipelineState]):
             if state_attr == "implementation":
                 _log_implementer_summary(raw)
             else:
-                logger.info("Crew %s completed -> state.%s (len=%d)", crew_name, state_attr, len(raw))
+                logger.info(
+                    "Crew %s completed -> state.%s (len=%d)",
+                    crew_name,
+                    state_attr,
+                    len(raw),
+                )
         else:
             logger.info("Crew %s completed (no state_attr)", crew_name)
         return raw
@@ -695,10 +776,16 @@ class CodePipelineFlow(Flow[PipelineState]):
         """Increment retry count; return 'pipeline_aborted' or 'retry'."""
         self.state.retry_count += 1
         if self.state.retry_count >= self.state.max_retries:
-            logger.warning("Max retries (%d) reached -> pipeline_aborted", self.state.max_retries)
+            logger.warning(
+                "Max retries (%d) reached -> pipeline_aborted", self.state.max_retries
+            )
             return "pipeline_aborted"
         self.state.prior_issues = prior_issues_prefix + output
-        logger.info("Retry %d/%d requested, prior_issues updated", self.state.retry_count, self.state.max_retries)
+        logger.info(
+            "Retry %d/%d requested, prior_issues updated",
+            self.state.retry_count,
+            self.state.max_retries,
+        )
         return "retry"
 
     @start()
@@ -737,20 +824,32 @@ class CodePipelineFlow(Flow[PipelineState]):
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
         os.environ["REPO_PATH"] = repo_path
         self.state.repo_path = repo_path
-        _log_crew_context("ExplorerCrew", {
-            "repo_path": repo_path,
-            "test_command": self.state.test_command,
-            "focus_paths": getattr(self.state, "focus_paths", "") or "",
-            "exclude_paths": getattr(self.state, "exclude_paths", "") or "",
-            "github_repo": self.state.github_repo or "",
-        }, exclude_keys=("plan", "implementation", "exploration", "issue_analysis", "clarifications"))
+        _log_crew_context(
+            "ExplorerCrew",
+            {
+                "repo_path": repo_path,
+                "test_command": self.state.test_command,
+                "focus_paths": getattr(self.state, "focus_paths", "") or "",
+                "exclude_paths": getattr(self.state, "exclude_paths", "") or "",
+                "github_repo": self.state.github_repo or "",
+            },
+            exclude_keys=(
+                "plan",
+                "implementation",
+                "exploration",
+                "issue_analysis",
+                "clarifications",
+            ),
+        )
         raw = _run_explore_in_process(
             repo_path,
             self.state.issue_analysis,
+            task=self.state.task,
             test_command=self.state.test_command,
             focus_paths=getattr(self.state, "focus_paths", "") or "",
             exclude_paths=getattr(self.state, "exclude_paths", "") or "",
             github_repo=self.state.github_repo or "",
+            repo_context=getattr(self.state, "repo_context", "") or "",
         )
         self.state.exploration = raw
         return raw
@@ -886,7 +985,10 @@ class CodePipelineFlow(Flow[PipelineState]):
     @router(or_(quality_gate, quality_gate_retry))
     def route_after_implement(self):
         """Route to review or retry based on quality gate."""
-        logger.info("Flow step: route_after_implement (quality_gate_passed=%s)", self.state.quality_gate_passed)
+        logger.info(
+            "Flow step: route_after_implement (quality_gate_passed=%s)",
+            self.state.quality_gate_passed,
+        )
         if not self.state.test_command:
             return "review"
         if self.state.quality_gate_passed:
@@ -912,23 +1014,33 @@ class CodePipelineFlow(Flow[PipelineState]):
         _log_crew_context(
             "ReviewerCrew",
             {
-                "task": (self.state.task or "")[:80] + ("..." if len(self.state.task or "") > 80 else ""),
+                "task": (self.state.task or "")[:80]
+                + ("..." if len(self.state.task or "") > 80 else ""),
                 "plan_len": len(self.state.plan or ""),
                 "implementation_len": len(self.state.implementation or ""),
                 "repo_path": repo_path,
             },
             exclude_keys=(),
         )
+        inputs = {
+            "task": self.state.task,
+            "plan": self.state.plan,
+            "implementation": self.state.implementation,
+            "repo_path": self.state.repo_path,
+            "issue_analysis": self.state.issue_analysis,
+            "docs_url": self.state.docs_url,
+            "repo_context": getattr(self.state, "repo_context", "")
+            or build_repo_context(
+                self.state.repo_path,
+                "",
+                "",
+                self.state.docs_url,
+                self.state.test_command,
+            ),
+        }
         result = _kickoff_with_retry(
             ReviewerCrew().crew(),
-            {
-                "task": self.state.task,
-                "plan": self.state.plan,
-                "implementation": self.state.implementation,
-                "repo_path": self.state.repo_path,
-                "issue_analysis": self.state.issue_analysis,
-                "docs_url": self.state.docs_url,
-            },
+            inputs,
             crew_name="ReviewerCrew",
         )
         verdict_str = _format_review_verdict(result)
@@ -940,7 +1052,10 @@ class CodePipelineFlow(Flow[PipelineState]):
     def route_verdict(self):
         """Route based on verdict: commit, retry, or abort. Run verification when APPROVED."""
         verdict = self.state.review_verdict.strip()
-        logger.info("Flow step: route_verdict (verdict_prefix=%s)", verdict[:50] if verdict else "(empty)")
+        logger.info(
+            "Flow step: route_verdict (verdict_prefix=%s)",
+            verdict[:50] if verdict else "(empty)",
+        )
         if verdict.upper().startswith("APPROVED"):
             if self.state.test_command:
                 logger.info("Running verification tests after APPROVED")
@@ -993,7 +1108,10 @@ class CodePipelineFlow(Flow[PipelineState]):
         Human rejected the implementation. Feed their feedback back as prior_issues
         and restart from the plan step.
         """
-        logger.info("Flow step: handle_human_replan (feedback_len=%d)", len(result.feedback or ""))
+        logger.info(
+            "Flow step: handle_human_replan (feedback_len=%d)",
+            len(result.feedback or ""),
+        )
         if self.state.replan_count >= self.state.max_replans:
             logger.warning("Max replans (%d) reached, aborting", self.state.max_replans)
             print(
@@ -1011,7 +1129,9 @@ class CodePipelineFlow(Flow[PipelineState]):
             f"{result.feedback}"
         )
 
-        logger.info("Replan #%d -> do_replan (feeding prior_issues)", self.state.replan_count)
+        logger.info(
+            "Replan #%d -> do_replan (feeding prior_issues)", self.state.replan_count
+        )
         print(
             f"\n🔄  Replan #{self.state.replan_count} requested.\n"
             f"Feedback: {result.feedback}\n"
@@ -1034,7 +1154,11 @@ class CodePipelineFlow(Flow[PipelineState]):
         feature_branch = self._make_feature_branch_name()
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
         os.environ["REPO_PATH"] = repo_path
-        logger.info("Flow step: commit (dry_run=%s, feature_branch=%s)", self.state.dry_run, feature_branch)
+        logger.info(
+            "Flow step: commit (dry_run=%s, feature_branch=%s)",
+            self.state.dry_run,
+            feature_branch,
+        )
         return self._run_crew(
             CommitCrew,
             {
@@ -1102,9 +1226,34 @@ def kickoff(
     }
     args = _parse_args().replace(**overrides)
     flow_inputs = (inputs or {}) | args.to_flow_inputs()
+    # Auto-detect repo_path, github_repo, issue_url when running inside the repo
+    enriched = enrich_repo_context(
+        flow_inputs.get("repo_path", ""),
+        flow_inputs.get("github_repo", ""),
+        flow_inputs.get("issue_url", ""),
+        flow_inputs.get("issue_id", ""),
+    )
+    for k, v in enriched.items():
+        if not v:
+            continue
+        current = (flow_inputs.get(k) or "").strip()
+        use = (not current or current == ".") if k == "repo_path" else not current
+        if use:
+            flow_inputs[k] = v
+    flow_inputs["repo_context"] = build_repo_context(
+        flow_inputs.get("repo_path", ""),
+        flow_inputs.get("github_repo", ""),
+        flow_inputs.get("issue_url", ""),
+        flow_inputs.get("docs_url", ""),
+        flow_inputs.get("test_command", ""),
+    )
     if not flow_inputs.get("task"):
         raise ValueError("task is required (use --task / -t)")
-    logger.info("Pipeline kickoff: task=%s, repo_path=%s", flow_inputs.get("task", "")[:80], flow_inputs.get("repo_path", ""))
+    logger.info(
+        "Pipeline kickoff: task=%s, repo_path=%s",
+        flow_inputs.get("task", "")[:80],
+        flow_inputs.get("repo_path", ""),
+    )
     return _execute_flow(flow_inputs)
 
 

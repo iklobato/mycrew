@@ -1,16 +1,15 @@
 explore_task:
   description: >
-    Explore the repository at {repo_path}.
+    Explore the repository. Focus on areas relevant to the issue.
+
+    Context:
+    {repo_context}
+    - Focus paths (if set): {focus_paths}
+    - Exclude paths (if set): {exclude_paths}
 
     Issue context (use to focus exploration): {issue_analysis}
 
-    ## Additional context
-    - Test command (if set): {test_command}
-    - Focus paths (if set): {focus_paths}
-    - Exclude paths (if set): {exclude_paths}
-    - GitHub repo (if set): {github_repo}
-
-    Focus exploration on areas relevant to the issue. When focus_paths is set,
+    When focus_paths is set,
     prioritize exploring those paths. When exclude_paths is set, avoid spending
     time on them. Do not exhaustively document the entire codebase—only what is
     needed for the plan.
@@ -44,7 +43,9 @@ dependency_analyze_task:
   description: >
     Analyze dependencies. You receive the full exploration from explore_task.
 
-    Repository: {repo_path}
+    Context:
+    {repo_context}
+
     Issue context: {issue_analysis}
 
     Use Repo Shell Tool:
@@ -68,8 +69,8 @@ test_layout_task:
   description: >
     Document the test layout. You receive the full exploration from the previous task.
 
-    Repository: {repo_path}
-    Test command: {test_command}
+    Context:
+    {repo_context}
 
     If test_command is empty, append "## Test Layout\nSkipped (no test_command)."
 
@@ -92,7 +93,8 @@ convention_extract_task:
   description: >
     Extract lint and format config. You receive the full exploration.
 
-    Repository: {repo_path}
+    Context:
+    {repo_context}
 
     Use Repo Shell Tool:
     - cat pyproject.toml (sections [tool.black], [tool.ruff], [tool.pytest])
@@ -115,7 +117,9 @@ api_boundary_scout_task:
   description: >
     Map API surface when relevant. You receive the full exploration.
 
-    Repository: {repo_path}
+    Context:
+    {repo_context}
+
     Task: {task}
 
     If task does NOT mention "API", "endpoint", "route", "REST", "controller",
