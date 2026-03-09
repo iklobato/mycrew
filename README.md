@@ -46,11 +46,75 @@ The pipeline uses OpenRouter with DeepSeek R1 by default. Set `OPENROUTER_API_KE
 
 ### CodeInterpreterTool (Implement stage)
 
-The Implement stage can use CodeInterpreterTool for running Python code snippets when **Docker** is available. If Docker is not installed or not running, the tool is skipped and the pipeline continues with other tools (FileWriterTool, RepoShellTool, FileReadTool).
+The Implement stage can use CodeInterpreterTool for running Python code snippets when **Docker** is available. If Docker is not installed or not running, the tool is skipped and the pipeline continues with other tools (FileWriterTool, RepoShellTool).
+
+See [docs/TOOLS_REFERENCE.md](docs/TOOLS_REFERENCE.md) for tool parameters and example commands.
 
 ## How to Use
 
-Run the pipeline from the project root with `uv run kickoff`. You must provide a task and the target repository path.
+### Option 1: Task commands (recommended)
+
+If you have [Task](https://taskfile.dev/) installed, use the Taskfile. Pass parameters like `-r` and `-v` via Task vars (R=, V=1, etc.).
+
+**Available tasks:** `task run` | `task run:from-scratch` | `task run:dry` | `task plot` | `task help`
+
+**Parameters (same semantics as kickoff flags):**
+
+| Param | Maps to | Default |
+|-------|---------|---------|
+| `CONFIG` | `-c` / `--config` | — |
+| `TASK` | `-t` / `--task` | (required if no CONFIG) |
+| `R` | `-r` / `--repo-path` | `.` (or from config) |
+| `B` | `-b` / `--branch` | `main` |
+| `V` | `-v` / `--verbose` | `0` |
+| `F` | `-f` / `--from-scratch` | `0` |
+| `N` | `-n` / `--retries` | `3` |
+| `DRY_RUN` | `--dry-run` | `0` |
+| `TEST` | `--test-command` | — |
+| `ISSUE_ID` | `--issue-id` | — |
+| `GITHUB_REPO` | `--github-repo` | — |
+| `ISSUE_URL` | `--issue-url` | — |
+| `DOCS` | `--docs-url` | — |
+
+**Task usage examples with parameters:**
+
+```bash
+# Config file (all params in YAML; copy config.example.yaml and edit)
+task run CONFIG=config.yaml
+
+# Basic (R defaults to current dir)
+task run TASK="add a hello world function"
+
+# With repo (-r) and verbose (-v)
+task run TASK="fix login bug" R=/path/to/repo V=1
+
+# Repo and branch
+task run TASK="fix bug" R=./my-app B=dev
+
+# Dry run
+task run TASK="add user authentication" DRY_RUN=1
+task run:dry TASK="add user authentication"
+
+# From scratch (ignore checkpoint)
+task run TASK="add feature" F=1
+task run:from-scratch TASK="add feature" R=.
+
+# Full example: all params
+task run TASK="add validation logic" \
+  R=./my-app \
+  B=main \
+  N=5 \
+  TEST="pytest" \
+  ISSUE_ID="fixes #42" \
+  GITHUB_REPO="owner/repo" \
+  ISSUE_URL="https://github.com/owner/repo/issues/42" \
+  DOCS="https://docs.djangoproject.com" \
+  V=1
+```
+
+### Option 2: Direct CLI
+
+Run the pipeline with `uv run kickoff`. You must provide a task and the target repository path.
 
 **Basic usage:**
 
@@ -65,6 +129,7 @@ uv run kickoff --task "add a hello world function" --repo-path /path/to/your/rep
 | `--task` | `-t` | Task or issue card description (required) | — |
 | `--repo-path` | `-r` | Path to the repository to modify | Current directory |
 | `--branch` | `-b` | Git branch for commits | `main` |
+| `--from-scratch` | `-f` | Ignore checkpoint and run from the beginning | `false` |
 | `--retries` | `-n` | Max implement→review retries | `3` |
 | `--dry-run` | — | Skip actual git commit; only report what would be committed | `false` |
 | `--test-command` | — | Command for quality gate and verification (e.g. pytest, npm test) | — |
@@ -72,27 +137,31 @@ uv run kickoff --task "add a hello world function" --repo-path /path/to/your/rep
 | `--github-repo` | — | GitHub repo (owner/repo) for GithubSearchTool; requires GITHUB_TOKEN | — |
 | `--issue-url` | — | URL of the issue for ScrapeWebsiteTool (e.g. GitHub, Jira) | — |
 | `--docs-url` | — | Documentation URL for CodeDocsSearchTool (e.g. https://docs.djangoproject.com) | — |
+| `--config` | `-c` | Path to YAML config file (all params; CLI overrides) | — |
 
-**Examples:**
+**CLI examples:**
 
 ```bash
-# Dry run: analyze, explore, plan, implement, review, but do not commit
+# Config file (copy config.example.yaml and edit)
+uv run kickoff -c config.yaml
+
+# Dry run
 uv run kickoff -t "add user authentication" -r ./my-app --dry-run
 
-# Full run on a specific branch
-uv run kickoff -t "fix login bug" -r /Users/me/projects/api -b dev
+# From scratch (ignore checkpoint)
+uv run kickoff -t "add feature" -r ./my-app -f
 
-# With quality gate: run pytest after implement and before commit
-uv run kickoff -t "add validation" -r ./backend --test-command "pytest"
-
-# Include issue ID in commit message
-uv run kickoff -t "Fix PROJ-123: null pointer" -r ./api --issue-id "PROJ-123"
-
-# With GitHub repo for semantic search (requires GITHUB_TOKEN)
-uv run kickoff -t "add feature X" -r ./my-repo --github-repo "owner/repo"
-
-# With docs URL for framework-specific conventions
-uv run kickoff -t "add Django view" -r ./backend --docs-url "https://docs.djangoproject.com"
+# Full run with all optional params
+uv run kickoff \
+  -t "add validation logic" \
+  -r ./my-app \
+  -b main \
+  -n 5 \
+  --test-command "pytest" \
+  --issue-id "fixes #42" \
+  --github-repo "owner/repo" \
+  --issue-url "https://github.com/owner/repo/issues/42" \
+  --docs-url "https://docs.djangoproject.com"
 ```
 
 ## Pipeline Overview

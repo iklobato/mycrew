@@ -3,30 +3,97 @@
 review retry loop and quality gates."""
 
 import argparse
+import hashlib
 import json
 import logging
 import os
+from datetime import datetime, timezone
+
+import yaml
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 from pydantic import BaseModel
 
 from crewai.flow import Flow, listen, or_, router, start
+from crewai.flow.human_feedback import HumanFeedbackResult, human_feedback
+from crewai.flow.persistence import SQLiteFlowPersistence, persist
+from crewai.utilities.paths import db_storage_path
+
+# Suppress CrewAI event pairing mismatch warnings (Flow + Crew + tracing can reorder
+# scope events; see crewai.events.event_context)
+from crewai.events.event_context import (
+    EventContextConfig,
+    MismatchBehavior,
+    _event_context_config,
+)
+_event_context_config.set(
+    EventContextConfig(
+        mismatch_behavior=MismatchBehavior.SILENT,
+        empty_pop_behavior=MismatchBehavior.SILENT,
+    )
+)
 
 # Apply Anthropic message-format monkey-patch before any crew/LLM usage
 import code_pipeline.llm  # noqa: F401
+from code_pipeline.llm import get_llm_for_stage
 
 from code_pipeline.crews.architect_crew.architect_crew import ArchitectCrew
+from code_pipeline.crews.clarify_crew.clarify_crew import ClarifyCrew
 from code_pipeline.crews.commit_crew.commit_crew import CommitCrew
 from code_pipeline.crews.explorer_crew.explorer_crew import ExplorerCrew
 from code_pipeline.crews.implementer_crew.implementer_crew import ImplementerCrew
 from code_pipeline.crews.issue_analyst_crew.issue_analyst_crew import IssueAnalystCrew
-from code_pipeline.crews.reviewer_crew.reviewer_crew import ReviewerCrew
+from code_pipeline.crews.reviewer_crew.reviewer_crew import ReviewerCrew, ReviewVerdict
+from code_pipeline.utils import log_exceptions
 
 logger = logging.getLogger(__name__)
+
+
+def _task_hash(task: str) -> str:
+    """Stable hash for checkpoint key."""
+    return hashlib.sha256((task or "").encode()).hexdigest()[:16]
+
+
+def _get_checkpoint_path(repo_path: str) -> Path:
+    """Path to checkpoint registry in repo."""
+    return Path(repo_path) / ".code_pipeline" / "checkpoint.json"
+
+
+def _load_checkpoint(repo_path: str, task: str) -> str | None:
+    """Load flow_id for (repo_path, task). Returns None if not found."""
+    path = _get_checkpoint_path(repo_path)
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text())
+        key = f"{os.path.abspath(repo_path)}|{_task_hash(task)}"
+        entry = data.get(key)
+        if entry and isinstance(entry, dict):
+            return entry.get("flow_id")
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning("Checkpoint load failed: %s", e)
+    return None
+
+
+def _save_checkpoint(repo_path: str, task: str, flow_id: str) -> None:
+    """Save flow_id for (repo_path, task)."""
+    path = _get_checkpoint_path(repo_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    key = f"{os.path.abspath(repo_path)}|{_task_hash(task)}"
+    data = {}
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    data[key] = {"flow_id": flow_id, "updated_at": datetime.now(timezone.utc).isoformat()}
+    path.write_text(json.dumps(data, indent=2))
 
 # Retry config for rate limits (429) and empty LLM responses
 RATE_LIMIT_MAX_RETRIES = 5
@@ -34,6 +101,24 @@ RATE_LIMIT_BASE_DELAY = 8
 RATE_LIMIT_BACKOFF_FACTOR = 2
 EMPTY_RESPONSE_MAX_RETRIES = 5
 EMPTY_RESPONSE_DELAY = 8
+
+
+def _configure_logging(level: str | int | None = None) -> None:
+    """Configure logger for code_pipeline. Call early in kickoff."""
+    log = logging.getLogger("code_pipeline")
+    if log.handlers:
+        return
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    )
+    log.addHandler(handler)
+    log.propagate = False
+    if level is not None:
+        log.setLevel(level)
+    else:
+        env_level = os.environ.get("CODE_PIPELINE_LOG_LEVEL", "INFO").upper()
+        log.setLevel(getattr(logging, env_level, logging.INFO))
 
 
 def _is_retryable_error(e: Exception) -> bool:
@@ -59,32 +144,40 @@ def _is_retryable_error(e: Exception) -> bool:
 
 
 def _fallback_exploration(repo_path: str, issue_analysis: str) -> str:
-    """Minimal exploration using shell commands when ExplorerCrew crashes (e.g. segfault on macOS)."""
+    """Minimal exploration using os.walk when ExplorerCrew fails. No subprocess."""
+    logger.info("Using fallback exploration (ExplorerCrew unavailable)")
     try:
-        result = subprocess.run(
-            "find . -maxdepth 3 -type f -name '*.py' -o -name '*.ts' -o -name '*.tsx' -o -name '*.json' -o -name '*.toml' -o -name '*.yaml' 2>/dev/null | head -80",
-            shell=True,
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        files = (result.stdout or "").strip() or "(none found)"
-        result2 = subprocess.run(
-            "ls -la 2>/dev/null",
-            shell=True,
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        root_list = (result2.stdout or "").strip() or "(empty)"
+        patterns = ("*.py", "*.ts", "*.tsx", "*.json", "*.toml", "*.yaml")
+        files_list = []
+        for root, _dirs, fnames in os.walk(repo_path, topdown=True):
+            rel_root = os.path.relpath(root, repo_path)
+            if rel_root.startswith(".") and rel_root != ".":
+                depth = rel_root.count(os.sep) + 1
+                if depth > 3:
+                    continue
+            for f in fnames:
+                for ext in patterns:
+                    if f.endswith(ext.replace("*", "")):
+                        files_list.append(os.path.join(rel_root, f))
+                        break
+            if len(files_list) >= 80:
+                break
+        files = "\n".join(files_list[:80]) if files_list else "(none found)"
+        entries = []
+        try:
+            for e in sorted(os.listdir(repo_path))[:30]:
+                st = os.stat(os.path.join(repo_path, e))
+                entries.append(f"{'d' if os.path.isdir(os.path.join(repo_path, e)) else '-'} {e}")
+        except OSError as e:
+            logger.error("Fallback exploration: failed to list directory %s: %s", repo_path, e, exc_info=True)
+            entries = ["(unable to list)"]
+        layout = "\n".join(entries)
         return f"""## Tech Stack
 (Inferred from fallback exploration - ExplorerCrew unavailable)
 
 ## Directory Layout
 ```
-{root_list}
+{layout}
 ```
 
 ## Key Files
@@ -96,75 +189,141 @@ def _fallback_exploration(repo_path: str, issue_analysis: str) -> str:
 (Use issue context to focus: {issue_analysis[:200]}...)
 """
     except Exception as e:
+        logger.error("Fallback exploration failed: %s", e, exc_info=True)
         return f"Fallback exploration failed: {e}. Issue context: {issue_analysis[:300]}"
 
 
-def _run_explore_with_fallback(
-    repo_path: str, issue_analysis: str, state_attr: str
-) -> str:
-    """Run ExplorerCrew in subprocess; on crash (139) or timeout, use fallback exploration."""
-    import tempfile
-
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".json", delete=False
-    ) as f_in:
-        json.dump(
+def _run_explore_in_process(repo_path: str, issue_analysis: str) -> str:
+    """Run ExplorerCrew in-process. On exception, use fallback exploration."""
+    try:
+        crew = ExplorerCrew().crew()
+        result = _kickoff_with_retry(
+            crew,
             {"repo_path": repo_path, "issue_analysis": issue_analysis},
-            f_in,
         )
-        inputs_path = f_in.name
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".txt", delete=False
-    ) as f_out:
-        output_path = f_out.name
-
-    try:
-        env = os.environ.copy()
-        env["REPO_PATH"] = repo_path
-        proc = subprocess.run(
-            [
-                sys.executable,
-                "-c",
-                """
-import json
-import os
-import sys
-os.environ["REPO_PATH"] = sys.argv[1]
-with open(sys.argv[2]) as f:
-    inputs = json.load(f)
-with open(sys.argv[3], "w") as out:
-    try:
-        from code_pipeline.crews.explorer_crew.explorer_crew import ExplorerCrew
-        result = ExplorerCrew().crew().kickoff(inputs=inputs)
         raw = result.raw if hasattr(result, "raw") else str(result)
-        out.write(raw)
+        logger.info("ExplorerCrew completed successfully (output_len=%d)", len(raw))
+        return raw
     except Exception as e:
-        out.write(f"Error: {e}")
-""",
-                repo_path,
-                inputs_path,
-                output_path,
-            ],
-            env=env,
-            timeout=300,
-            capture_output=True,
-            cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        )
-        if proc.returncode == 0 and os.path.exists(output_path):
-            with open(output_path) as f:
-                return f.read()
-    except subprocess.TimeoutExpired:
-        logger.warning("ExplorerCrew timed out, using fallback exploration")
-    except Exception as e:
-        logger.warning("ExplorerCrew failed (%s), using fallback exploration", e)
-    finally:
-        for p in (inputs_path, output_path):
-            try:
-                os.unlink(p)
-            except OSError:
-                pass
+        logger.error("ExplorerCrew failed: %s", e, exc_info=True)
+        return _fallback_exploration(repo_path, issue_analysis)
 
-    return _fallback_exploration(repo_path, issue_analysis)
+
+def _format_review_verdict(result) -> str:
+    """Format crew result as 'APPROVED' or 'ISSUES:\\n- ...' for route_verdict."""
+    pydantic_val = getattr(result, "pydantic", None)
+    if isinstance(pydantic_val, ReviewVerdict):
+        if pydantic_val.verdict == "APPROVED":
+            return "APPROVED"
+        issues = pydantic_val.issues or []
+        if not issues:
+            return "ISSUES:\n- (Reviewer found problems but did not list specifics)"
+        return "ISSUES:\n" + "\n".join(f"- {i}" for i in issues)
+    raw = getattr(result, "raw", None) or str(result)
+    return _normalize_raw_verdict(raw)
+
+
+def _make_pr_description(task: str, implementation: str) -> tuple[str, str]:
+    """Generate PR title and body from task and implementation. Returns (title, body)."""
+    title = task.strip().split("\n")[0][:80] if task else "Code changes"
+    impl_preview = (implementation or "")[:500].strip()
+    if impl_preview:
+        impl_preview = impl_preview + "..." if len(implementation or "") > 500 else impl_preview
+    body = f"## Task\n{task or '(no task)'}\n\n"
+    if impl_preview:
+        body += f"## Summary\n{impl_preview}\n\n"
+    body += "_Generated by code_pipeline_"
+    return title, body
+
+
+def _create_pr(
+    repo_path: str,
+    feature_branch: str,
+    base_branch: str,
+    task: str,
+    implementation: str,
+    github_repo: str,
+) -> str:
+    """Push branch and create PR via gh CLI. Returns PR URL or message."""
+    try:
+        push = subprocess.run(
+            ["git", "push", "-u", "origin", feature_branch],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if push.returncode != 0 and "already exists" not in (push.stderr or ""):
+            logger.warning("git push failed: %s", push.stderr or push.stdout)
+            return f"Branch not pushed: {push.stderr or push.stdout}"
+    except Exception as e:
+        logger.error("git push failed: %s", e, exc_info=True)
+        return f"Failed to push: {e}"
+
+    title, body = _make_pr_description(task, implementation)
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".md", delete=False
+        ) as f:
+            f.write(body)
+            body_file = f.name
+        try:
+            result = subprocess.run(
+                [
+                    "gh",
+                    "pr",
+                    "create",
+                    "--base",
+                    base_branch,
+                    "--head",
+                    feature_branch,
+                    "--title",
+                    title,
+                    "--body-file",
+                    body_file,
+                ],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env={
+                    **os.environ,
+                    "GH_REPO": github_repo,
+                }
+                if github_repo
+                else os.environ,
+            )
+            if result.returncode != 0:
+                logger.warning(
+                    "gh pr create failed: %s", result.stderr or result.stdout
+                )
+                return f"PR creation failed: {result.stderr or result.stdout}"
+            return (result.stdout or "").strip() or "PR created"
+        finally:
+            os.unlink(body_file)
+    except FileNotFoundError:
+        logger.warning("gh CLI not found; install from https://cli.github.com")
+        return "gh CLI not found; install to create PRs"
+    except Exception as e:
+        logger.error("gh pr create failed: %s", e, exc_info=True)
+        return f"PR creation failed: {e}"
+
+
+def _normalize_raw_verdict(raw: str) -> str:
+    """Fallback: try to extract APPROVED or ISSUES from malformed raw output."""
+    text = raw.strip()
+    if not text:
+        return "ISSUES:\n- (Empty reviewer output)"
+    if text.upper().startswith("APPROVED"):
+        return "APPROVED"
+    if text.upper().startswith("ISSUES:"):
+        return text
+    idx = text.upper().find("ISSUES:")
+    if idx >= 0:
+        return text[idx:]
+    if "APPROVED" in text.upper() and "ISSUES" not in text.upper()[:50]:
+        return "APPROVED"
+    return f"ISSUES:\n- (Reviewer output malformed): {text[:300]}"
 
 
 def _kickoff_with_retry(crew, inputs: dict):
@@ -173,7 +332,10 @@ def _kickoff_with_retry(crew, inputs: dict):
     last_error = None
     for attempt in range(max_retries):
         try:
-            return crew.kickoff(inputs=inputs)
+            result = crew.kickoff(inputs=inputs)
+            if attempt > 0:
+                logger.info("Crew kickoff succeeded on attempt %d/%d", attempt + 1, max_retries)
+            return result
         except Exception as e:
             last_error = e
             if _is_retryable_error(e) and attempt < max_retries - 1:
@@ -194,118 +356,14 @@ def _kickoff_with_retry(crew, inputs: dict):
                         delay,
                         str(e)[:80],
                     )
+                logger.error("Crew kickoff attempt %d/%d failed (retrying): %s", attempt + 1, max_retries, e, exc_info=True)
                 time.sleep(delay)
             else:
+                logger.error("Crew kickoff failed after %d attempts: %s", attempt + 1, e, exc_info=True)
                 raise
     if last_error is not None:
         raise last_error
     raise RuntimeError("Retry loop exited without capturing exception")
-
-
-def _fallback_exploration(repo_path: str, issue_analysis: str) -> str:
-    """Minimal repo exploration via shell when ExplorerCrew crashes (e.g. segfault on macOS)."""
-    try:
-        result = subprocess.run(
-            "find . -maxdepth 3 -type f -name '*.py' -o -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.json' -o -name 'pyproject.toml' -o -name 'package.json' 2>/dev/null | head -80",
-            shell=True,
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        files = (result.stdout or "").strip() or "(none found)"
-        result2 = subprocess.run(
-            "ls -la 2>/dev/null; echo '---'; head -50 pyproject.toml package.json 2>/dev/null || true",
-            shell=True,
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        layout = (result2.stdout or "").strip() or "(unable to read)"
-        return f"""## Tech Stack
-(Inferred from fallback exploration - ExplorerCrew unavailable)
-
-## Directory Layout
-```
-{layout[:4000]}
-```
-
-## Key Files
-```
-{files}
-```
-
-## Conventions
-(Use issue context and file structure above for planning.)
-
-Issue context: {issue_analysis[:500]}
-"""
-    except Exception as e:
-        return f"Fallback exploration failed: {e}\n\nIssue context: {issue_analysis[:500]}"
-
-
-def _run_explore_with_fallback(
-    repo_path: str, issue_analysis: str, state_attr: str
-) -> str:
-    """Run ExplorerCrew in subprocess; on crash (exit 139) or timeout, use fallback."""
-    import tempfile
-
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".json", delete=False
-    ) as f_in:
-        json.dump(
-            {"repo_path": repo_path, "issue_analysis": issue_analysis},
-            f_in,
-        )
-        input_path = f_in.name
-    output_path = input_path.replace(".json", "_out.txt")
-    try:
-        env = os.environ.copy()
-        env["REPO_PATH"] = repo_path
-        env["CODE_PIPELINE_EXPLORE_INPUT"] = input_path
-        env["CODE_PIPELINE_EXPLORE_OUTPUT"] = output_path
-        script = """
-import json, os, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from code_pipeline.crews.explorer_crew.explorer_crew import ExplorerCrew
-with open(os.environ["CODE_PIPELINE_EXPLORE_INPUT"]) as f:
-    inp = json.load(f)
-os.environ["REPO_PATH"] = inp["repo_path"]
-result = ExplorerCrew().crew().kickoff(inputs=inp)
-raw = result.raw if hasattr(result, "raw") else str(result)
-with open(os.environ["CODE_PIPELINE_EXPLORE_OUTPUT"], "w") as f:
-    f.write(raw)
-"""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".py", delete=False
-        ) as f_script:
-            f_script.write(script)
-            script_path = f_script.name
-        try:
-            proc = subprocess.run(
-                [sys.executable, script_path],
-                env=env,
-                capture_output=True,
-                timeout=300,
-                cwd=os.path.dirname(os.path.dirname(__file__)),
-            )
-            if proc.returncode == 0 and os.path.exists(output_path):
-                with open(output_path) as f:
-                    return f.read()
-        finally:
-            if os.path.exists(script_path):
-                os.unlink(script_path)
-    except (subprocess.TimeoutExpired, Exception) as e:
-        logger.warning("ExplorerCrew subprocess failed (%s), using fallback", e)
-    finally:
-        for p in (input_path, output_path):
-            if os.path.exists(p):
-                try:
-                    os.unlink(p)
-                except OSError:
-                    pass
-    return _fallback_exploration(repo_path, issue_analysis)
 
 
 @dataclass
@@ -315,6 +373,7 @@ class PipelineArgs:
     repo_path: str = ""
     task: str = ""
     branch: str = "main"
+    from_scratch: bool = False
     max_retries: int = 3
     dry_run: bool = False
     test_command: str = ""
@@ -329,6 +388,7 @@ class PipelineArgs:
             "repo_path": os.path.abspath(self.repo_path or os.getcwd()),
             "task": self.task,
             "branch": self.branch,
+            "from_scratch": self.from_scratch,
             "dry_run": self.dry_run,
             "max_retries": self.max_retries,
             "test_command": self.test_command,
@@ -347,47 +407,140 @@ class PipelineArgs:
         return PipelineArgs(**d)
 
 
+def _load_config(path: str) -> dict:
+    """Load pipeline config from YAML. Returns dict with snake_case keys."""
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"Config file not found: {path}")
+    data = yaml.safe_load(p.read_text())
+    if not isinstance(data, dict):
+        raise ValueError(f"Config must be a YAML object, got {type(data)}")
+    # Map config keys (snake_case) to PipelineArgs fields
+    key_map = {
+        "task": "task",
+        "repo_path": "repo_path",
+        "branch": "branch",
+        "from_scratch": "from_scratch",
+        "max_retries": "max_retries",
+        "dry_run": "dry_run",
+        "test_command": "test_command",
+        "issue_id": "issue_id",
+        "github_repo": "github_repo",
+        "issue_url": "issue_url",
+        "docs_url": "docs_url",
+    }
+    out = {}
+    for k, v in data.items():
+        key = k.replace("-", "_")  # support kebab-case
+        if key in key_map:
+            out[key_map[key]] = v
+    return out
+
+
 def _parse_args() -> PipelineArgs:
     """Parse command-line arguments into PipelineArgs."""
     parser = argparse.ArgumentParser(
         description="Code pipeline: explore -> plan -> implement -> review -> commit"
     )
     parser.add_argument(
-        "-r", "--repo-path", default=os.getcwd(), help="Repository path"
+        "-c", "--config", help="Path to YAML config file (all params)"
     )
-    parser.add_argument("-t", "--task", help="Task description (required)")
-    parser.add_argument("-b", "--branch", default="main", help="Git branch")
-    parser.add_argument("-n", "--retries", type=int, default=3, help="Max retries")
+    parser.add_argument(
+        "-r", "--repo-path", default=None, help="Repository path"
+    )
+    parser.add_argument("-t", "--task", default=None, help="Task description (required)")
+    parser.add_argument("-b", "--branch", default=None, help="Git branch")
+    parser.add_argument("-n", "--retries", type=int, default=None, help="Max retries")
     parser.add_argument("--dry-run", action="store_true", help="Skip git commit")
-    parser.add_argument("--test-command", default="", help="Test command (e.g. pytest)")
-    parser.add_argument("--issue-id", default="", help="Issue ID for commit")
+    parser.add_argument("--test-command", default=None, help="Test command (e.g. pytest)")
+    parser.add_argument("--issue-id", default=None, help="Issue ID for commit")
     parser.add_argument(
-        "--github-repo", default="", help="GitHub repo for GithubSearchTool"
+        "--github-repo", default=None, help="GitHub repo for GithubSearchTool"
     )
     parser.add_argument(
-        "--issue-url", default="", help="Issue URL for ScrapeWebsiteTool"
+        "--issue-url", default=None, help="Issue URL for ScrapeWebsiteTool"
     )
     parser.add_argument(
-        "--docs-url", default="", help="Docs URL for CodeDocsSearchTool"
+        "--docs-url", default=None, help="Docs URL for CodeDocsSearchTool"
+    )
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable DEBUG logging"
+    )
+    parser.add_argument(
+        "-f", "--from-scratch", action="store_true",
+        help="Ignore checkpoint and run from the beginning",
     )
     ns = parser.parse_args()
+
+    # Load config file as base (if provided)
+    config_data: dict = {}
+    if ns.config:
+        config_data = _load_config(ns.config)
+        # Normalize booleans
+        for key in ("from_scratch", "dry_run"):
+            if key in config_data:
+                v = config_data[key]
+                if isinstance(v, str):
+                    config_data[key] = v.lower() in ("true", "1", "yes")
+
+    # Defaults when no config
+    defaults = {
+        "repo_path": os.getcwd(),
+        "task": "",
+        "branch": "main",
+        "from_scratch": False,
+        "max_retries": 3,
+        "dry_run": False,
+        "test_command": "",
+        "issue_id": "",
+        "github_repo": "",
+        "issue_url": "",
+        "docs_url": "",
+    }
+    # Merge: config first, then defaults, then CLI overrides
+    base = {**defaults, **config_data}
+    cli_overrides = {
+        "repo_path": ns.repo_path,
+        "task": ns.task,
+        "branch": ns.branch,
+        "from_scratch": getattr(ns, "from_scratch", False),
+        "max_retries": ns.retries,
+        "dry_run": ns.dry_run,
+        "test_command": ns.test_command,
+        "issue_id": ns.issue_id,
+        "github_repo": ns.github_repo,
+        "issue_url": ns.issue_url,
+        "docs_url": ns.docs_url,
+    }
+    for k, v in cli_overrides.items():
+        if v is not None:
+            base[k] = v
+    # store_true: only override when user passed the flag (True)
+    if getattr(ns, "dry_run", False):
+        base["dry_run"] = True
+    if getattr(ns, "from_scratch", False):
+        base["from_scratch"] = True
+
     return PipelineArgs(
-        repo_path=ns.repo_path,
-        task=ns.task or "",
-        branch=ns.branch,
-        max_retries=ns.retries,
-        dry_run=ns.dry_run,
-        test_command=ns.test_command,
-        issue_id=ns.issue_id,
-        github_repo=ns.github_repo,
-        issue_url=ns.issue_url,
-        docs_url=ns.docs_url,
+        repo_path=base["repo_path"],
+        task=base["task"] or "",
+        branch=base["branch"],
+        from_scratch=base["from_scratch"],
+        max_retries=base["max_retries"],
+        dry_run=base["dry_run"],
+        test_command=base["test_command"] or "",
+        issue_id=base["issue_id"] or "",
+        github_repo=base["github_repo"] or "",
+        issue_url=base["issue_url"] or "",
+        docs_url=base["docs_url"] or "",
     )
 
 
 class PipelineState(BaseModel):
     """State for the code pipeline flow."""
 
+    id: str = ""
+    from_scratch: bool = False
     repo_path: str = ""
     task: str = ""
     branch: str = "main"
@@ -405,19 +558,30 @@ class PipelineState(BaseModel):
     review_verdict: str = ""
     retry_count: int = 0
     prior_issues: str = ""
+    clarifications: str = ""
+    replan_count: int = 0
+    max_replans: int = 2
     quality_gate_passed: bool = False
     quality_gate_output: str = ""
     verification_passed: bool = False
     verification_output: str = ""
 
 
+@persist(
+    SQLiteFlowPersistence(
+        db_path=str(Path(db_storage_path()) / "code_pipeline_flow_states.db")
+    ),
+    verbose=True,
+)
 class CodePipelineFlow(Flow[PipelineState]):
     """Event-driven coding pipeline: explore 1 plan 1 implement 1 review 1 commit."""
 
     def _run_quality_check(self, test_command: str) -> tuple[bool, str]:
         """Run test command in repo. Return (passed, output)."""
         if not test_command:
+            logger.debug("Quality gate skipped (no test_command)")
             return True, ""
+        logger.info("Running quality gate: %s", test_command)
         try:
             result = subprocess.run(
                 test_command,
@@ -428,31 +592,52 @@ class CodePipelineFlow(Flow[PipelineState]):
                 timeout=300,
             )
             output = (result.stdout or "") + (result.stderr or "")
-            return result.returncode == 0, output
+            passed = result.returncode == 0
+            logger.info("Quality gate %s (exit=%d)", "PASSED" if passed else "FAILED", result.returncode)
+            return passed, output
         except subprocess.TimeoutExpired:
+            logger.error("Quality gate timed out after 300s", exc_info=True)
             return False, "Error: command timed out after 300 seconds."
         except Exception as e:
+            logger.error("Quality gate failed: %s", e, exc_info=True)
             return False, str(e)
 
     def _run_crew(self, crew_class, inputs: dict, state_attr: str | None = None):
         """Run a crew and optionally store result in state. Returns raw output."""
-        result = _kickoff_with_retry(crew_class().crew(), inputs)
+        crew_name = crew_class.__name__
+        logger.info("Running crew: %s", crew_name)
+        try:
+            result = _kickoff_with_retry(crew_class().crew(), inputs)
+        except Exception as e:
+            logger.error("Crew %s failed: %s", crew_name, e, exc_info=True)
+            raise
         raw = result.raw if hasattr(result, "raw") else str(result)
         if state_attr:
             setattr(self.state, state_attr, raw)
+            logger.info("Crew %s completed -> state.%s (len=%d)", crew_name, state_attr, len(raw))
+        else:
+            logger.info("Crew %s completed (no state_attr)", crew_name)
         return raw
 
     def _retry_or_abort(self, prior_issues_prefix: str, output: str) -> str:
         """Increment retry count; return 'pipeline_aborted' or 'retry'."""
         self.state.retry_count += 1
         if self.state.retry_count >= self.state.max_retries:
+            logger.warning("Max retries (%d) reached -> pipeline_aborted", self.state.max_retries)
             return "pipeline_aborted"
         self.state.prior_issues = prior_issues_prefix + output
+        logger.info("Retry %d/%d requested, prior_issues updated", self.state.retry_count, self.state.max_retries)
         return "retry"
 
     @start()
     def analyze_issue(self):
         """Run IssueAnalystCrew to parse issue into structured requirements."""
+        if self.state.issue_analysis and not self.state.from_scratch:
+            logger.info("Flow step: analyze_issue (resumed, cached)")
+            return self.state.issue_analysis
+        logger.info("Flow step: analyze_issue (start)")
+        repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
+        os.environ["REPO_PATH"] = repo_path
         os.environ["GITHUB_REPO"] = self.state.github_repo or ""
         os.environ["ISSUE_URL"] = self.state.issue_url or ""
         os.environ["DOCS_URL"] = self.state.docs_url or ""
@@ -468,40 +653,82 @@ class CodePipelineFlow(Flow[PipelineState]):
 
     @listen(analyze_issue)
     def explore(self):
-        """Run ExplorerCrew and set REPO_PATH for all crews. Uses subprocess+fallback to avoid segfault killing the pipeline."""
+        """Run ExplorerCrew sequentially. On failure, use fallback exploration."""
+        if self.state.exploration and not self.state.from_scratch:
+            logger.info("Flow step: explore (resumed, cached)")
+            return self.state.exploration
+        logger.info("Flow step: explore")
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
         os.environ["REPO_PATH"] = repo_path
         self.state.repo_path = repo_path
-        raw = _run_explore_with_fallback(
-            repo_path, self.state.issue_analysis, "exploration"
-        )
+        raw = _run_explore_in_process(repo_path, self.state.issue_analysis)
         self.state.exploration = raw
         return raw
 
     @listen(explore)
+    def clarify(self):
+        """
+        Clarify step: ask the human targeted questions grounded in the exploration
+        results, before the architect creates the implementation plan.
+        """
+        if self.state.clarifications and not self.state.from_scratch:
+            logger.info("Flow step: clarify (resumed, cached)")
+            return self.state.clarifications
+        logger.info("Flow step: clarify")
+        return self._run_crew(
+            ClarifyCrew,
+            {
+                "task": self.state.task,
+                "issue_analysis": self.state.issue_analysis,
+                "exploration": self.state.exploration,
+            },
+            "clarifications",
+        )
+
+    @listen(or_(clarify, "do_replan"))
     def plan(self):
         """Run ArchitectCrew to produce file-level plan."""
+        if self.state.plan and not self.state.from_scratch:
+            logger.info("Flow step: plan (resumed, cached)")
+            return self.state.plan
+        logger.info("Flow step: plan")
         return self._run_crew(
             ArchitectCrew,
             {
                 "task": self.state.task,
                 "exploration": self.state.exploration,
                 "issue_analysis": self.state.issue_analysis,
+                "prior_issues": self.state.prior_issues,
+                "clarifications": self.state.clarifications,
                 "github_repo": self.state.github_repo,
                 "docs_url": self.state.docs_url,
             },
             "plan",
         )
 
-    @listen(or_(plan, "retry"))
+    @listen(plan)
     def implement(self):
-        """Run ImplementerCrew; fires on first run and on retries."""
+        """Run ImplementerCrew; fires on first run (after plan)."""
+        if self.state.implementation and not self.state.from_scratch:
+            logger.info("Flow step: implement (resumed, cached)")
+            return self.state.implementation
+        return self._run_implement()
+
+    @listen("retry")
+    def implement_retry(self):
+        """Run ImplementerCrew on retry; fires when route_verdict or route_after_implement returns 'retry'."""
+        return self._run_implement()
+
+    def _run_implement(self):
+        """Shared implementation logic for initial run and retries."""
+        logger.info("Flow step: implement (retry_count=%d)", self.state.retry_count)
         return self._run_crew(
             ImplementerCrew,
             {
                 "task": self.state.task,
                 "plan": self.state.plan,
                 "prior_issues": self.state.prior_issues,
+                "clarifications": self.state.clarifications,
                 "repo_path": self.state.repo_path,
                 "issue_analysis": self.state.issue_analysis,
             },
@@ -510,15 +737,26 @@ class CodePipelineFlow(Flow[PipelineState]):
 
     @listen(implement)
     def quality_gate(self):
-        """Run quality check (tests) if test_command is set."""
+        """Run quality check (tests) if test_command is set; fires after initial implement."""
+        return self._run_quality_gate()
+
+    @listen(implement_retry)
+    def quality_gate_retry(self):
+        """Run quality check after retry; fires after implement_retry."""
+        return self._run_quality_gate()
+
+    def _run_quality_gate(self):
+        """Shared quality gate logic."""
+        logger.info("Flow step: quality_gate")
         passed, output = self._run_quality_check(self.state.test_command)
         self.state.quality_gate_passed = passed
         self.state.quality_gate_output = output
         return passed
 
-    @router(quality_gate)
+    @router(or_(quality_gate, quality_gate_retry))
     def route_after_implement(self):
         """Route to review or retry based on quality gate."""
+        logger.info("Flow step: route_after_implement (quality_gate_passed=%s)", self.state.quality_gate_passed)
         if not self.state.test_command:
             return "review"
         if self.state.quality_gate_passed:
@@ -529,10 +767,16 @@ class CodePipelineFlow(Flow[PipelineState]):
         )
 
     @listen("review")
-    def review(self):
-        """Run ReviewerCrew; sets review_verdict (APPROVED or ISSUES:...)."""
-        return self._run_crew(
-            ReviewerCrew,
+    def run_review(self):
+        """Run ReviewerCrew; sets review_verdict (APPROVED or ISSUES:...).
+        Named run_review to avoid collision: method name must differ from listen('review')
+        or CrewAI re-triggers this step when it completes (infinite loop)."""
+        if self.state.review_verdict and not self.state.from_scratch:
+            logger.info("Flow step: review (resumed, cached)")
+            return self.state.review_verdict
+        logger.info("Flow step: review")
+        result = _kickoff_with_retry(
+            ReviewerCrew().crew(),
             {
                 "task": self.state.task,
                 "plan": self.state.plan,
@@ -541,26 +785,93 @@ class CodePipelineFlow(Flow[PipelineState]):
                 "issue_analysis": self.state.issue_analysis,
                 "docs_url": self.state.docs_url,
             },
-            "review_verdict",
         )
+        verdict_str = _format_review_verdict(result)
+        self.state.review_verdict = verdict_str
+        logger.info("ReviewerCrew completed -> state.review_verdict (len=%d)", len(verdict_str))
+        return verdict_str
 
-    @router(review)
+    @router(run_review)
     def route_verdict(self):
         """Route based on verdict: commit, retry, or abort. Run verification when APPROVED."""
         verdict = self.state.review_verdict.strip()
+        logger.info("Flow step: route_verdict (verdict_prefix=%s)", verdict[:50] if verdict else "(empty)")
         if verdict.upper().startswith("APPROVED"):
             if self.state.test_command:
+                logger.info("Running verification tests after APPROVED")
                 passed, output = self._run_quality_check(self.state.test_command)
                 self.state.verification_passed = passed
                 self.state.verification_output = output
                 if not passed:
+                    logger.warning("Verification failed after approval -> retry")
                     return self._retry_or_abort(
                         "Tests failed after approval. Fix:\n\n", output
                     )
-            return "commit"
+            logger.info("APPROVED -> routing to human_gate")
+            return "human_gate"
         return self._retry_or_abort(
             "IMPORTANT — A previous attempt was REJECTED. Fix ALL:\n\n", verdict
         )
+
+    @listen("human_gate")
+    @human_feedback(
+        message=(
+            "──────────────────────────────────────────────────────────\n"
+            "🔍  PIPELINE REVIEW — Human approval required before commit\n"
+            "──────────────────────────────────────────────────────────\n\n"
+            "The AI reviewer returned APPROVED.\n\n"
+            "Review the output above, then reply:\n"
+            "  • 'commit'  — approve and commit to the branch\n"
+            "  • 'replan'  — reject and describe what needs to change\n\n"
+            "Your feedback (if rejecting) will be fed back into the planner."
+        ),
+        emit=["commit", "replan"],
+        llm="gpt-4o-mini",
+        default_outcome="replan",
+    )
+    def run_human_gate(self):
+        """
+        Present the final review verdict to the human.
+        The method output is what gets shown — include all context the human needs.
+        """
+        logger.info("Flow step: human_gate (awaiting commit/replan)")
+        return (
+            f"## Task\n{self.state.task}\n\n"
+            f"## Review Verdict\n{self.state.review_verdict}\n\n"
+            f"## Implementation Summary\n{self.state.implementation}\n\n"
+            f"## Plan\n{self.state.plan}"
+        )
+
+    @listen("replan")
+    def handle_human_replan(self, result: HumanFeedbackResult):
+        """
+        Human rejected the implementation. Feed their feedback back as prior_issues
+        and restart from the plan step.
+        """
+        logger.info("Flow step: handle_human_replan (feedback_len=%d)", len(result.feedback or ""))
+        if self.state.replan_count >= self.state.max_replans:
+            logger.warning("Max replans (%d) reached, aborting", self.state.max_replans)
+            print(
+                f"\n⛔  Max replans ({self.state.max_replans}) reached. "
+                "Aborting pipeline.\n"
+            )
+            return "pipeline_aborted"
+
+        self.state.replan_count += 1
+        self.state.retry_count = 0  # reset AI retry counter for the new attempt
+
+        # Store human feedback as prior issues so the planner and implementer see it
+        self.state.prior_issues = (
+            f"[Human reviewer requested changes in replan #{self.state.replan_count}]\n"
+            f"{result.feedback}"
+        )
+
+        logger.info("Replan #%d -> do_replan (feeding prior_issues)", self.state.replan_count)
+        print(
+            f"\n🔄  Replan #{self.state.replan_count} requested.\n"
+            f"Feedback: {result.feedback}\n"
+        )
+        return "do_replan"
 
     def _make_feature_branch_name(self) -> str:
         """Generate a feature branch name from task and issue_id."""
@@ -573,9 +884,10 @@ class CodePipelineFlow(Flow[PipelineState]):
         return f"feature/{slug}"
 
     @listen("commit")
-    def commit(self):
+    def run_commit(self):
         """Run CommitCrew; creates feature branch and commits. Skips if dry_run."""
         feature_branch = self._make_feature_branch_name()
+        logger.info("Flow step: commit (dry_run=%s, feature_branch=%s)", self.state.dry_run, feature_branch)
         return self._run_crew(
             CommitCrew,
             {
@@ -588,10 +900,32 @@ class CodePipelineFlow(Flow[PipelineState]):
             state_attr=None,
         )
 
+    @listen(run_commit)
+    def create_pr(self):
+        """Push branch and create PR via gh CLI. Skips if dry_run or no github_repo."""
+        if self.state.dry_run:
+            logger.info("Flow step: create_pr skipped (dry_run)")
+            return "PR creation skipped (dry_run)"
+        if not (self.state.github_repo or "").strip():
+            logger.info("Flow step: create_pr skipped (no github_repo)")
+            return "PR creation skipped (no --github-repo)"
+        feature_branch = self._make_feature_branch_name()
+        result = _create_pr(
+            repo_path=self.state.repo_path,
+            feature_branch=feature_branch,
+            base_branch=self.state.branch,
+            task=self.state.task,
+            implementation=self.state.implementation,
+            github_repo=self.state.github_repo.strip(),
+        )
+        logger.info("Flow step: create_pr -> %s", result[:80] if result else "(none)")
+        return result
+
     @listen("pipeline_aborted")
     def handle_abort(self):
         """Terminal: return message with retry count and last verdict. Uses distinct
         event name to avoid loop (completing 'abort' would re-emit and retrigger)."""
+        logger.warning("Flow step: handle_abort (pipeline aborted)")
         msg = (
             f"Pipeline aborted after {self.state.retry_count} retries. "
             f"Last verdict:\n\n{self.state.review_verdict}"
@@ -603,6 +937,7 @@ def kickoff(
     repo_path: str | None = None,
     task: str | None = None,
     branch: str | None = None,
+    from_scratch: bool | None = None,
     max_retries: int | None = None,
     dry_run: bool | None = None,
     test_command: str | None = None,
@@ -613,10 +948,12 @@ def kickoff(
     inputs: dict | None = None,
 ):
     """Run the code pipeline flow. Uses argparse when invoked from CLI."""
+    _configure_logging()
     overrides = {
         "repo_path": repo_path,
         "task": task,
         "branch": branch,
+        "from_scratch": from_scratch,
         "max_retries": max_retries,
         "dry_run": dry_run,
         "test_command": test_command,
@@ -629,9 +966,35 @@ def kickoff(
     flow_inputs = (inputs or {}) | args.to_flow_inputs()
     if not flow_inputs.get("task"):
         raise ValueError("task is required (use --task / -t)")
-    return CodePipelineFlow().kickoff(inputs=flow_inputs)
+    logger.info("Pipeline kickoff: task=%s, repo_path=%s", flow_inputs.get("task", "")[:80], flow_inputs.get("repo_path", ""))
+    return _execute_flow(flow_inputs)
 
 
+@log_exceptions("Pipeline kickoff")
+def _execute_flow(inputs: dict):
+    """Run the pipeline flow. Decorator logs any exception before re-raising."""
+    repo_path = os.path.abspath(inputs.get("repo_path", os.getcwd()))
+    task = inputs.get("task", "")
+    from_scratch = inputs.get("from_scratch", False)
+
+    flow = CodePipelineFlow()
+    kickoff_inputs = dict(inputs)
+
+    if not from_scratch and task:
+        checkpoint_id = _load_checkpoint(repo_path, task)
+        if checkpoint_id:
+            kickoff_inputs["id"] = checkpoint_id
+            logger.info("Resuming from checkpoint (flow_id=%s)", checkpoint_id[:8])
+
+    result = flow.kickoff(inputs=kickoff_inputs)
+
+    if task:
+        _save_checkpoint(repo_path, task, flow.flow_id)
+
+    return result
+
+
+@log_exceptions("Flow plot")
 def plot():
     """Plot the flow diagram."""
     flow = CodePipelineFlow()
@@ -646,18 +1009,31 @@ def run_with_trigger():
     try:
         trigger_payload = json.loads(sys.argv[1])
     except json.JSONDecodeError as e:
+        logger.error("Invalid JSON trigger payload: %s", e, exc_info=True)
         raise ValueError(f"Invalid JSON payload: {e}") from e
 
+    return _execute_flow_with_trigger(trigger_payload)
+
+
+@log_exceptions("Flow execution (run_with_trigger)")
+def _execute_flow_with_trigger(trigger_payload: dict):
+    """Run flow with trigger payload. Decorator logs any exception before re-raising."""
     flow = CodePipelineFlow()
     return flow.kickoff({"crewai_trigger_payload": trigger_payload})
 
 
-if __name__ == "__main__":
+@log_exceptions("Pipeline exited")
+def _main():
+    """Entry point for CLI. Decorator logs any exception before re-raising."""
     args = _parse_args()
+    if getattr(args, "verbose", False):
+        os.environ["CODE_PIPELINE_LOG_LEVEL"] = "DEBUG"
+    _configure_logging()
     kickoff(
         repo_path=args.repo_path,
         task=args.task,
         branch=args.branch,
+        from_scratch=args.from_scratch,
         max_retries=args.max_retries,
         dry_run=args.dry_run,
         test_command=getattr(args, "test_command", ""),
@@ -666,3 +1042,7 @@ if __name__ == "__main__":
         issue_url=getattr(args, "issue_url", ""),
         docs_url=getattr(args, "docs_url", ""),
     )
+
+
+if __name__ == "__main__":
+    _main()

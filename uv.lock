@@ -444,10 +444,14 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "crewai", extra = ["litellm", "tools"] },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "crewai", extras = ["litellm", "tools"], specifier = "==1.9.3" }]
+requires-dist = [
+    { name = "crewai", extras = ["litellm", "tools"], specifier = "==1.9.3" },
+    { name = "pyyaml", specifier = ">=6.0" },
+]
 
 [[package]]
 name = "colorama"

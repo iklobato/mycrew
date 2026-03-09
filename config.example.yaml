@@ -1,0 +1,16 @@
+# Code pipeline run configuration
+# Use: task run CONFIG=config.yaml
+# Or:  uv run kickoff -c config.yaml
+# CLI args override values from this file.
+
+task: "Add a feature or fix based on the issue"
+repo_path: "."
+branch: main
+from_scratch: false
+max_retries: 3
+dry_run: false
+test_command: ""  # e.g. "pytest" or "npm test"
+issue_id: ""
+github_repo: ""   # owner/repo for GithubSearchTool
+issue_url: ""     # URL for ScrapeWebsiteTool
+docs_url: ""      # URL for CodeDocsSearchTool
