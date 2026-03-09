@@ -52,7 +52,7 @@ security_review_task:
 
     Plan: {plan}
     Implementation: {implementation}
-    Repository: {repo_path}
+    Context: {repo_context}
 
     Use Repo Shell Tool: git diff --name-only, cat <changed_files>.
     Check for: SQL injection, XSS, auth bypass, unsafe input, exposed secrets.
@@ -72,7 +72,7 @@ performance_review_task:
   description: >
     Performance review. You receive the full review output.
 
-    Repository: {repo_path}
+    Context: {repo_context}
     Plan: {plan}
 
     Use Repo Shell: git diff --name-only, cat changed files.
@@ -88,7 +88,7 @@ accessibility_review_task:
   description: >
     Accessibility check when UI/frontend changed. You receive full output.
 
-    Repository: {repo_path}
+    Context: {repo_context}
 
     If no .jsx, .tsx, .vue, .html in git diff --name-only, append:
     ## Accessibility\nSkipped (no UI changes).
@@ -105,7 +105,7 @@ backward_compat_task:
   description: >
     Backward compatibility check. You receive full output.
 
-    Repository: {repo_path}
+    Context: {repo_context}
     Plan: {plan}
 
     Check for breaking changes: signature changes, removed exports. Append:
@@ -121,7 +121,7 @@ convention_check_task:
     Convention check and produce final verdict. You receive output from
     review, security, performance, accessibility, and backward_compat tasks.
 
-    Repository: {repo_path}
+    Context: {repo_context}
     Plan: {plan}
 
     Use Repo Shell Tool: git diff --name-only, cat changed files.

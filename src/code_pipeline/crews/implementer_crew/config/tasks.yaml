@@ -13,7 +13,8 @@ implement_task:
 
     {prior_issues}
 
-    Repository path: {repo_path}
+    Context:
+    {repo_context}
 
     ## MANDATORY STEP — You MUST use Repo File Writer Tool
 
@@ -32,7 +33,7 @@ implement_task:
 
     - **Repo File Writer Tool** — REQUIRED. Params: filename (relative path, e.g. src/foo.py),
       content (full file content), overwrite=true when modifying existing files.
-      You MUST call this tool for each file in the plan. Paths are relative to {repo_path}.
+      You MUST call this tool for each file in the plan. Paths are relative to the repository.
     - **Repo Shell Tool** — Read files before modifying: cat path, head -100 path.
       Run tests: pytest, npm test.
     - **Code Interpreter** (if Docker available) — Validate snippets. Optional.
@@ -54,7 +55,7 @@ docstring_write_task:
     Add docstrings to new/changed code. You receive implementation from implement_task.
 
     Plan: {plan}
-    Repository: {repo_path}
+    Context: {repo_context}
 
     Use Repo Shell to read changed files (git diff --name-only). For each
     Python/JS file with new functions/classes, add docstrings. Use Repo
@@ -69,7 +70,7 @@ type_hint_task:
     Add type hints to Python files. You receive output from docstring_write_task.
 
     Plan: {plan}
-    Repository: {repo_path}
+    Context: {repo_context}
 
     For each changed .py file, ensure type hints on def/async def. Use
     Repo File Writer Tool. Skip non-Python. Output "Type hints: (list)."
@@ -83,8 +84,7 @@ test_write_task:
     Add or update tests. You receive the implementation output from type_hint_task.
 
     Plan: {plan}
-    Repository: {repo_path}
-    Test command: {test_command}
+    Context: {repo_context}
     Exploration (Test Layout): {exploration}
 
     If test_command is empty, output "Test write skipped (no test_command)."
@@ -103,7 +103,7 @@ lint_fix_task:
   description: >
     Run linter and auto-fix. You receive output from test_write_task.
 
-    Repository: {repo_path}
+    Context: {repo_context}
     Exploration (Lint & Format): {exploration}
 
     Use Repo Shell: run black ., ruff check --fix ., eslint --fix ., etc.
@@ -119,7 +119,7 @@ self_review_task:
     Self-review before submit. You receive the full implementation output from lint_fix_task.
 
     Plan: {plan}
-    Repository: {repo_path}
+    Context: {repo_context}
 
     Use Repo Shell Tool: git status, git diff --name-only. Verify:
     1. Only files from the plan were modified

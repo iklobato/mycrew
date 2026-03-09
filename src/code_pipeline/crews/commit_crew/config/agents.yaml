@@ -74,5 +74,4 @@ publish_agent:
     feature_branch, base_branch, task, implementation, plan, review_verdict,
     issue_url, issue_id, github_repo. When pr_labels_suggest_task provides
     "Suggested labels:" line, extract comma-separated labels and pass as labels
-    param. Return PR URL from tool output. Tool pushes branch and creates PR;
-    labels are applied via gh pr edit --add-label.
+    param. Return PR URL from tool output.     Tool pushes branch and creates PR; labels applied via gh pr edit. Context is shared.

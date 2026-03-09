@@ -1,6 +1,8 @@
 commit_task:
   description: >
-    Repository: {repo_path}
+    Context:
+    {repo_context}
+
     Base branch (branch from): {branch}
     Feature branch (create and commit to): {feature_branch}
     Dry run: {dry_run}
@@ -51,7 +53,7 @@ commit_message_review_task:
   description: >
     Validate the last commit message follows Conventional Commits format.
 
-    Repository: {repo_path}
+    Context: {repo_context}
     Dry run: {dry_run}
 
     Use Repo Shell Tool: git log -1 --format=%B to read the last commit message.
@@ -73,7 +75,7 @@ changelog_task:
   description: >
     Update CHANGELOG if it exists. You receive output from commit_message_review_task.
 
-    Repository: {repo_path}
+    Context: {repo_context}
     Task: {task}
     Dry run: {dry_run}
 
@@ -116,8 +118,8 @@ publish_task:
   description: >
     After the commit is done, publish the branch and create a PR.
 
+    Context: {repo_context}
     Dry run: {dry_run}
-    GitHub repo: {github_repo}
     Feature branch: {feature_branch}
     Base branch: {branch}
 

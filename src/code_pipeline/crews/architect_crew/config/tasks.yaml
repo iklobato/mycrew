@@ -3,8 +3,7 @@ plan_task:
     Given the task, issue analysis, and exploration:
 
     ## Context
-    - Repository: {repo_path}
-    - Test command (if set): {test_command}
+    {repo_context}
 
     Task: {task}
 
@@ -58,7 +57,9 @@ dependency_order_task:
   description: >
     Order the plan by dependency. You receive the plan from plan_task.
 
-    Repository: {repo_path}
+    Context:
+    {repo_context}
+
     Exploration (for Dependency Map): {exploration}
 
     Use Repo Shell Tool: grep imports, cat key files. Determine which files
@@ -102,8 +103,9 @@ test_plan_task:
   description: >
     Add test plan when test_command is set. You receive the full plan.
 
-    Repository: {repo_path}
-    Test command: {test_command}
+    Context:
+    {repo_context}
+
     Exploration (Test Layout): {exploration}
 
     If test_command is empty, append "## Test Plan\nSkipped (no test_command)."

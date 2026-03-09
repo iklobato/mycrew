@@ -15,8 +15,8 @@ similar_issues_synthesizer:
     (2) Out-of-scope in similar: what was explicitly excluded in comparable issues,
     (3) Company moment: recent merges and open work. When github_repo is empty,
     output "## Similar Issues\nSkipped (no github_repo)." Do not call any other
-    tools. Keep output concise and structured. Your output is passed as context
-    to the issue_analyst for the analyze_task.
+    tools. Keep output concise and structured.     Your output is passed as context to the issue_analyst.
+    Repository, GitHub, and other context are auto-detected when running in the repo.
 
 issue_analyst:
   role: >

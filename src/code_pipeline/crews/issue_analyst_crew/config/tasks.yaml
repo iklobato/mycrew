@@ -2,11 +2,12 @@ similar_issues_task:
   description: >
     Fetch similar issues and company moment. Run FIRST.
 
-    Repository: {repo_path}
-    GitHub repo: {github_repo}
+    Context:
+    {repo_context}
+
     Task (for search keywords): {task}
 
-    If github_repo is empty, output: "## Similar Issues\nSkipped (no github_repo)."
+    If GitHub in context is empty, output: "## Similar Issues\nSkipped (no github_repo)."
 
     Otherwise use Repo Shell Tool with gh (add -R "{github_repo}" to all gh commands):
     - gh issue list -R "{github_repo}" --state=all -L 30 (or -S "keywords" from task)
@@ -28,11 +29,9 @@ analyze_task:
     Parse the following issue card into structured requirements.
     Use the Similar Issues from the previous task (context) when available.
 
-    ## Provided context
-    - Repository: {repo_path}
+    ## Context
+    {repo_context}
     - Branch: {branch}
-    - Test command (if set): {test_command}
-    - Docs URL (if set): {docs_url}
 
     ## Task
     {task}
