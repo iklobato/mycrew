@@ -33,7 +33,7 @@ class IssueAnalystCrew:
             config=self.agents_config["issue_analyst"],  # type: ignore[index]
             tools=tools,
             llm=get_llm_for_stage("analyze_issue"),
-            verbose=True,
+            verbose=False,
         )
 
     @task
@@ -48,7 +48,7 @@ class IssueAnalystCrew:
             agents=self.agents,
             tasks=self.tasks,
             process=Process.sequential,
-            verbose=True,
+            verbose=False,
             tracing=True,
             output_log_file=True,
             memory=False,

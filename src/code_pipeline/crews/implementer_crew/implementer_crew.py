@@ -26,7 +26,7 @@ class ImplementerCrew:
             config=self.agents_config["implementer"],  # type: ignore[index]
             tools=tools,
             llm=get_llm_for_stage("implement"),
-            verbose=True,
+            verbose=False,
         )
 
     @task
@@ -41,7 +41,7 @@ class ImplementerCrew:
             agents=self.agents,
             tasks=self.tasks,
             process=Process.sequential,
-            verbose=True,
+            verbose=False,
             tracing=True,
             output_log_file=True,
             memory=False,

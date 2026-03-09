@@ -5,6 +5,7 @@ import os
 
 from crewai.tools import BaseTool
 
+from code_pipeline.tools.repo_file_writer_tool import RepoFileWriterTool
 from code_pipeline.tools.repo_shell_tool import RepoShellTool
 from code_pipeline.utils import log_exceptions
 
@@ -69,12 +70,10 @@ def get_tools_for_stage(
         return tools
 
     if stage == "implement":
-        from crewai_tools import FileWriterTool
-
-        # RepoShellTool + FileWriterTool only — avoid crewai_tools DirectoryReadTool/FileReadTool segfault on macOS
+        # RepoScopedFileWriterTool writes to repo_path (not cwd); avoids files landing in wrong dir
         tools = [
             RepoShellTool(repo_path=repo_path),
-            FileWriterTool(),
+            RepoFileWriterTool(repo_path=repo_path),
         ]
         ci = get_code_interpreter_tool()
         if ci:

@@ -15,29 +15,36 @@ implement_task:
 
     Repository path: {repo_path}
 
-    Implement the plan. Satisfy each acceptance criterion.
+    ## MANDATORY STEP — You MUST use Repo File Writer Tool
 
-    SURGICAL CHANGES ONLY: Modify only the files and lines listed in the plan.
-    Do not touch other files. Do not add: new abstractions, helpers, logging,
-    comments, or optimizations unless explicitly in the plan. Preserve existing
-    structure and style. If the plan says "add X", add X—nothing else.
+    The plan lists "Files to Create" and "Files to Modify". For EACH file:
+    1. Use Repo Shell Tool to read existing content (e.g. cat path) if modifying.
+    2. Use Repo File Writer Tool to write the file. Pass: filename (path from plan),
+       content (full file content), overwrite=true for existing files.
+    You have NOT completed the task until you have invoked Repo File Writer Tool
+    for every file in the plan. If the plan lists 3 files, you must call the tool
+    3 times. Do not summarize or describe changes — actually write the files.
+
+    SURGICAL CHANGES ONLY: Modify only the files listed in the plan.
+    Do not add abstractions, helpers, or improvements beyond the plan.
 
     ## Tools
 
-    - **File Writer Tool** — Params: filename, content, directory (default ./), overwrite (default false).
-      Use relative paths. Set overwrite=true to modify existing files.
-    - **Repo Shell Tool** — Param: command. Read before write: cat path, head path.
-      Run tests: pytest tests/, npm test, cargo test.
-    - **Code Interpreter** (if Docker available) — Params: code, libraries_used.
-      Run Python snippets for validation. Always print the result.
+    - **Repo File Writer Tool** — REQUIRED. Params: filename (relative path, e.g. src/foo.py),
+      content (full file content), overwrite=true when modifying existing files.
+      You MUST call this tool for each file in the plan. Paths are relative to {repo_path}.
+    - **Repo Shell Tool** — Read files before modifying: cat path, head -100 path.
+      Run tests: pytest, npm test.
+    - **Code Interpreter** (if Docker available) — Validate snippets. Optional.
 
-    Use Repo Shell Tool to read existing files before modifying. Use
-    CodeInterpreterTool when useful to validate snippets. Use relative paths
-    for all file writes. Run the project's test command and fix failures before finishing.
+    Workflow: Read each file (Repo Shell) → Write/overwrite (Repo File Writer) → Run tests.
+    If prior_issues is non-empty, fix those issues before submitting.
 
-    If prior_issues above is non-empty, it means a previous implementation was
-    rejected. You MUST fix all listed issues before submitting.
+    FALLBACK: If the plan above lacks ## Files to Create / ## Files to Modify with paths,
+    extract file paths from the clarification (e.g. src/models/tasks.py). Use Repo Shell
+    Tool to read each file, then Repo File Writer Tool to write. The clarification often
+    mentions exact paths—use them.
   expected_output: >
-    Implementation complete. All files created or modified as per the plan.
-    Tests must pass.
+    List each file written: "Wrote path/to/file.ext: description." Must match
+    Repo File Writer Tool invocations. Tests pass.
   agent: implementer

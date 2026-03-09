@@ -24,24 +24,24 @@ plan_task:
     - **Repo Shell Tool** — Param: command. Read files: cat path, head -50 path.
       Confirm paths exist: ls dir, find . -name "*.py".
 
-    Produce a file-level implementation plan. Map your plan to the acceptance
-    criteria above. Use GithubSearchTool to find similar implementations.
-    Use CodeDocsSearchTool to reference architecture docs.
-    Use Repo Shell Tool to read relevant source files and confirm paths. MINIMUM CHANGES: Only
-    list files and changes strictly needed for the acceptance criteria.
-    Prefer editing existing code over adding new modules. One targeted change
-    per criterion when possible. Do not add speculative improvements. Do NOT
-    write any code. Only describe what to add or change. Use Repo Shell Tool
-    to confirm paths exist before listing them.
+    CRITICAL: Your output MUST include ## Files to Create and ## Files to Modify with
+    concrete file paths. Do NOT respond with "I will explore" or intent—call Repo Shell
+    Tool first (ls, find, cat) to gather structure, THEN output the plan.
 
-    Use this exact structure:
+    Produce a file-level implementation plan. Use Repo Shell Tool to read source files
+    and confirm paths. Extract paths from exploration and clarifications if present.
+    MINIMUM CHANGES: Only list files strictly needed. Prefer modifying over creating.
+
+    Use this exact structure (paths must be usable by Repo File Writer Tool):
     ## Files to Create
-    (path + brief description for each)
+    - path/to/newfile.py: description of what to add
     ## Files to Modify
-    (path + list of changes for each)
+    - path/to/existing.py: list changes (add X at line N, replace Y with Z)
     ## Order
-    (if dependencies matter, list the order to implement)
+    Implement in this order if dependencies exist.
+
+    Each path must be a valid relative path (e.g. src/module.py, tests/test_foo.py).
   expected_output: >
-    A file-level plan with sections: Files to Create, Files to Modify, Order.
-    No code. Only descriptions of changes.
+    File-level plan with "Files to Create" and "Files to Modify" sections.
+    One file path per bullet. No code. Exact paths only.
   agent: architect

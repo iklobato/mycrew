@@ -28,7 +28,7 @@ class ExplorerCrew:
             config=self.agents_config["repo_explorer"],  # type: ignore[index]
             tools=tools,
             llm=get_llm_for_stage("explore"),
-            verbose=True,
+            verbose=False,
         )
 
     @task
@@ -43,7 +43,7 @@ class ExplorerCrew:
             agents=self.agents,
             tasks=self.tasks,
             process=Process.sequential,
-            verbose=True,
+            verbose=False,
             tracing=True,
             output_log_file=True,
             memory=False,

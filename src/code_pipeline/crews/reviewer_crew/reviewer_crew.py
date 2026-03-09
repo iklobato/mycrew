@@ -43,7 +43,7 @@ class ReviewerCrew:
             config=self.agents_config["reviewer"],  # type: ignore[index]
             tools=tools,
             llm=get_llm_for_stage("review"),
-            verbose=True,
+            verbose=False,
         )
 
     @task
@@ -60,7 +60,7 @@ class ReviewerCrew:
             agents=self.agents,
             tasks=self.tasks,
             process=Process.sequential,
-            verbose=True,
+            verbose=False,
             tracing=True,
             output_log_file=True,
             memory=False,

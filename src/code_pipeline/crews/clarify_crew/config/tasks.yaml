@@ -40,6 +40,14 @@ clarify_task:
        (mention the file, pattern, or convention you're referring to).
        Offer 2–4 concrete answer options when possible. Order them from top
        recommendation to last (best option first, least preferred last).
+       **For each option, include an example code snippet (max 20 lines)** to help the
+       human visualize the implementation. Format each snippet with markdown code fences:
+         ```language
+         code here
+         ```
+       Use the correct language (python, typescript, javascript, etc.) based on the
+       codebase. Keep snippets concise and illustrative — show structure, imports,
+       or key patterns, not full implementations.
     4. Based on the answers, decide if follow-ups are needed. Keep asking until
        you have no remaining open assumptions.
     5. Do NOT ask about things already clearly answered in the issue analysis.
@@ -48,13 +56,27 @@ clarify_task:
 
     ## Output format
 
-    Produce a structured Clarifications & Development Guidelines document:
+    Produce a structured Clarifications & Development Guidelines document.
+    When asking questions via ask_human, each option should include example code.
+    Example question format:
+
+    Q: Where should we add the login endpoint? (Found: auth/routes.py uses FastAPI)
+    Option A (recommended): Add to auth/routes.py
+    ```python
+    @router.post("/login")
+    async def login(creds: LoginSchema): ...
+    ```
+    Option B: Create auth/v2/routes.py
+    ```python
+    # new module
+    router = APIRouter(prefix="/v2")
+    ```
 
     ```
     # Clarifications & Development Guidelines
 
     ## Module / File Ownership
-    Q: <your question, referencing specific files found in exploration>
+    Q: <your question with code snippets per option>
     A: <human answer>
 
     ## Conventions & Patterns
@@ -80,7 +102,8 @@ clarify_task:
   expected_output: >
     A structured Clarifications & Development Guidelines document in Markdown.
     Every question must reference a specific file, pattern, or finding from the exploration.
-    Every answer must be recorded verbatim.
+    Every option in a question must include an example code snippet (max 20 lines) in
+    ```language format for readability. Every answer must be recorded verbatim.
     This document is the authoritative source of truth for the architect —
     it overrides any assumptions the architect might otherwise make.
   agent: clarifier

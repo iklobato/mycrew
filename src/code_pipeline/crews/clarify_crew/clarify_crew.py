@@ -26,7 +26,7 @@ class ClarifyCrew:
             config=self.agents_config["clarifier"],  # type: ignore[index]
             tools=[ask_human],
             llm=get_llm_for_stage("analyze_issue"),
-            verbose=True,
+            verbose=False,
         )
 
     @task

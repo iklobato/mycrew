@@ -112,6 +112,6 @@ gh pr list -R "owner/repo" --state=open -L 20
 
 **What it does:** Prompts the human operator with a question and returns their answer. Use when task is ambiguous.
 
-**Parameter:** `question` (str, required) — Single focused question. Offer 2–4 options ordered from best to worst recommendation.
+**Parameter:** `question` (str, required) — Single focused question. Offer 2–4 options ordered from best to worst recommendation. For each option, include an example code snippet (max 20 lines) in \`\`\`language format so the human can visualize the implementation.
 
-**Example:** One question per call. Ground in specific exploration findings (mention file or pattern).
+**Example:** One question per call. Ground in specific exploration findings (mention file or pattern). Each option should include a code snippet in \`\`\`language ... \`\`\` format (max 20 lines) so the human can visualize how the implementation would look.

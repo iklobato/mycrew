@@ -1,0 +1,17 @@
+# Code pipeline run configuration
+# task run uses this by default (from scratch). CLI/Task/Docker args override values.
+# Use: task run
+# Or:  uv run kickoff -c config.yaml
+# Or:  docker run -it --rm -v $(pwd):/workspace -w /workspace -e OPENROUTER_API_KEY=$OPENROUTER_API_KEY iklobato/mycrew -c config.yaml
+
+task: "Add a feature or fix based on the issue"
+repo_path: "."
+branch: main
+from_scratch: false
+max_retries: 3
+dry_run: false
+test_command: ""  # e.g. "pytest" or "npm test"
+issue_id: ""
+github_repo: ""   # owner/repo for GithubSearchTool
+issue_url: ""     # URL for ScrapeWebsiteTool
+docs_url: ""      # URL for CodeDocsSearchTool

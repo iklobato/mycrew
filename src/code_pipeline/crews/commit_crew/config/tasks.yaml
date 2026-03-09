@@ -14,8 +14,10 @@ commit_task:
     Create a proper feature branch for this task. Steps:
     1. git checkout {branch}  (ensure we're on base branch)
     2. git checkout -b {feature_branch}  (create and switch to feature branch)
-    3. git add -A && git commit -m "your message"
+    3. git add -A && git reset -- .code_pipeline
+    4. git commit -m "your message"
 
+    Exclude .code_pipeline from the commit (pipeline state, not application code).
     If issue_id is provided, include "fixes #X" or similar in the commit message.
 
     If dry_run is "true", do NOT run git commands. List: the feature branch

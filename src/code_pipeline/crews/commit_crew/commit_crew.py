@@ -29,7 +29,7 @@ class CommitCrew:
             config=self.agents_config["git_agent"],  # type: ignore[index]
             tools=tools,
             llm=get_llm_for_stage("commit"),
-            verbose=True,
+            verbose=False,
         )
 
     @task
@@ -45,7 +45,7 @@ class CommitCrew:
             agents=self.agents,
             tasks=self.tasks,
             process=Process.sequential,
-            verbose=True,
+            verbose=False,
             tracing=True,
             output_log_file=True,
             memory=False,

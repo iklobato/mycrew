@@ -19,6 +19,10 @@ review_task:
       List/verify: ls -la, find . -name "*.py". Run tests: pytest, npm test.
     - **CodeDocsSearchTool** — Param: search_query. Validate against coding standards.
 
+    You MUST use Repo Shell Tool to read the actual files (e.g. git status, git diff, cat <path>)
+    before deciding. Do NOT approve if the implementation summary sounds like intent ("I'll...")
+    rather than concrete changes. Output ISSUES: if no file changes are evident.
+
     Use Repo Shell Tool to read changed files and verify placement; run tests if applicable.
     Use CodeDocsSearchTool to validate against coding standards.
 

@@ -54,6 +54,9 @@ from code_pipeline.utils import log_exceptions
 
 logger = logging.getLogger(__name__)
 
+# Set by handle_abort when pipeline aborts after max retries; checked by _execute_flow
+_pipeline_aborted = False
+
 
 def _task_hash(task: str) -> str:
     """Stable hash for checkpoint key."""
@@ -200,9 +203,13 @@ def _run_explore_in_process(repo_path: str, issue_analysis: str) -> str:
         result = _kickoff_with_retry(
             crew,
             {"repo_path": repo_path, "issue_analysis": issue_analysis},
+            crew_name="ExplorerCrew",
         )
         raw = result.raw if hasattr(result, "raw") else str(result)
-        logger.info("ExplorerCrew completed successfully (output_len=%d)", len(raw))
+        logger.info("ExplorerCrew completed (output_len=%d)", len(raw))
+        if len((raw or "").strip()) < 200:
+            logger.warning("Exploration too short (%d chars), using fallback", len(raw or ""))
+            return _fallback_exploration(repo_path, issue_analysis)
         return raw
     except Exception as e:
         logger.error("ExplorerCrew failed: %s", e, exc_info=True)
@@ -326,13 +333,38 @@ def _normalize_raw_verdict(raw: str) -> str:
     return f"ISSUES:\n- (Reviewer output malformed): {text[:300]}"
 
 
-def _kickoff_with_retry(crew, inputs: dict):
+def _log_crew_metrics(crew, result, crew_name: str = "Crew") -> None:
+    """Log crew output (tasks_output, token_usage) and per-agent usage_metrics."""
+    try:
+        if hasattr(result, "tasks_output") and result.tasks_output:
+            summaries = []
+            for j, to in enumerate(result.tasks_output):
+                s = str(to)
+                summaries.append(f"[{j}] {s[:300]}{'...' if len(s) > 300 else ''}")
+            logger.info("%s tasks_output (%d tasks): %s", crew_name, len(result.tasks_output), summaries)
+        if hasattr(result, "token_usage") and result.token_usage is not None:
+            logger.info("%s token_usage: %s", crew_name, result.token_usage)
+        agents = getattr(crew, "agents", None) or []
+        for i, agent in enumerate(agents):
+            um = getattr(agent, "usage_metrics", None)
+            if um is not None:
+                agent_name = getattr(agent, "role", None) or getattr(agent, "name", None) or f"agent_{i}"
+                logger.info("%s agent[%s] usage_metrics: %s", crew_name, agent_name, um)
+        crew_um = getattr(crew, "usage_metrics", None)
+        if crew_um is not None:
+            logger.info("%s crew usage_metrics: %s", crew_name, crew_um)
+    except Exception as e:
+        logger.debug("Could not log crew metrics: %s", e)
+
+
+def _kickoff_with_retry(crew, inputs: dict, crew_name: str = "Crew"):
     """Run crew.kickoff with exponential backoff on rate limits and empty LLM responses."""
     max_retries = max(RATE_LIMIT_MAX_RETRIES, EMPTY_RESPONSE_MAX_RETRIES)
     last_error = None
     for attempt in range(max_retries):
         try:
             result = crew.kickoff(inputs=inputs)
+            _log_crew_metrics(crew, result, crew_name)
             if attempt > 0:
                 logger.info("Crew kickoff succeeded on attempt %d/%d", attempt + 1, max_retries)
             return result
@@ -503,23 +535,21 @@ def _parse_args() -> PipelineArgs:
         "repo_path": ns.repo_path,
         "task": ns.task,
         "branch": ns.branch,
-        "from_scratch": getattr(ns, "from_scratch", False),
         "max_retries": ns.retries,
-        "dry_run": ns.dry_run,
         "test_command": ns.test_command,
         "issue_id": ns.issue_id,
         "github_repo": ns.github_repo,
         "issue_url": ns.issue_url,
         "docs_url": ns.docs_url,
     }
+    # store_true: only override when user explicitly passed the flag (don't overwrite config with False)
+    if getattr(ns, "from_scratch", False):
+        cli_overrides["from_scratch"] = True
+    if getattr(ns, "dry_run", False):
+        cli_overrides["dry_run"] = True
     for k, v in cli_overrides.items():
         if v is not None:
             base[k] = v
-    # store_true: only override when user passed the flag (True)
-    if getattr(ns, "dry_run", False):
-        base["dry_run"] = True
-    if getattr(ns, "from_scratch", False):
-        base["from_scratch"] = True
 
     return PipelineArgs(
         repo_path=base["repo_path"],
@@ -571,7 +601,7 @@ class PipelineState(BaseModel):
     SQLiteFlowPersistence(
         db_path=str(Path(db_storage_path()) / "code_pipeline_flow_states.db")
     ),
-    verbose=True,
+    verbose=False,
 )
 class CodePipelineFlow(Flow[PipelineState]):
     """Event-driven coding pipeline: explore 1 plan 1 implement 1 review 1 commit."""
@@ -607,7 +637,11 @@ class CodePipelineFlow(Flow[PipelineState]):
         crew_name = crew_class.__name__
         logger.info("Running crew: %s", crew_name)
         try:
-            result = _kickoff_with_retry(crew_class().crew(), inputs)
+            result = _kickoff_with_retry(
+                crew_class().crew(),
+                inputs,
+                crew_name=crew_name,
+            )
         except Exception as e:
             logger.error("Crew %s failed: %s", crew_name, e, exc_info=True)
             raise
@@ -722,6 +756,8 @@ class CodePipelineFlow(Flow[PipelineState]):
     def _run_implement(self):
         """Shared implementation logic for initial run and retries."""
         logger.info("Flow step: implement (retry_count=%d)", self.state.retry_count)
+        repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
+        os.environ["REPO_PATH"] = repo_path
         return self._run_crew(
             ImplementerCrew,
             {
@@ -745,9 +781,43 @@ class CodePipelineFlow(Flow[PipelineState]):
         """Run quality check after retry; fires after implement_retry."""
         return self._run_quality_gate()
 
+    def _repo_has_changes(self) -> tuple[bool, str]:
+        """Run git status --short in repo. Return (has_changes, output).
+        Ignores .code_pipeline/ (pipeline state, not application code)."""
+        repo = os.path.abspath(self.state.repo_path or "")
+        if not repo or not os.path.isdir(repo):
+            return False, "Repo path invalid"
+        try:
+            result = subprocess.run(
+                ["git", "status", "--short"],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            out = (result.stdout or "").strip()
+            # Filter out .code_pipeline — pipeline state, not application changes
+            lines = [l for l in out.splitlines() if ".code_pipeline" not in l]
+            filtered = "\n".join(lines).strip()
+            return bool(filtered), filtered or out or "(no changes)"
+        except Exception as e:
+            logger.warning("git status failed: %s", e)
+            return False, str(e)
+
     def _run_quality_gate(self):
-        """Shared quality gate logic."""
+        """Shared quality gate logic. Fails if no file changes detected."""
         logger.info("Flow step: quality_gate")
+        has_changes, status_out = self._repo_has_changes()
+        if not has_changes:
+            msg = (
+                "CRITICAL: No file changes detected in the repository. "
+                "You MUST use the Repo File Writer Tool to create or modify files. "
+                "Do not output intent ('I'll...')—actually invoke the tool and write the code."
+            )
+            logger.warning("Quality gate failed: %s", msg)
+            self.state.quality_gate_passed = False
+            self.state.quality_gate_output = msg
+            return False
         passed, output = self._run_quality_check(self.state.test_command)
         self.state.quality_gate_passed = passed
         self.state.quality_gate_output = output
@@ -761,10 +831,12 @@ class CodePipelineFlow(Flow[PipelineState]):
             return "review"
         if self.state.quality_gate_passed:
             return "review"
-        return self._retry_or_abort(
-            "Quality gate failed (tests/lint):\n\n",
-            self.state.quality_gate_output,
+        prefix = (
+            "No file changes detected. Implementer must write files:\n\n"
+            if "No file changes" in (self.state.quality_gate_output or "")
+            else "Quality gate failed (tests/lint):\n\n"
         )
+        return self._retry_or_abort(prefix, self.state.quality_gate_output)
 
     @listen("review")
     def run_review(self):
@@ -775,6 +847,8 @@ class CodePipelineFlow(Flow[PipelineState]):
             logger.info("Flow step: review (resumed, cached)")
             return self.state.review_verdict
         logger.info("Flow step: review")
+        repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
+        os.environ["REPO_PATH"] = repo_path
         result = _kickoff_with_retry(
             ReviewerCrew().crew(),
             {
@@ -785,6 +859,7 @@ class CodePipelineFlow(Flow[PipelineState]):
                 "issue_analysis": self.state.issue_analysis,
                 "docs_url": self.state.docs_url,
             },
+            crew_name="ReviewerCrew",
         )
         verdict_str = _format_review_verdict(result)
         self.state.review_verdict = verdict_str
@@ -925,6 +1000,8 @@ class CodePipelineFlow(Flow[PipelineState]):
     def handle_abort(self):
         """Terminal: return message with retry count and last verdict. Uses distinct
         event name to avoid loop (completing 'abort' would re-emit and retrigger)."""
+        global _pipeline_aborted
+        _pipeline_aborted = True
         logger.warning("Flow step: handle_abort (pipeline aborted)")
         msg = (
             f"Pipeline aborted after {self.state.retry_count} retries. "
@@ -973,6 +1050,9 @@ def kickoff(
 @log_exceptions("Pipeline kickoff")
 def _execute_flow(inputs: dict):
     """Run the pipeline flow. Decorator logs any exception before re-raising."""
+    global _pipeline_aborted
+    _pipeline_aborted = False
+
     repo_path = os.path.abspath(inputs.get("repo_path", os.getcwd()))
     task = inputs.get("task", "")
     from_scratch = inputs.get("from_scratch", False)
@@ -990,6 +1070,9 @@ def _execute_flow(inputs: dict):
 
     if task:
         _save_checkpoint(repo_path, task, flow.flow_id)
+
+    if _pipeline_aborted:
+        sys.exit(1)
 
     return result
 

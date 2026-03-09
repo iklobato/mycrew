@@ -92,17 +92,19 @@ PIPELINE_MODELS: dict[PipelineStage, StageModelConfig] = {
         ),
     ),
     PipelineStage.PLAN: StageModelConfig(
-        primary=OpenRouterModel.DEEPSEEK_V3_2,
+        # Prefer Gemini for plan—better at structured output and tool use
+        primary=OpenRouterModel.GEMINI_3_FLASH,
         fallbacks=(
-            OpenRouterModel.GEMINI_3_FLASH,
+            OpenRouterModel.DEEPSEEK_V3_2,
             OpenRouterModel.DEEPSEEK_R1,
             OpenRouterModel.QWEN3_235B_THINKING,
         ),
     ),
     PipelineStage.IMPLEMENT: StageModelConfig(
-        primary=OpenRouterModel.DEEPSEEK_V3_2,
+        # Prefer Gemini for implement—better at tool use (Clarify uses it successfully)
+        primary=OpenRouterModel.GEMINI_3_FLASH,
         fallbacks=(
-            OpenRouterModel.GEMINI_3_FLASH,
+            OpenRouterModel.DEEPSEEK_V3_2,
             OpenRouterModel.KIMI_K25,
             OpenRouterModel.DEEPSEEK_R1,
             OpenRouterModel.QWEN3_CODER,

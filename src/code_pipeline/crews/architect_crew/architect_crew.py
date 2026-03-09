@@ -31,7 +31,7 @@ class ArchitectCrew:
             config=self.agents_config["architect"],  # type: ignore[index]
             tools=tools,
             llm=get_llm_for_stage("plan"),
-            verbose=True,
+            verbose=False,
         )
 
     @task
@@ -46,7 +46,7 @@ class ArchitectCrew:
             agents=self.agents,
             tasks=self.tasks,
             process=Process.sequential,
-            verbose=True,
+            verbose=False,
             tracing=True,
             output_log_file=True,
             memory=False,
