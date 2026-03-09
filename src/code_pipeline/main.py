@@ -113,7 +113,7 @@ def _configure_logging(level: str | int | None = None) -> None:
         return
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(
-        logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+        logging.Formatter("%(asctime)s │ %(levelname)-7s │ %(message)s")
     )
     log.addHandler(handler)
     log.propagate = False
@@ -122,6 +122,86 @@ def _configure_logging(level: str | int | None = None) -> None:
     else:
         env_level = os.environ.get("CODE_PIPELINE_LOG_LEVEL", "INFO").upper()
         log.setLevel(getattr(logging, env_level, logging.INFO))
+
+
+def _log_section(title: str, body: str, char: str = "─") -> None:
+    """Log a section with a visual separator."""
+    width = 60
+    logger.info("%s %s %s", char * 2, title, char * (width - len(title) - 4))
+    for line in body.strip().split("\n"):
+        logger.info("  %s", line)
+    logger.info(char * width)
+
+
+def _log_crew_context(crew_name: str, inputs: dict, exclude_keys: tuple = ()) -> None:
+    """Log a brief summary of the context a crew is considering."""
+    exclude = set(exclude_keys) | {"plan", "implementation", "exploration", "issue_analysis", "clarifications"}
+    parts = []
+    for k, v in sorted(inputs.items()):
+        if k in exclude or v is None:
+            continue
+        s = str(v).strip()
+        if not s:
+            continue
+        if len(s) > 120:
+            s = s[:117] + "..."
+        parts.append(f"  {k}: {s}")
+    if parts:
+        logger.info("%s context:", crew_name)
+        for p in parts:
+            logger.info("%s", p)
+
+
+def _log_reviewer_verdict(verdict: str) -> None:
+    """Log reviewer verdict in a human-readable format."""
+    v = (verdict or "").strip()
+    if not v:
+        logger.info("Review: (empty verdict)")
+        return
+    if v.upper().startswith("APPROVED"):
+        rest = v[7:].strip()
+        logger.info("Review: APPROVED")
+        if rest:
+            for line in rest.split("\n")[:5]:
+                line = line.strip()
+                if line:
+                    logger.info("  %s", line)
+    elif "ISSUES:" in v.upper():
+        logger.info("Review: REJECTED (issues found)")
+        lines = v.split("\n")
+        for line in lines[1:12]:  # First 12 issue lines
+            line = line.strip()
+            if line and (line.startswith("-") or line.startswith("•")):
+                logger.info("  %s", line)
+            elif line and not line.upper().startswith("APPROVED"):
+                logger.info("  %s", line)
+        if len(lines) > 13:
+            logger.info("  ... (%d more lines)", len(lines) - 13)
+    else:
+        logger.info("Review: %s", v[:200])
+
+
+def _log_implementer_summary(implementation: str) -> None:
+    """Log a brief summary of what the implementer changed."""
+    impl = (implementation or "").strip()
+    if not impl:
+        logger.info("Implementer: (no summary)")
+        return
+    # Extract "Wrote path" patterns or bullet points
+    lines = impl.split("\n")
+    wrote = [l.strip() for l in lines if "wrote" in l.lower() or "wrote:" in l.lower() or l.strip().startswith("- ")]
+    if wrote:
+        logger.info("Implementer changes:")
+        for line in wrote[:15]:
+            if line:
+                logger.info("  %s", line[:100])
+        if len(wrote) > 15:
+            logger.info("  ... (%d more)", len(wrote) - 15)
+    else:
+        # Fallback: first few lines
+        preview = "\n  ".join(l.strip() for l in lines[:8] if l.strip())
+        if preview:
+            logger.info("Implementer summary:\n  %s", preview[:400] + ("..." if len(preview) > 400 else ""))
 
 
 def _is_retryable_error(e: Exception) -> bool:
@@ -196,13 +276,29 @@ def _fallback_exploration(repo_path: str, issue_analysis: str) -> str:
         return f"Fallback exploration failed: {e}. Issue context: {issue_analysis[:300]}"
 
 
-def _run_explore_in_process(repo_path: str, issue_analysis: str) -> str:
+def _run_explore_in_process(
+    repo_path: str,
+    issue_analysis: str,
+    *,
+    test_command: str = "",
+    focus_paths: str = "",
+    exclude_paths: str = "",
+    github_repo: str = "",
+) -> str:
     """Run ExplorerCrew in-process. On exception, use fallback exploration."""
     try:
         crew = ExplorerCrew().crew()
+        inputs = {
+            "repo_path": repo_path,
+            "issue_analysis": issue_analysis,
+            "test_command": test_command,
+            "focus_paths": focus_paths,
+            "exclude_paths": exclude_paths,
+            "github_repo": github_repo,
+        }
         result = _kickoff_with_retry(
             crew,
-            {"repo_path": repo_path, "issue_analysis": issue_analysis},
+            inputs,
             crew_name="ExplorerCrew",
         )
         raw = result.raw if hasattr(result, "raw") else str(result)
@@ -341,18 +437,18 @@ def _log_crew_metrics(crew, result, crew_name: str = "Crew") -> None:
             for j, to in enumerate(result.tasks_output):
                 s = str(to)
                 summaries.append(f"[{j}] {s[:300]}{'...' if len(s) > 300 else ''}")
-            logger.info("%s tasks_output (%d tasks): %s", crew_name, len(result.tasks_output), summaries)
+            logger.debug("%s tasks_output (%d tasks): %s", crew_name, len(result.tasks_output), summaries)
         if hasattr(result, "token_usage") and result.token_usage is not None:
-            logger.info("%s token_usage: %s", crew_name, result.token_usage)
+            logger.debug("%s token_usage: %s", crew_name, result.token_usage)
         agents = getattr(crew, "agents", None) or []
         for i, agent in enumerate(agents):
             um = getattr(agent, "usage_metrics", None)
             if um is not None:
                 agent_name = getattr(agent, "role", None) or getattr(agent, "name", None) or f"agent_{i}"
-                logger.info("%s agent[%s] usage_metrics: %s", crew_name, agent_name, um)
+                logger.debug("%s agent[%s] usage_metrics: %s", crew_name, agent_name, um)
         crew_um = getattr(crew, "usage_metrics", None)
         if crew_um is not None:
-            logger.info("%s crew usage_metrics: %s", crew_name, crew_um)
+            logger.debug("%s crew usage_metrics: %s", crew_name, crew_um)
     except Exception as e:
         logger.debug("Could not log crew metrics: %s", e)
 
@@ -413,6 +509,8 @@ class PipelineArgs:
     github_repo: str = ""
     issue_url: str = ""
     docs_url: str = ""
+    focus_paths: str = ""
+    exclude_paths: str = ""
 
     def to_flow_inputs(self) -> dict:
         """Convert to flow inputs dict with repo_path normalized."""
@@ -428,6 +526,8 @@ class PipelineArgs:
             "github_repo": self.github_repo,
             "issue_url": self.issue_url,
             "docs_url": self.docs_url,
+            "focus_paths": self.focus_paths,
+            "exclude_paths": self.exclude_paths,
         }
 
     def replace(self, **overrides) -> "PipelineArgs":
@@ -460,12 +560,17 @@ def _load_config(path: str) -> dict:
         "github_repo": "github_repo",
         "issue_url": "issue_url",
         "docs_url": "docs_url",
+        "focus_paths": "focus_paths",
+        "exclude_paths": "exclude_paths",
     }
     out = {}
     for k, v in data.items():
         key = k.replace("-", "_")  # support kebab-case
         if key in key_map:
-            out[key_map[key]] = v
+            val = v
+            if key in ("focus_paths", "exclude_paths") and isinstance(v, list):
+                val = ",".join(str(x) for x in v) if v else ""
+            out[key_map[key]] = val
     return out
 
 
@@ -494,6 +599,14 @@ def _parse_args() -> PipelineArgs:
     )
     parser.add_argument(
         "--docs-url", default=None, help="Docs URL for CodeDocsSearchTool"
+    )
+    parser.add_argument(
+        "--focus-paths", default=None,
+        help="Comma-separated paths to prioritize in exploration (e.g. src,lib)",
+    )
+    parser.add_argument(
+        "--exclude-paths", default=None,
+        help="Comma-separated paths to skip in exploration (e.g. node_modules,vendor)",
     )
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="Enable DEBUG logging"
@@ -528,6 +641,8 @@ def _parse_args() -> PipelineArgs:
         "github_repo": "",
         "issue_url": "",
         "docs_url": "",
+        "focus_paths": "",
+        "exclude_paths": "",
     }
     # Merge: config first, then defaults, then CLI overrides
     base = {**defaults, **config_data}
@@ -541,6 +656,8 @@ def _parse_args() -> PipelineArgs:
         "github_repo": ns.github_repo,
         "issue_url": ns.issue_url,
         "docs_url": ns.docs_url,
+        "focus_paths": ns.focus_paths,
+        "exclude_paths": ns.exclude_paths,
     }
     # store_true: only override when user explicitly passed the flag (don't overwrite config with False)
     if getattr(ns, "from_scratch", False):
@@ -563,6 +680,8 @@ def _parse_args() -> PipelineArgs:
         github_repo=base["github_repo"] or "",
         issue_url=base["issue_url"] or "",
         docs_url=base["docs_url"] or "",
+        focus_paths=base.get("focus_paths", "") or "",
+        exclude_paths=base.get("exclude_paths", "") or "",
     )
 
 
@@ -575,6 +694,8 @@ class PipelineState(BaseModel):
     task: str = ""
     branch: str = "main"
     dry_run: bool = False
+    focus_paths: str = ""
+    exclude_paths: str = ""
     max_retries: int = 3
     test_command: str = ""
     issue_id: str = ""
@@ -636,6 +757,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         """Run a crew and optionally store result in state. Returns raw output."""
         crew_name = crew_class.__name__
         logger.info("Running crew: %s", crew_name)
+        _log_crew_context(crew_name, inputs)
         try:
             result = _kickoff_with_retry(
                 crew_class().crew(),
@@ -648,7 +770,10 @@ class CodePipelineFlow(Flow[PipelineState]):
         raw = result.raw if hasattr(result, "raw") else str(result)
         if state_attr:
             setattr(self.state, state_attr, raw)
-            logger.info("Crew %s completed -> state.%s (len=%d)", crew_name, state_attr, len(raw))
+            if state_attr == "implementation":
+                _log_implementer_summary(raw)
+            else:
+                logger.info("Crew %s completed -> state.%s (len=%d)", crew_name, state_attr, len(raw))
         else:
             logger.info("Crew %s completed (no state_attr)", crew_name)
         return raw
@@ -681,6 +806,10 @@ class CodePipelineFlow(Flow[PipelineState]):
                 "task": self.state.task,
                 "issue_url": self.state.issue_url,
                 "github_repo": self.state.github_repo,
+                "repo_path": self.state.repo_path,
+                "docs_url": self.state.docs_url,
+                "test_command": self.state.test_command,
+                "branch": self.state.branch,
             },
             "issue_analysis",
         )
@@ -695,7 +824,21 @@ class CodePipelineFlow(Flow[PipelineState]):
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
         os.environ["REPO_PATH"] = repo_path
         self.state.repo_path = repo_path
-        raw = _run_explore_in_process(repo_path, self.state.issue_analysis)
+        _log_crew_context("ExplorerCrew", {
+            "repo_path": repo_path,
+            "test_command": self.state.test_command,
+            "focus_paths": getattr(self.state, "focus_paths", "") or "",
+            "exclude_paths": getattr(self.state, "exclude_paths", "") or "",
+            "github_repo": self.state.github_repo or "",
+        }, exclude_keys=("plan", "implementation", "exploration", "issue_analysis", "clarifications"))
+        raw = _run_explore_in_process(
+            repo_path,
+            self.state.issue_analysis,
+            test_command=self.state.test_command,
+            focus_paths=getattr(self.state, "focus_paths", "") or "",
+            exclude_paths=getattr(self.state, "exclude_paths", "") or "",
+            github_repo=self.state.github_repo or "",
+        )
         self.state.exploration = raw
         return raw
 
@@ -736,6 +879,8 @@ class CodePipelineFlow(Flow[PipelineState]):
                 "clarifications": self.state.clarifications,
                 "github_repo": self.state.github_repo,
                 "docs_url": self.state.docs_url,
+                "repo_path": self.state.repo_path,
+                "test_command": self.state.test_command,
             },
             "plan",
         )
@@ -849,6 +994,16 @@ class CodePipelineFlow(Flow[PipelineState]):
         logger.info("Flow step: review")
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
         os.environ["REPO_PATH"] = repo_path
+        _log_crew_context(
+            "ReviewerCrew",
+            {
+                "task": (self.state.task or "")[:80] + ("..." if len(self.state.task or "") > 80 else ""),
+                "plan_len": len(self.state.plan or ""),
+                "implementation_len": len(self.state.implementation or ""),
+                "repo_path": repo_path,
+            },
+            exclude_keys=(),
+        )
         result = _kickoff_with_retry(
             ReviewerCrew().crew(),
             {
@@ -863,7 +1018,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         )
         verdict_str = _format_review_verdict(result)
         self.state.review_verdict = verdict_str
-        logger.info("ReviewerCrew completed -> state.review_verdict (len=%d)", len(verdict_str))
+        _log_reviewer_verdict(verdict_str)
         return verdict_str
 
     @router(run_review)
@@ -1022,6 +1177,8 @@ def kickoff(
     github_repo: str | None = None,
     issue_url: str | None = None,
     docs_url: str | None = None,
+    focus_paths: str | None = None,
+    exclude_paths: str | None = None,
     inputs: dict | None = None,
 ):
     """Run the code pipeline flow. Uses argparse when invoked from CLI."""
@@ -1038,6 +1195,8 @@ def kickoff(
         "github_repo": github_repo,
         "issue_url": issue_url,
         "docs_url": docs_url,
+        "focus_paths": focus_paths,
+        "exclude_paths": exclude_paths,
     }
     args = _parse_args().replace(**overrides)
     flow_inputs = (inputs or {}) | args.to_flow_inputs()
@@ -1124,6 +1283,8 @@ def _main():
         github_repo=getattr(args, "github_repo", ""),
         issue_url=getattr(args, "issue_url", ""),
         docs_url=getattr(args, "docs_url", ""),
+        focus_paths=getattr(args, "focus_paths", "") or "",
+        exclude_paths=getattr(args, "exclude_paths", "") or "",
     )
 
 

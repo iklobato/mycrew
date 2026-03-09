@@ -57,7 +57,8 @@ class RepoFileWriterTool(BaseTool):
         directory: str | None = None,
         **kwargs: Any,
     ) -> str:
-        logger.info("RepoFileWriterTool invoked: filename=%s overwrite=%s", filename, overwrite)
+        action = "modifying" if _strtobool(overwrite) else "creating"
+        logger.info("Implementer writing file (%s): %s", action, filename)
         if not self.repo_path:
             logger.warning("RepoFileWriterTool: repo_path not set")
             return "Error: repo_path is not set."
@@ -93,7 +94,7 @@ class RepoFileWriterTool(BaseTool):
                 f.write(content)
 
             rel = os.path.relpath(filepath, repo)
-            logger.info("RepoFileWriterTool wrote: %s", rel)
+            logger.info("Wrote: %s", rel)
             return f"Wrote {rel}"
 
         except FileExistsError:

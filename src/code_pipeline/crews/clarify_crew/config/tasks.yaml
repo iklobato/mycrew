@@ -36,18 +36,28 @@ clarify_task:
          what patterns to follow or not follow based on what you see in the codebase
     3. For each open question, call ask_human with ONE focused question.
        **ask_human** — Param: question (str). One question per call. Returns human answer.
+       The question string you pass is the ONLY thing the human sees — it MUST include
+       the full question plus Option A, Option B (and Option C/D if needed), each with
+       a code snippet in ```language format. Never ask a bare question without options.
        Always ground the question in something specific you found in the exploration
        (mention the file, pattern, or convention you're referring to).
-       Offer 2–4 concrete answer options when possible. Order them from top
+       You MUST include 2–4 concrete answer options. Order them from top
        recommendation to last (best option first, least preferred last).
-       **For each option, include an example code snippet (max 20 lines)** to help the
-       human visualize the implementation. Format each snippet with markdown code fences:
-         ```language
-         code here
+       For each option, include an example code snippet (max 20 lines). Format each
+       snippet with markdown code fences. Use the correct language (python, typescript,
+       javascript, etc.) based on the codebase. Keep snippets concise — show structure,
+       imports, or key patterns, not full implementations.
+       Example format for the question string:
+         Q: Where should we add the login endpoint? (Found: auth/routes.py uses FastAPI)
+         Option A (recommended): Add to auth/routes.py
+         ```python
+         @router.post("/login")
+         async def login(creds: LoginSchema): ...
          ```
-       Use the correct language (python, typescript, javascript, etc.) based on the
-       codebase. Keep snippets concise and illustrative — show structure, imports,
-       or key patterns, not full implementations.
+         Option B: Create auth/v2/routes.py
+         ```python
+         router = APIRouter(prefix="/v2")
+         ```
     4. Based on the answers, decide if follow-ups are needed. Keep asking until
        you have no remaining open assumptions.
     5. Do NOT ask about things already clearly answered in the issue analysis.
@@ -57,20 +67,8 @@ clarify_task:
     ## Output format
 
     Produce a structured Clarifications & Development Guidelines document.
-    When asking questions via ask_human, each option should include example code.
-    Example question format:
-
-    Q: Where should we add the login endpoint? (Found: auth/routes.py uses FastAPI)
-    Option A (recommended): Add to auth/routes.py
-    ```python
-    @router.post("/login")
-    async def login(creds: LoginSchema): ...
-    ```
-    Option B: Create auth/v2/routes.py
-    ```python
-    # new module
-    router = APIRouter(prefix="/v2")
-    ```
+    Each ask_human question must include Option A, Option B, etc. with code snippets
+    (see example in step 3).
 
     ```
     # Clarifications & Development Guidelines

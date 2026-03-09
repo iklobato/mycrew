@@ -2,6 +2,13 @@ analyze_task:
   description: >
     Parse the following issue card into structured requirements:
 
+    ## Provided context
+    - Repository: {repo_path}
+    - Branch: {branch}
+    - Test command (if set): {test_command}
+    - Docs URL (if set): {docs_url}
+
+    ## Task
     {task}
 
     ## Tools
@@ -58,7 +65,8 @@ analyze_task:
       specific.
 
     ## Technical Hints
-    (suggested areas, modules, or patterns if mentioned)
+    (suggested areas, modules, or patterns if mentioned. When test_command is
+    set, include that tests must pass—e.g. "pytest must pass" or "npm test must pass".)
 
     Keep acceptance criteria minimal. Do not add criteria beyond what the
     issue explicitly states. When gh commands fail (e.g. not authenticated),

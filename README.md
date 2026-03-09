@@ -1,39 +1,6 @@
 # code_pipeline
 
-A software development crew powered by [crewAI](https://crewai.com). The pipeline explores a codebase, plans changes, implements them, reviews the work, clarifies feedback when needed, and commits—exclusively for software development tasks.
-
-## Project Structure
-
-```
-code_pipeline/
-├── config.example.yaml       # Template: copy to config.yaml and edit
-├── config.yaml               # Run config (task run uses by default)
-├── REMOVED # Example project-specific config
-├── Dockerfile                # Container image for docker run
-├── docker-compose.yml        # docker compose run --rm run
-├── Taskfile.yml              # Task runner (task run, task run-script, etc.)
-├── pyproject.toml            # Python project config and CLI entry points
-├── docs/
-│   └── TOOLS_REFERENCE.md    # Tool parameters and example commands
-└── src/code_pipeline/
-    ├── main.py                # Flow orchestration, kickoff, checkpoint/resume
-    ├── llm.py                 # LLM configuration (OpenRouter, OpenAI)
-    ├── utils.py               # Shared utilities
-    ├── crews/
-    │   ├── issue_analyst_crew/ # Analyzes task/issue into structured requirements
-    │   ├── explorer_crew/      # Scans repo structure, tech stack, conventions
-    │   ├── architect_crew/     # Designs implementation plan
-    │   ├── implementer_crew/   # Writes and applies code changes
-    │   ├── reviewer_crew/     # Validates implementation
-    │   ├── clarify_crew/      # Refines review feedback for implementer
-    │   └── commit_crew/       # Stages and commits changes
-    └── tools/
-        ├── factory.py          # Tool selection per pipeline stage
-        ├── repo_shell_tool.py  # Shell commands in repo context
-        └── human_tool.py      # Human-in-the-loop feedback
-```
-
-Each crew has `config/agents.yaml` and `config/tasks.yaml`. The flow is defined in `main.py` as a crewAI Flow with checkpoint persistence under `.code_pipeline/checkpoint.json` in the target repo.
+A software development crew powered by [crewAI](https://crewai.com). The pipeline explores a codebase, clarifies ambiguities with the human, plans changes, implements them, reviews the work, and commits—exclusively for software development tasks.
 
 ## Installation
 
@@ -68,7 +35,7 @@ OPENROUTER_API_KEY=your_key_here
 OPENAI_API_KEY=your_key_here
 ```
 
-The pipeline uses OpenRouter with DeepSeek R1 by default. Set `OPENROUTER_API_KEY` for OpenRouter models, or `OPENAI_API_KEY` as fallback.
+The pipeline uses OpenRouter with **Gemini 3 Flash** as the primary model for most stages (see [Default Model and Rationale](#default-model-and-rationale)). Set `OPENROUTER_API_KEY` for OpenRouter models, or `OPENAI_API_KEY` as fallback.
 
 ### Optional: GitHub and Documentation Tools
 
@@ -196,6 +163,8 @@ uv run kickoff -t "add a hello world function" -r /path/to/your/repo
 | `--github-repo` | — | GitHub repo (owner/repo) for GithubSearchTool; requires GITHUB_TOKEN | — |
 | `--issue-url` | — | URL of the issue for ScrapeWebsiteTool (e.g. GitHub, Jira) | — |
 | `--docs-url` | — | Documentation URL for CodeDocsSearchTool (e.g. https://docs.djangoproject.com) | — |
+| `--focus-paths` | — | Comma-separated paths to prioritize in exploration (e.g. src,lib) | — |
+| `--exclude-paths` | — | Comma-separated paths to skip in exploration (e.g. node_modules,vendor) | — |
 | `--config` | `-c` | Path to YAML config file (all params; CLI overrides) | — |
 
 **CLI examples:**
@@ -262,6 +231,29 @@ docker compose run --rm run
 
 **Note:** CodeInterpreterTool requires Docker and is skipped when running inside a container.
 
+## Default Model and Rationale
+
+The pipeline uses **stage-specific models** defined in `src/code_pipeline/llm.py`. Each stage has a primary model and fallbacks; if the primary fails (e.g. rate limit, empty response), the next in sequence is tried.
+
+| Stage        | Primary Model                    | Fallbacks                                   |
+|-------------|-----------------------------------|---------------------------------------------|
+| analyze_issue | Gemini 3 Flash                   | DeepSeek R1, GPT-5 Nano, Qwen3 Next 80B     |
+| explore       | Gemini 3 Flash                   | DeepSeek R1, GPT-5 Nano, Kimi K2.5, Qwen3 Coder |
+| plan          | Gemini 3 Flash                   | DeepSeek V3.2, DeepSeek R1, Qwen3 235B Thinking |
+| implement     | Gemini 3 Flash                   | DeepSeek V3.2, Kimi K2.5, DeepSeek R1, Qwen3 Coder |
+| review        | **DeepSeek V3.2**               | Gemini 3 Flash, DeepSeek R1, Qwen3 235B Thinking |
+| commit        | Gemini 3 Flash                   | GPT-5 Nano, Trinity Mini, DeepSeek R1       |
+
+**Clarify** uses the same model as `analyze_issue` (Gemini 3 Flash).
+
+**Why Gemini 3 Flash for most stages:** Fast, cost-effective, and strong at structured output and tool use. Handles multi-tool workflows (ScrapeWebsite, RepoShell, GithubSearch, CodeDocsSearch) well. Preview models like gpt-5-nano and trinity-mini can return empty responses and are used only as fallbacks.
+
+**Why DeepSeek V3.2 for Review:** Review is the critical gate before human approval. DeepSeek V3.2 is chosen for stricter, more conservative validation—catching overengineering, plan drift, and subtle bugs that faster models might miss. Fallbacks include Qwen3 235B Thinking for complex reasoning when needed.
+
+**Human Gate:** Uses `gpt-4o-mini` (hardcoded) to interpret the human's short response (commit vs replan). Lightweight and cheap for this interactive step.
+
+---
+
 ## Pipeline Overview
 
 ```mermaid
@@ -270,6 +262,7 @@ flowchart TB
         task[task input]
         analyze[Analyze Issue]
         explore[Explore]
+        clarify[Clarify]
         plan[Plan]
     end
     subgraph phase2 [Implementation and Quality]
@@ -277,13 +270,15 @@ flowchart TB
         qualityGate[Quality Gate]
         review[Review]
         verify[Verify Tests]
+        humanGate[Human Gate]
         commit[Commit]
         abort[Abort]
     end
 
     task --> analyze
     analyze -->|issue_analysis| explore
-    explore -->|exploration| plan
+    explore -->|exploration| clarify
+    clarify -->|clarifications| plan
     plan -->|plan| implement
 
     implement --> qualityGate
@@ -292,8 +287,10 @@ flowchart TB
 
     review -->|APPROVED| verify
     review -->|ISSUES| implement
-    verify -->|pass or no test_command| commit
+    verify -->|pass or no test_command| humanGate
     verify -->|fail| implement
+    humanGate -->|commit| commit
+    humanGate -->|replan| plan
     commit --> done[Done]
     review -->|max retries| abort
     qualityGate -->|max retries| abort
@@ -302,14 +299,46 @@ flowchart TB
 
 The flow runs multiple stages with quality gates:
 
-1. **Analyze Issue** — Parses the task/issue card into structured requirements (summary, acceptance criteria, scope)
-2. **Explore** — Scans the repository structure, tech stack, and conventions
-3. **Plan** — Designs the implementation approach, mapped to acceptance criteria
-4. **Implement** — Writes and applies code changes
-5. **Quality Gate** — If `--test-command` is set, runs tests; on failure, retries Implement
-6. **Review** — Validates the implementation; on rejection, runs Clarify to refine feedback, then loops back to Implement (up to `--retries`)
-7. **Verification** — If `--test-command` is set and review approved, runs tests again; on failure, retries Implement
-8. **Commit** — Stages and commits the changes (skipped when `--dry-run` is set)
+1. **Analyze Issue** — Parses the task/issue card into structured requirements (summary, acceptance criteria, scope, technical hints). Uses similar issues and company moment when `github_repo` is set.
+2. **Explore** — Scans the repository structure, tech stack, and conventions. Output focuses on areas relevant to the issue.
+3. **Clarify** — Asks the human targeted questions to resolve ambiguities before planning. Produces Clarifications & Development Guidelines that override assumptions.
+4. **Plan** — Designs the file-level implementation approach, mapped to acceptance criteria. No code—only paths and change descriptions.
+5. **Implement** — Writes and applies code changes. Invokes RepoFileWriterTool for every file in the plan.
+6. **Quality Gate** — If `--test-command` is set, runs tests; on failure, retries Implement.
+7. **Review** — Validates the implementation. On rejection (ISSUES), loops back to Implement (up to `--retries`). On approval, proceeds to verification or human gate.
+8. **Verification** — If `--test-command` is set and review approved, runs tests again; on failure, retries Implement.
+9. **Human Gate** — Presents the result to the human. On "commit", runs Commit. On "replan", feeds feedback back to Plan.
+10. **Commit** — Stages and commits the changes (skipped when `--dry-run` is set).
+
+### Step Inputs and Outputs
+
+| Step | Inputs | Outputs |
+|------|--------|---------|
+| **Analyze Issue** | `task`, `issue_url`, `github_repo`, `repo_path`, `docs_url`, `test_command`, `branch` | `issue_analysis` (summary, acceptance criteria, scope, technical hints) |
+| **Explore** | `issue_analysis`, `repo_path`, `test_command`, `focus_paths`, `exclude_paths`, `github_repo` | `exploration` (tech stack, directory layout, key files, conventions) |
+| **Clarify** | `task`, `issue_analysis`, `exploration` | `clarifications` (human answers via `ask_human`; authoritative guidelines for plan/implement) |
+| **Plan** | `task`, `exploration`, `issue_analysis`, `prior_issues`, `clarifications`, `github_repo`, `docs_url`, `repo_path`, `test_command` | `plan` (file-level spec: Files to Create/Modify, no code) |
+| **Implement** | `task`, `plan`, `prior_issues`, `clarifications`, `repo_path`, `issue_analysis` | `implementation` (text summary) + file writes via RepoFileWriterTool |
+| **Quality Gate** | `repo_path`, `test_command` | `quality_gate_passed`, `quality_gate_output`; routes to review or retry |
+| **Review** | `task`, `plan`, `implementation`, `repo_path`, `issue_analysis`, `docs_url` | `review_verdict` (`APPROVED` or `ISSUES:` + bullet list) |
+| **Route Verdict** | `review_verdict`, `test_command` | Routes to `human_gate`, `retry`, or `pipeline_aborted` |
+| **Verification** | `repo_path`, `test_command` | `verification_passed`, `verification_output`; routes to human_gate or retry |
+| **Human Gate** | `task`, `review_verdict`, `implementation`, `plan` (presented to human) | Human reply: `commit` or `replan` |
+| **Commit** | `repo_path`, `branch`, `feature_branch`, `dry_run`, `issue_id` | Git branch + commit (or dry-run report); optionally create PR |
+
+### Crew Members: Responsibility, Context, and Tools
+
+Each crew is a specialized agent with a clear role in the pipeline.
+
+| Crew | Responsibility | Context | Tools | Importance |
+|------|----------------|---------|-------|------------|
+| **Issue Analyst** | Transforms raw task/issue URLs into structured requirements (Summary, Acceptance Criteria, Scope, Technical Hints). When `github_repo` is set, analyzes similar issues and company moment. Keeps criteria minimal, flags scope creep. | Runs first. Receives `task`, `issue_url`, `github_repo`. Output feeds every downstream crew. | ScrapeWebsiteTool, RepoShellTool (`gh`), GithubSearchTool, CodeDocsSearchTool | Foundation of the pipeline. Poor analysis leads to wrong plans and implementations. |
+| **Explorer** | Scans repo and produces Tech Stack, Directory Layout, Key Files, Conventions. Focuses on issue-relevant areas. Read-only shell commands only. | Runs after Issue Analyst. Receives `issue_analysis`. Output feeds Clarify and Architect. Fallback on failure. | RepoShellTool, CodeDocsSearchTool | Architect and Implementer rely on accurate structure. Wrong exploration leads to plans touching wrong files. |
+| **Clarify** | Resolves ambiguities before planning. Cross-references task, analysis, exploration for tensions (ownership, conventions, scope, tests, migrations). Asks human via `ask_human` with 2–4 options and code snippets per question. | Runs after Explorer, before Architect. Receives `task`, `issue_analysis`, `exploration`. Output is authoritative for Architect and Implementer. | ask_human only | Prevents Architect from guessing. Human answers become hard constraints that reduce rework. |
+| **Architect** | Produces file-level plan without code. Maps to acceptance criteria. Respects Clarifications. Incorporates `prior_issues`. Minimum changes, prefer modifying over creating. Verifies paths before outputting. | Runs after Clarify (or `do_replan`). Receives `task`, `exploration`, `issue_analysis`, `clarifications`, `prior_issues`, `github_repo`, `docs_url`. Output consumed literally by Implementer. | RepoShellTool, GithubSearchTool, CodeDocsSearchTool | Plan is the contract. Wrong paths lead to wrong code. Must verify before outputting. |
+| **Implementer** | Writes code via RepoFileWriterTool for each file in the plan. Reads before modifying. Runs tests, fixes failures. Follows Clarifications over plan when conflicted. Fixes all `prior_issues`. | Runs after Plan. Receives `task`, `plan`, `issue_analysis`, `clarifications`, `prior_issues`, `repo_path`. Must call FileWriter for every file. | RepoShellTool, RepoFileWriterTool, CodeInterpreterTool (optional) | Only crew that writes code. Surgical changes only. Skipping FileWriter or touching unplanned files leads to wrong implementations. |
+| **Reviewer** | Validates against plan and acceptance criteria. Verifies all planned files created/modified. Rejects overengineering. Outputs exactly `APPROVED` or `ISSUES:` with bullet list. | Runs after Quality Gate. Receives `task`, `plan`, `implementation`, `issue_analysis`, `repo_path`, `docs_url`. Reads actual files before deciding. | RepoShellTool, CodeDocsSearchTool | Gatekeeper before human approval. Uses DeepSeek V3.2 for stricter validation. |
+| **Commit** | Creates feature branch, stages, commits with Conventional Commits. Skips when `dry_run`. Excludes `.code_pipeline`. Includes `fixes #X` when `issue_id` set. No destructive commands. | Runs after human approval. Receives `repo_path`, `branch`, `feature_branch`, `dry_run`, `issue_id`. | RepoShellTool only | Final step. Persists changes. Ensures conventional format and traceability. |
 
 ## Support
 

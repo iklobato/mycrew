@@ -4,23 +4,31 @@ explore_task:
 
     Issue context (use to focus exploration): {issue_analysis}
 
-    Focus exploration on areas relevant to the issue. Do not exhaustively
-    document the entire codebase—only what is needed for the plan.
+    ## Additional context
+    - Test command (if set): {test_command}
+    - Focus paths (if set): {focus_paths}
+    - Exclude paths (if set): {exclude_paths}
+    - GitHub repo (if set): {github_repo}
+
+    Focus exploration on areas relevant to the issue. When focus_paths is set,
+    prioritize exploring those paths. When exclude_paths is set, avoid spending
+    time on them. Do not exhaustively document the entire codebase—only what is
+    needed for the plan.
+
+    Run `git log -5 --name-only` to identify recently changed files; include them
+    in Key Files when relevant. When test_command is set, document the test
+    layout (e.g. tests/ with pytest, or test_*.py next to source) and the test
+    command in Conventions. When github_repo is set, consider checking
+    CONTRIBUTING.md, ARCHITECTURE.md, or README for project conventions.
 
     ## Tools
 
     - **Repo Shell Tool** — Param: command. Runs shell in repo. Use: ls -la,
-      find src -name "*.py", cat pyproject.toml, head -50 path/to/file, grep -r "pattern" src.
-      Read-only preferred. Lists structure, reads configs (package.json, pyproject.toml).
+      find src -name "*.py", cat pyproject.toml, head -50 path/to/file, grep -r "pattern" src,
+      git log -5 --name-only. Read-only preferred.
 
     - **CodeDocsSearchTool** — Param: search_query. Semantic search over docs_url.
       Use for framework conventions, architecture docs, coding standards.
-
-    Use Repo Shell Tool to list structure and read files. Use CodeDocsSearchTool
-    for documentation and conventions.
-
-    Example: Read package.json, pyproject.toml, key source files. Use
-    CodeDocsSearchTool for framework-specific conventions.
 
     Produce your summary with these exact sections:
     ## Tech Stack

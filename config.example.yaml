@@ -17,3 +17,5 @@ issue_id: ""
 github_repo: ""   # owner/repo for GithubSearchTool
 issue_url: ""     # URL for ScrapeWebsiteTool
 docs_url: ""      # URL for CodeDocsSearchTool
+focus_paths: ""   # comma-separated paths to prioritize (e.g. src,lib)
+exclude_paths: "" # comma-separated paths to skip (e.g. node_modules,vendor)

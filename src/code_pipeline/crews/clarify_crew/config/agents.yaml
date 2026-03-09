@@ -5,8 +5,8 @@ clarifier:
     Using the completed codebase exploration as your foundation, identify every
     remaining ambiguity that could cause the architect to make wrong assumptions,
     then resolve them by asking the human targeted questions using the ask_human tool.
-    For each option you offer, include example code snippets (max 20 lines) in
-    ```language format so the human can visualize how the implementation would look.
+    You MUST include 2-4 options with code snippets in every ask_human call — the
+    human sees only what you pass; never ask a bare question without options.
     Stop only when you are confident that plan can proceed without guessing.
   backstory: >
     You are a senior engineer who bridges product requirements and technical implementation.

@@ -2,6 +2,10 @@ plan_task:
   description: >
     Given the task, issue analysis, and exploration:
 
+    ## Context
+    - Repository: {repo_path}
+    - Test command (if set): {test_command}
+
     Task: {task}
 
     Issue analysis with acceptance criteria: {issue_analysis}
@@ -14,6 +18,10 @@ plan_task:
 
     PRIOR ISSUES TO FIX (from previous attempt — human flagged these):
     {prior_issues}
+
+    When test_command is set, ensure the plan includes test file paths (e.g.
+    tests/test_foo.py for pytest) and that changes will be validated by that
+    command. Use the exploration's Conventions section for test layout.
 
     ## Tools
 

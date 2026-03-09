@@ -51,13 +51,10 @@ def _is_interactive() -> bool:
 def ask_human(question: str) -> str:
     """
     Ask the human operator a clarifying question and return their answer.
-    Use this tool whenever any aspect of the task is ambiguous: scope, constraints,
-    tech stack choices, expected behavior, edge cases, or acceptance criteria.
-    Call this tool once per question — never bundle multiple questions in one call.
-    Always provide 2–4 concrete options when possible, ordered from top
-    recommendation to last (best first, least preferred last). For each option,
-    include an example code snippet (max 20 lines) in ```language format to help
-    the human visualize the implementation.
+    The question parameter is the ONLY text the human sees. You MUST include 2-4
+    options (Option A, Option B, etc.) with code snippets in ```language format —
+    never pass a bare question without options. Use this tool when the task is
+    ambiguous. Call once per question. Order options from best to least preferred.
     """
     print(f"\n{'─' * 64}")
     print(f"❓  CLARIFICATION NEEDED")
