@@ -1,12 +1,11 @@
 # Taskfile for code_pipeline
 #
-# Run with parameters (like kickoff flags):
-#   task run TASK="add feature" R=./repo
-#   task run TASK="fix bug" R=. V=1
-#   task run TASK="add auth" R=. DRY_RUN=1
+# Run styles:
+#   1. Default:    task run                    (from scratch + config.yaml)
+#   2. Env params: task run TASK_DESC="..." R=./repo
+#   3. CLI args:   task run-script -- -c config.yaml -v -f
 #
-# Params: TASK, R (repo), B (branch), V (verbose), F (from-scratch),
-#         DRY_RUN, N (retries), TEST, ISSUE_ID, GITHUB_REPO, ISSUE_URL, DOCS
+# Params: CONFIG (default: config.yaml), TASK_DESC, R, B, V, F (default: 1), DRY_RUN, N, TEST, ISSUE_ID, GITHUB_REPO, ISSUE_URL, DOCS
 
 version: "3"
 
@@ -19,12 +18,12 @@ tasks:
         task --list
         echo ""
         echo "=== Parameters (for task run) ==="
-        echo "  CONFIG      Path to YAML config file (all params); use instead of TASK"
-        echo "  TASK        Task description (required if no CONFIG)"
-        echo "  R           Repository path (default: .)"
-        echo "  B           Git branch (default: main)"
+        echo "  CONFIG      Path to YAML config file (default: config.yaml)"
+        echo "  TASK_DESC   Task description (overrides config; required if no CONFIG)"
+        echo "  R           Repository path (from config when using CONFIG)"
+        echo "  B           Git branch (from config when using CONFIG)"
         echo "  V           Verbose logging: 1 or 0 (default: 0)"
-        echo "  F           From scratch (ignore checkpoint): 1 or 0 (default: 0)"
+        echo "  F           From scratch / ignore checkpoint: 1 or 0 (default: 1)"
         echo "  DRY_RUN     Skip git commit: 1 or 0 (default: 0)"
         echo "  N           Max retries (default: 3)"
         echo "  TEST        Test command (e.g. pytest, npm test)"
@@ -34,29 +33,41 @@ tasks:
         echo "  DOCS        Docs URL for CodeDocsSearchTool"
         echo ""
         echo "=== Usage Examples ==="
-        echo "  # Basic run"
-        echo "  task run TASK=\"add a hello world function\""
+        echo "  # CLI args (pass kickoff flags after --)"
+        echo "  task run-script -- -c config.yaml -v"
+        echo "  task run-script -- -t \"add feature\" -r . -v -f --dry-run"
+        echo ""
+        echo "  # Basic run (env params)"
+        echo "  task run TASK_DESC=\"add a hello world function\""
         echo ""
         echo "  # With repo and verbose"
-        echo "  task run TASK=\"fix login bug\" R=/path/to/repo V=1"
+        echo "  task run TASK_DESC=\"fix login bug\" R=/path/to/repo V=1"
+        echo ""
+        echo "  # Default: from scratch + config.yaml (copy config.example.yaml first)"
+        echo "  task run"
         echo ""
         echo "  # Config file (all params in YAML)"
         echo "  task run CONFIG=config.yaml"
         echo ""
         echo "  # Dry run (no commit)"
-        echo "  task run TASK=\"add auth\" DRY_RUN=1"
+        echo "  task run TASK_DESC=\"add auth\" DRY_RUN=1"
         echo ""
         echo "  # From scratch (ignore checkpoint)"
-        echo "  task run TASK=\"add feature\" F=1"
+        echo "  task run TASK_DESC=\"add feature\" F=1"
         echo ""
         echo "  # Full example"
-        echo "  task run TASK=\"add validation\" R=./my-app B=dev N=5 TEST=pytest ISSUE_ID=\"#42\" V=1"
+        echo "  task run TASK_DESC=\"add validation\" R=./my-app B=dev N=5 TEST=pytest ISSUE_ID=\"#42\" V=1"
+
+  run-script:
+    desc: Run pipeline with CLI args after -- (e.g. task run-script -- -c config.yaml -v -f --dry-run)
+    cmds:
+      - uv run kickoff {{.CLI_ARGS}}
 
   run:
-    desc: Run the code pipeline. Pass params like TASK=... R=. V=1 or CONFIG=config.yaml
+    desc: Run pipeline from scratch using config.yaml by default
     env:
       CONFIG: "{{.CONFIG}}"
-      TASK: "{{.TASK}}"
+      TASK_DESC: "{{.TASK_DESC}}"
       R: "{{.R}}"
       B: "{{.B}}"
       F: "{{.F}}"
@@ -71,9 +82,9 @@ tasks:
     cmds:
       - |
         set -e
-        CONFIG="${CONFIG:-}"
-        TASK="${TASK:-}"
-        F="${F:-0}"
+        CONFIG="${CONFIG:-config.yaml}"
+        TASK_DESC="${TASK_DESC:-}"
+        F="${F:-1}"
         DRY_RUN="${DRY_RUN:-0}"
         V="${V:-0}"
         if [ -n "$CONFIG" ]; then
@@ -85,16 +96,30 @@ tasks:
           B="${B:-main}"
           N="${N:-3}"
         fi
-        if [ -z "$TASK" ] && [ -z "$CONFIG" ]; then
-          echo "Error: TASK or CONFIG is required. Example: task run TASK='your task' R=."
+        if [ -z "$TASK_DESC" ] && [ -z "$CONFIG" ]; then
+          echo "Error: TASK_DESC or CONFIG is required. Example: task run TASK_DESC='your task' R=."
           echo "       Or: task run CONFIG=config.yaml"
-          echo "Params: CONFIG (YAML file), TASK, R (repo), B (branch), V (verbose), F (from-scratch),"
-          echo "        DRY_RUN, N (retries), TEST, ISSUE_ID, GITHUB_REPO, ISSUE_URL, DOCS"
           exit 1
         fi
+        echo "=== Pipeline Run Configuration ==="
+        echo "  Config file:   ${CONFIG}"
+        echo "  From scratch:  $([ "$F" = "1" ] || [ "$F" = "true" ] && echo "yes" || echo "no")"
+        echo "  Verbose:       $([ "$V" = "1" ] || [ "$V" = "true" ] && echo "yes" || echo "no")"
+        echo "  Dry run:       $([ "$DRY_RUN" = "1" ] || [ "$DRY_RUN" = "true" ] && echo "yes" || echo "no")"
+        if [ -f "$CONFIG" ]; then
+          echo ""
+          echo "  Config contents ($CONFIG):"
+          echo "  --------------------"
+          sed 's/^/  /' "$CONFIG"
+          echo "  --------------------"
+        else
+          echo ""
+          echo "  Warning: config file '$CONFIG' not found (copy config.example.yaml to config.yaml)"
+        fi
+        echo ""
         ARGS=()
         [ -n "$CONFIG" ] && ARGS+=(-c "$CONFIG")
-        [ -n "$TASK" ] && ARGS+=(-t "$TASK")
+        [ -n "$TASK_DESC" ] && ARGS+=(-t "$TASK_DESC")
         [ -n "$R" ] && ARGS+=(-r "$R")
         [ -n "$B" ] && ARGS+=(-b "$B")
         [ -n "$N" ] && ARGS+=(-n "$N")
@@ -106,17 +131,19 @@ tasks:
         [ -n "$GITHUB_REPO" ] && ARGS+=(--github-repo "$GITHUB_REPO")
         [ -n "$ISSUE_URL" ] && ARGS+=(--issue-url "$ISSUE_URL")
         [ -n "$DOCS" ] && ARGS+=(--docs-url "$DOCS")
+        echo "  Running: uv run kickoff ${ARGS[*]}"
+        echo ""
         uv run kickoff "${ARGS[@]}"
 
   run:from-scratch:
-    desc: Run from scratch. Pass params like TASK=... R=.
+    desc: Run from scratch (same as default run). Pass params like TASK_DESC=... R=.
     cmds:
       - task: run
     vars:
       F: "1"
 
   run:dry:
-    desc: Run in dry-run mode. Pass params like TASK=... R=.
+    desc: Run in dry-run mode (no commit). Pass params like TASK_DESC=... R=.
     cmds:
       - task: run
     vars:

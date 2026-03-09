@@ -2,6 +2,8 @@
 
 Reference for all tools used by pipeline crews. Parameters and example commands verified against the current repository.
 
+**Running the pipeline:** Use `task run` (default: from scratch + `config.yaml`) or `uv run kickoff -c config.yaml`. See [README](../README.md) for full usage.
+
 ---
 
 ## Repo Shell Tool

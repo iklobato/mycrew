@@ -1,7 +1,9 @@
 # Code pipeline run configuration
-# Use: task run CONFIG=config.yaml
+# Copy to config.yaml and edit. task run uses config.yaml by default (from scratch).
+# Use: task run
+# Or:  task run CONFIG=other.yaml
 # Or:  uv run kickoff -c config.yaml
-# CLI args override values from this file.
+# CLI/Task args override values from this file.
 
 task: "Add a feature or fix based on the issue"
 repo_path: "."

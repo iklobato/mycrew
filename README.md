@@ -6,9 +6,10 @@ A software development crew powered by [crewAI](https://crewai.com). The pipelin
 
 ```
 code_pipeline/
-├── config.example.yaml       # Example YAML config for run parameters
+├── config.example.yaml       # Template: copy to config.yaml and edit
+├── config.yaml               # Run config (task run uses by default)
 ├── REMOVED # Example project-specific config
-├── Taskfile.yml               # Task runner (task run, task plot, etc.)
+├── Taskfile.yml               # Task runner (task run, task run-script, etc.)
 ├── pyproject.toml             # Python project config and CLI entry points
 ├── docs/
 │   └── TOOLS_REFERENCE.md     # Tool parameters and example commands
@@ -84,20 +85,29 @@ See [docs/TOOLS_REFERENCE.md](docs/TOOLS_REFERENCE.md) for tool parameters and e
 
 ### Option 1: Task commands (recommended)
 
-If you have [Task](https://taskfile.dev/) installed, use the Taskfile. Pass parameters like `-r` and `-v` via Task vars (R=, V=1, etc.).
+If you have [Task](https://taskfile.dev/) installed, use the Taskfile.
 
-**Available tasks:** `task run` | `task run:from-scratch` | `task run:dry` | `task plot` | `task help`
+**Available tasks:** `task run` | `task run-script` | `task run:from-scratch` | `task run:dry` | `task plot` | `task help`
+
+- **`task run`** — Default: runs from scratch using `config.yaml`. Copy `config.example.yaml` to `config.yaml` and edit. Prints full config before running.
+- **`task run-script`** — Pass kickoff flags after `--` (e.g. `task run-script -- -c config.yaml -v -f`)
+- **`task run:from-scratch`** — Same as `task run` (from scratch is already the default)
+- **`task run:dry`** — Dry run mode (no git commit)
+- **`task plot`** — Plot the flow diagram
+- **`task help`** — Show kickoff CLI help
+
+Pass parameters via Task vars: `R=`, `V=1`, `TASK_DESC=`, etc.
 
 **Parameters (same semantics as kickoff flags):**
 
 | Param | Maps to | Default |
 |-------|---------|---------|
-| `CONFIG` | `-c` / `--config` | — |
-| `TASK` | `-t` / `--task` | (required if no CONFIG) |
+| `CONFIG` | `-c` / `--config` | `config.yaml` (default) |
+| `TASK_DESC` | `-t` / `--task` | (from config or required if no CONFIG) |
 | `R` | `-r` / `--repo-path` | `.` (or from config) |
 | `B` | `-b` / `--branch` | `main` |
 | `V` | `-v` / `--verbose` | `0` |
-| `F` | `-f` / `--from-scratch` | `0` |
+| `F` | `-f` / `--from-scratch` | `1` (default: from scratch) |
 | `N` | `-n` / `--retries` | `3` |
 | `DRY_RUN` | `--dry-run` | `0` |
 | `TEST` | `--test-command` | — |
@@ -106,31 +116,40 @@ If you have [Task](https://taskfile.dev/) installed, use the Taskfile. Pass para
 | `ISSUE_URL` | `--issue-url` | — |
 | `DOCS` | `--docs-url` | — |
 
-**Task usage examples with parameters:**
+**Task usage examples:**
 
 ```bash
-# Config file (all params in YAML; copy config.example.yaml and edit)
-task run CONFIG=config.yaml
+# Default: from scratch + config.yaml
+# 1. Copy template: cp config.example.yaml config.yaml
+# 2. Edit config.yaml with your task, repo_path, etc.
+# 3. Run: task run
+task run
 
-# Basic (R defaults to current dir)
-task run TASK="add a hello world function"
+# Different config file
+task run CONFIG=REMOVED
 
-# With repo (-r) and verbose (-v)
-task run TASK="fix login bug" R=/path/to/repo V=1
+# Override task from config (TASK_DESC overrides config's task)
+task run TASK_DESC="add a hello world function"
+
+# With repo and verbose
+task run TASK_DESC="fix login bug" R=/path/to/repo V=1
 
 # Repo and branch
-task run TASK="fix bug" R=./my-app B=dev
+task run TASK_DESC="fix bug" R=./my-app B=dev
 
-# Dry run
-task run TASK="add user authentication" DRY_RUN=1
-task run:dry TASK="add user authentication"
+# Dry run (no git commit)
+task run TASK_DESC="add user authentication" DRY_RUN=1
+task run:dry TASK_DESC="add user authentication"
 
-# From scratch (ignore checkpoint)
-task run TASK="add feature" F=1
-task run:from-scratch TASK="add feature" R=.
+# Resume from checkpoint (override default from-scratch)
+task run CONFIG=config.yaml F=0
+
+# CLI args style (pass kickoff flags after --)
+task run-script -- -c config.yaml -v -f
+task run-script -- -t "add feature" -r . --dry-run
 
 # Full example: all params
-task run TASK="add validation logic" \
+task run TASK_DESC="add validation logic" \
   R=./my-app \
   B=main \
   N=5 \
@@ -144,12 +163,16 @@ task run TASK="add validation logic" \
 
 ### Option 2: Direct CLI
 
-Run the pipeline with `uv run kickoff`. You must provide a task and the target repository path.
+Run the pipeline with `uv run kickoff`. Use `-c config.yaml` to load all params from YAML, or pass `-t` and `-r` explicitly.
 
 **Basic usage:**
 
 ```bash
-uv run kickoff --task "add a hello world function" --repo-path /path/to/your/repo
+# Config file (recommended)
+uv run kickoff -c config.yaml
+
+# Task and repo explicitly
+uv run kickoff -t "add a hello world function" -r /path/to/your/repo
 ```
 
 **All options:**
@@ -172,8 +195,11 @@ uv run kickoff --task "add a hello world function" --repo-path /path/to/your/rep
 **CLI examples:**
 
 ```bash
-# Config file (copy config.example.yaml and edit)
+# Config file (copy config.example.yaml to config.yaml and edit)
 uv run kickoff -c config.yaml
+
+# From scratch + verbose
+uv run kickoff -c config.yaml -f -v
 
 # Dry run
 uv run kickoff -t "add user authentication" -r ./my-app --dry-run
