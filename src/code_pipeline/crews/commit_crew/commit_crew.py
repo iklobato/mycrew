@@ -1,4 +1,4 @@
-"""Commit crew: runs git add and commit."""
+"""Commit crew: runs git add, commit, then pushes and creates PR."""
 
 import os
 from typing import List
@@ -13,7 +13,7 @@ from code_pipeline.tools.factory import get_tools_for_stage
 
 @CrewBase
 class CommitCrew:
-    """Commit crew: runs git add -A && git commit. Skips if dry_run is true."""
+    """Commit crew: creates branch, commits, then pushes and creates PR via publish agent."""
 
     agents: List[BaseAgent]
     tasks: List[Task]
@@ -32,10 +32,76 @@ class CommitCrew:
             verbose=False,
         )
 
+    @agent
+    def commit_message_reviewer(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("commit_review", repo_path)
+        return Agent(
+            config=self.agents_config["commit_message_reviewer"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
+    @agent
+    def changelog_agent(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("changelog", repo_path)
+        return Agent(
+            config=self.agents_config["changelog_agent"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
+    @agent
+    def pr_labels_suggester(self) -> Agent:
+        return Agent(
+            config=self.agents_config["pr_labels_suggester"],  # type: ignore[index]
+            tools=[],
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
+    @agent
+    def publish_agent(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("publish", repo_path)
+        return Agent(
+            config=self.agents_config["publish_agent"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("publish"),
+            verbose=False,
+        )
+
     @task
     def commit_task(self) -> Task:
         return Task(
             config=self.tasks_config["commit_task"],  # type: ignore[index]
+        )
+
+    @task
+    def commit_message_review_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["commit_message_review_task"],  # type: ignore[index]
+        )
+
+    @task
+    def changelog_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["changelog_task"],  # type: ignore[index]
+        )
+
+    @task
+    def pr_labels_suggest_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["pr_labels_suggest_task"],  # type: ignore[index]
+        )
+
+    @task
+    def publish_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["publish_task"],  # type: ignore[index]
         )
 
     @crew

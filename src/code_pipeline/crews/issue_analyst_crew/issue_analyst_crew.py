@@ -13,7 +13,7 @@ from code_pipeline.tools.factory import get_tools_for_stage
 
 @CrewBase
 class IssueAnalystCrew:
-    """Issue Analyst crew: extracts structured requirements from issue cards."""
+    """Issue Analyst crew: extracts structured requirements and validates scope."""
 
     agents: List[BaseAgent]
     tasks: List[Task]
@@ -36,10 +36,61 @@ class IssueAnalystCrew:
             verbose=False,
         )
 
+    @agent
+    def scope_validator(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("scope_validate", repo_path)
+        return Agent(
+            config=self.agents_config["scope_validator"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
+    @agent
+    def similar_issues_synthesizer(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("analyze_issue", repo_path)
+        return Agent(
+            config=self.agents_config["similar_issues_synthesizer"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
+    @agent
+    def acceptance_criteria_normalizer(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("scope_validate", repo_path)
+        return Agent(
+            config=self.agents_config["acceptance_criteria_normalizer"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
+    @task
+    def similar_issues_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["similar_issues_task"],  # type: ignore[index]
+        )
+
     @task
     def analyze_task(self) -> Task:
         return Task(
             config=self.tasks_config["analyze_task"],  # type: ignore[index]
+        )
+
+    @task
+    def validate_scope_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["validate_scope_task"],  # type: ignore[index]
+        )
+
+    @task
+    def acceptance_criteria_normalize_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["acceptance_criteria_normalize_task"],  # type: ignore[index]
         )
 
     @crew

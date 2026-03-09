@@ -48,3 +48,88 @@ implement_task:
     List each file written: "Wrote path/to/file.ext: description." Must match
     Repo File Writer Tool invocations. Tests pass.
   agent: implementer
+
+docstring_write_task:
+  description: >
+    Add docstrings to new/changed code. You receive implementation from implement_task.
+
+    Plan: {plan}
+    Repository: {repo_path}
+
+    Use Repo Shell to read changed files (git diff --name-only). For each
+    Python/JS file with new functions/classes, add docstrings. Use Repo
+    File Writer Tool. Output "Docstrings added: (list)."
+  expected_output: >
+    Implementation summary + docstrings added.
+  agent: docstring_writer
+  context: [implement_task]
+
+type_hint_task:
+  description: >
+    Add type hints to Python files. You receive output from docstring_write_task.
+
+    Plan: {plan}
+    Repository: {repo_path}
+
+    For each changed .py file, ensure type hints on def/async def. Use
+    Repo File Writer Tool. Skip non-Python. Output "Type hints: (list)."
+  expected_output: >
+    Previous output + type hints updated.
+  agent: type_hint_checker
+  context: [docstring_write_task]
+
+test_write_task:
+  description: >
+    Add or update tests. You receive the implementation output from type_hint_task.
+
+    Plan: {plan}
+    Repository: {repo_path}
+    Test command: {test_command}
+    Exploration (Test Layout): {exploration}
+
+    If test_command is empty, output "Test write skipped (no test_command)."
+
+    Otherwise: The plan lists test files (e.g. tests/test_foo.py). For each
+    test file in the plan, use Repo Shell to read existing tests, then Repo
+    File Writer Tool to add/update tests. Run {test_command} to verify.
+
+    Output the implementation summary + "Tests written: (list)."
+  expected_output: >
+    Implementation summary with tests written, or skip message.
+  agent: test_writer
+  context: [type_hint_task]
+
+lint_fix_task:
+  description: >
+    Run linter and auto-fix. You receive output from test_write_task.
+
+    Repository: {repo_path}
+    Exploration (Lint & Format): {exploration}
+
+    Use Repo Shell: run black ., ruff check --fix ., eslint --fix ., etc.
+    based on what the exploration found. Fix auto-fixable issues. Output
+    "Lint fixes applied." or "No linter configured."
+  expected_output: >
+    Previous output + lint status.
+  agent: lint_fixer
+  context: [test_write_task]
+
+self_review_task:
+  description: >
+    Self-review before submit. You receive the full implementation output from lint_fix_task.
+
+    Plan: {plan}
+    Repository: {repo_path}
+
+    Use Repo Shell Tool: git status, git diff --name-only. Verify:
+    1. Only files from the plan were modified
+    2. Every file in "Files to Create" and "Files to Modify" was touched
+    3. No unplanned files
+
+    Output SELF_REVIEW: PASS if clean. If issues: SELF_REVIEW: ISSUES:- (list).
+
+    Then output the complete implementation summary (from previous task).
+  expected_output: >
+    SELF_REVIEW status + full implementation summary.
+  agent: self_reviewer
+  context: [lint_fix_task]

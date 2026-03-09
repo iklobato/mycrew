@@ -45,3 +45,99 @@ review_task:
     First line is exactly APPROVED or ISSUES:. If ISSUES:, each subsequent
     line is "- <file_path>: <description>".
   agent: reviewer
+
+security_review_task:
+  description: >
+    Security review. You receive the main review from review_task.
+
+    Plan: {plan}
+    Implementation: {implementation}
+    Repository: {repo_path}
+
+    Use Repo Shell Tool: git diff --name-only, cat <changed_files>.
+    Check for: SQL injection, XSS, auth bypass, unsafe input, exposed secrets.
+
+    Output SECURE or SECURITY_ISSUES:
+    - <file>: <issue>
+
+    Keep the main review verdict. Append your section:
+    ## Security
+    SECURE or SECURITY_ISSUES: (list)
+  expected_output: >
+    Main review output + ## Security section.
+  agent: security_reviewer
+  context: [review_task]
+
+performance_review_task:
+  description: >
+    Performance review. You receive the full review output.
+
+    Repository: {repo_path}
+    Plan: {plan}
+
+    Use Repo Shell: git diff --name-only, cat changed files.
+    Check for N+1, unindexed queries, large loops. Append:
+    ## Performance
+    PERF_OK or PERF_ISSUES: (list)
+  expected_output: >
+    Previous output + ## Performance section.
+  agent: performance_reviewer
+  context: [security_review_task]
+
+accessibility_review_task:
+  description: >
+    Accessibility check when UI/frontend changed. You receive full output.
+
+    Repository: {repo_path}
+
+    If no .jsx, .tsx, .vue, .html in git diff --name-only, append:
+    ## Accessibility\nSkipped (no UI changes).
+
+    Otherwise check labels, ARIA, focus. Append:
+    ## Accessibility
+    A11Y_OK or A11Y_ISSUES: (list)
+  expected_output: >
+    Previous output + ## Accessibility section.
+  agent: accessibility_checker
+  context: [performance_review_task]
+
+backward_compat_task:
+  description: >
+    Backward compatibility check. You receive full output.
+
+    Repository: {repo_path}
+    Plan: {plan}
+
+    Check for breaking changes: signature changes, removed exports. Append:
+    ## Backward Compatibility
+    COMPAT_OK or BREAKING: (list)
+  expected_output: >
+    Previous output + ## Backward Compatibility section.
+  agent: backward_compat_checker
+  context: [accessibility_review_task]
+
+convention_check_task:
+  description: >
+    Convention check and produce final verdict. You receive output from
+    review, security, performance, accessibility, and backward_compat tasks.
+
+    Repository: {repo_path}
+    Plan: {plan}
+
+    Use Repo Shell Tool: git diff --name-only, cat changed files.
+    Check pyproject.toml, .eslintrc, black config for conventions.
+    Verify imports, naming, formatting in changed files.
+
+    Merge ALL issue lists: main review, security, performance, a11y,
+    backward compat, conventions. If any task found issues, output ISSUES:.
+
+    Your FINAL output must be exactly:
+    - First line: APPROVED or ISSUES:
+    - If ISSUES:: merge all issues from main review + security + conventions
+    - Each line: - <file>: <description>
+
+    So the pipeline can parse it. Combine findings from all checks.
+  expected_output: >
+    First line APPROVED or ISSUES:. If ISSUES:, merged list from all reviewers.
+  agent: convention_checker
+  context: [review_task, security_review_task, performance_review_task, accessibility_review_task, backward_compat_task]

@@ -46,11 +46,98 @@ class ReviewerCrew:
             verbose=False,
         )
 
+    @agent
+    def security_reviewer(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        docs_url = (os.environ.get("DOCS_URL", "") or "").strip() or None
+        tools = get_tools_for_stage("security_review", repo_path, docs_url=docs_url)
+        return Agent(
+            config=self.agents_config["security_reviewer"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("security"),
+            verbose=False,
+        )
+
+    @agent
+    def performance_reviewer(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("security_review", repo_path)
+        return Agent(
+            config=self.agents_config["performance_reviewer"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
+    @agent
+    def accessibility_checker(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("security_review", repo_path)
+        return Agent(
+            config=self.agents_config["accessibility_checker"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
+    @agent
+    def backward_compat_checker(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("security_review", repo_path)
+        return Agent(
+            config=self.agents_config["backward_compat_checker"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
+    @agent
+    def convention_checker(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        docs_url = (os.environ.get("DOCS_URL", "") or "").strip() or None
+        tools = get_tools_for_stage("review", repo_path, docs_url=docs_url)
+        return Agent(
+            config=self.agents_config["convention_checker"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
     @task
     def review_task(self) -> Task:
         return Task(
             config=self.tasks_config["review_task"],  # type: ignore[index]
             output_pydantic=ReviewVerdict,
+        )
+
+    @task
+    def security_review_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["security_review_task"],  # type: ignore[index]
+        )
+
+    @task
+    def performance_review_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["performance_review_task"],  # type: ignore[index]
+        )
+
+    @task
+    def accessibility_review_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["accessibility_review_task"],  # type: ignore[index]
+        )
+
+    @task
+    def backward_compat_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["backward_compat_task"],  # type: ignore[index]
+        )
+
+    @task
+    def convention_check_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["convention_check_task"],  # type: ignore[index]
         )
 
     @crew

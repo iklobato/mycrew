@@ -1,10 +1,49 @@
+ambiguity_detect_task:
+  description: >
+    List potential ambiguities. Do NOT ask the human.
+
+    Task: {task}
+    Issue analysis: {issue_analysis}
+    Exploration: {exploration}
+
+    Cross-reference and list open questions:
+    - File/module ownership
+    - Convention conflicts
+    - Scope boundaries
+    - Test strategy
+    - Migration/compatibility
+
+    Output:
+    ## Open Questions
+    1. (question, file/context)
+    2. (question, file/context)
+    ...
+
+    No ask_human. Just the list.
+  expected_output: >
+    ## Open Questions section with numbered list.
+  agent: ambiguity_detector
+
+question_prioritize_task:
+  description: >
+    Rank the open questions by impact. You receive the list from ambiguity_detect_task.
+
+    Impact = wrong assumption would cause major rework. Rank 1 = highest impact.
+
+    Output:
+    ## Prioritized Questions
+    1. (highest impact): <question>
+    2. (next): <question>
+    ...
+  expected_output: >
+    ## Prioritized Questions with impact ranking.
+  agent: question_prioritizer
+  context: [ambiguity_detect_task]
+
 clarify_task:
   description: >
-    You are running the CLARIFY phase of a code pipeline.
-
-    The codebase has been fully explored. You now have both the structured requirements
-    AND the actual repository layout, conventions, and key files. Your job is to resolve
-    any ambiguities that the explorer surfaced before the architect creates the plan.
+    You are running the CLARIFY phase. You have a prioritized list of questions.
+    Ask the human using ask_human for each, starting with highest impact.
 
     ## Task description
     {task}
@@ -12,8 +51,11 @@ clarify_task:
     ## Structured issue analysis
     {issue_analysis}
 
-    ## Codebase exploration results (tech stack, layout, conventions, key files)
+    ## Codebase exploration results
     {exploration}
+
+    ## Prioritized Questions (from previous task — ask in this order)
+    Use the context from question_prioritize_task. Ask high-impact questions first.
 
     ## Your process
 
@@ -105,3 +147,4 @@ clarify_task:
     This document is the authoritative source of truth for the architect —
     it overrides any assumptions the architect might otherwise make.
   agent: clarifier
+  context: [question_prioritize_task]

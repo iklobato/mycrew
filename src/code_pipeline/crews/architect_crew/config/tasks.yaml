@@ -53,3 +53,105 @@ plan_task:
     File-level plan with "Files to Create" and "Files to Modify" sections.
     One file path per bullet. No code. Exact paths only.
   agent: architect
+
+dependency_order_task:
+  description: >
+    Order the plan by dependency. You receive the plan from plan_task.
+
+    Repository: {repo_path}
+    Exploration (for Dependency Map): {exploration}
+
+    Use Repo Shell Tool: grep imports, cat key files. Determine which files
+    must be created/modified first (e.g. models before views).
+
+    APPEND to the plan:
+    ## Order (verified)
+    (numbered list: implement in this order)
+    ## Risk
+    (brief: high-risk areas, e.g. "auth/", "no existing tests")
+
+    Output the COMPLETE plan with your appended sections. Fix ## Order if wrong.
+  expected_output: >
+    Full plan with verified ## Order and ## Risk sections.
+  agent: dependency_orderer
+  context: [plan_task]
+
+refactor_guard_task:
+  description: >
+    Check the plan for unnecessary refactors. You receive the full plan.
+
+    Task: {task}
+    Acceptance criteria: {issue_analysis}
+
+    Does the plan add anything beyond what acceptance criteria require?
+    - Extra abstractions, helpers, "improvements"?
+    - Files not needed for the criteria?
+    - Refactors that are out of scope?
+
+    If clean, append "## Refactor Guard\nNONE".
+
+    If issues, append "## Refactor Guard\nREFACTOR_FLAGS:\n- (list each excess)".
+
+    Output the COMPLETE plan with your appended section.
+  expected_output: >
+    Full plan with ## Refactor Guard section.
+  agent: refactor_guard
+  context: [dependency_order_task]
+
+test_plan_task:
+  description: >
+    Add test plan when test_command is set. You receive the full plan.
+
+    Repository: {repo_path}
+    Test command: {test_command}
+    Exploration (Test Layout): {exploration}
+
+    If test_command is empty, append "## Test Plan\nSkipped (no test_command)."
+
+    Otherwise APPEND:
+    ## Test Plan
+    - Files to add/update: (list)
+    - What to cover: (per file)
+    - Follow: (from Test Layout)
+
+    Output the COMPLETE plan.
+  expected_output: >
+    Full plan with ## Test Plan section.
+  agent: test_plan_advisor
+  context: [refactor_guard_task]
+
+migration_check_task:
+  description: >
+    Flag migration steps. You receive the full plan.
+
+    Task: {task}
+    Plan: (from previous task)
+
+    Does the plan touch DB, schema, config, env vars?
+    If yes, APPEND:
+    ## Migration
+    - (steps: migrations, env, feature flags)
+
+    If no, append "## Migration\nNONE".
+
+    Output the COMPLETE plan.
+  expected_output: >
+    Full plan with ## Migration section.
+  agent: migration_checker
+  context: [test_plan_task]
+
+rollback_plan_task:
+  description: >
+    Add rollback section for high-risk changes. You receive the full plan.
+
+    Use ## Risk section from the plan. If high-risk areas exist, APPEND:
+    ## Rollback
+    - (brief: how to revert, e.g. git revert, rollback migration)
+
+    If low risk, append "## Rollback\nNONE".
+
+    Output the COMPLETE plan.
+  expected_output: >
+    Full plan with ## Rollback section.
+  agent: rollback_planner
+  context: [migration_check_task]

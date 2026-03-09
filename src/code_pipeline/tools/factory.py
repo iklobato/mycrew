@@ -5,6 +5,7 @@ import os
 
 from crewai.tools import BaseTool
 
+from code_pipeline.tools.create_pr_tool import CreatePRTool
 from code_pipeline.tools.repo_file_writer_tool import RepoFileWriterTool
 from code_pipeline.tools.repo_shell_tool import RepoShellTool
 from code_pipeline.utils import log_exceptions
@@ -89,6 +90,39 @@ def get_tools_for_stage(
     if stage == "commit":
         logger.debug("Stage %s: RepoShell only", stage)
         return [RepoShellTool(repo_path=repo_path)]
+
+    if stage == "commit_review":
+        logger.debug("Stage %s: RepoShell for commit message validation", stage)
+        return [RepoShellTool(repo_path=repo_path)]
+
+    if stage == "publish":
+        logger.debug("Stage %s: CreatePRTool only", stage)
+        return [CreatePRTool(repo_path=repo_path)]
+
+    if stage in ("auxiliary", "scope_validate", "refactor_guard", "self_review"):
+        logger.debug("Stage %s: RepoShell", stage)
+        return [RepoShellTool(repo_path=repo_path)]
+
+    if stage == "test_write":
+        tools = [
+            RepoShellTool(repo_path=repo_path),
+            RepoFileWriterTool(repo_path=repo_path),
+        ]
+        logger.debug("Stage %s: RepoShell + RepoFileWriter", stage)
+        return tools
+
+    if stage == "changelog":
+        tools = [
+            RepoShellTool(repo_path=repo_path),
+            RepoFileWriterTool(repo_path=repo_path),
+        ]
+        logger.debug("Stage %s: RepoShell + RepoFileWriter", stage)
+        return tools
+
+    if stage == "security_review":
+        tools = _repo_shell_plus_optional(repo_path, docs_url=docs_url)
+        logger.debug("Stage %s: %d tools", stage, len(tools))
+        return tools
 
     logger.warning("Unknown stage %s, returning empty tools", stage)
     return []

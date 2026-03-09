@@ -46,3 +46,102 @@ commit_task:
     Either the git commit output (including the new branch name) or a message
     listing the feature branch, files to stage, and proposed commit message (if dry_run).
   agent: git_agent
+
+commit_message_review_task:
+  description: >
+    Validate the last commit message follows Conventional Commits format.
+
+    Repository: {repo_path}
+    Dry run: {dry_run}
+
+    Use Repo Shell Tool: git log -1 --format=%B to read the last commit message.
+
+    Conventional Commits: <type>[optional scope]: <description>
+    Types: feat, fix, docs, style, refactor, test, chore, perf, ci.
+
+    If the message is invalid (wrong format, unclear type, etc.):
+    - If dry_run is "true", output the issue and a suggested corrected message.
+    - If dry_run is "false", run git commit --amend -m "corrected message".
+
+    If valid, output "Commit message valid: <message>".
+  expected_output: >
+    Either "Commit message valid: ..." or the amended message / suggested fix.
+  agent: commit_message_reviewer
+  context: [commit_task]
+
+changelog_task:
+  description: >
+    Update CHANGELOG if it exists. You receive output from commit_message_review_task.
+
+    Repository: {repo_path}
+    Task: {task}
+    Dry run: {dry_run}
+
+    If dry_run is "true", output "Changelog skipped (dry_run)."
+
+    Use Repo Shell Tool: ls CHANGELOG.md CHANGELOG.rst 2>/dev/null; cat CHANGELOG.md.
+
+    If CHANGELOG.md or CHANGELOG.rst exists:
+    1. Read current content
+    2. Append: ## [Unreleased] or ### YYYY-MM-DD, then "- (summary from task)"
+    3. Use Repo File Writer Tool to write the updated file
+    4. git add CHANGELOG.* && git commit -m "docs: update CHANGELOG"
+
+    If no CHANGELOG file, output "Changelog skipped (no CHANGELOG file)."
+  expected_output: >
+    Changelog update confirmation or skip message.
+  agent: changelog_agent
+  context: [commit_message_review_task]
+
+pr_labels_suggest_task:
+  description: >
+    Suggest GitHub PR labels from the task and plan.
+
+    Task: {task}
+    Plan: {plan}
+
+    Analyze the task description and plan. Suggest 1–5 relevant labels.
+    Common labels: feat, fix, docs, refactor, test, chore, dependencies,
+    breaking-change, enhancement, bug. Output a single line:
+
+    Suggested labels: label1, label2, label3
+
+    Use lowercase, hyphen for multi-word (e.g. breaking-change).
+  expected_output: >
+    A line: Suggested labels: label1, label2, ...
+  agent: pr_labels_suggester
+  context: [changelog_task]
+
+publish_task:
+  description: >
+    After the commit is done, publish the branch and create a PR.
+
+    Dry run: {dry_run}
+    GitHub repo: {github_repo}
+    Feature branch: {feature_branch}
+    Base branch: {branch}
+
+    If dry_run is "true" OR github_repo is empty, do NOT call the Create PR Tool.
+    Output: "PR creation skipped (dry_run)" or "PR creation skipped (no github_repo)".
+
+    If dry_run is "false" AND github_repo is set, you MUST use the Create PR Tool
+    with these exact parameters:
+      - feature_branch: {feature_branch}
+      - base_branch: {branch}
+      - task: {task}
+      - implementation: {implementation}
+      - plan: {plan}
+      - review_verdict: {review_verdict}
+      - issue_url: {issue_url}
+      - issue_id: {issue_id}
+      - github_repo: {github_repo}
+
+    The tool will push the branch to origin and create the PR with a good description.
+    When pr_labels_suggest_task provides a "Suggested labels:" line, extract the
+    comma-separated labels and pass them to the Create PR Tool.
+
+    Return the PR URL from the tool output.
+  expected_output: >
+    The PR URL (e.g. https://github.com/owner/repo/pull/123) or a skip message.
+  agent: publish_agent
+  context: [changelog_task, pr_labels_suggest_task]

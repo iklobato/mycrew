@@ -1,6 +1,32 @@
+similar_issues_task:
+  description: >
+    Fetch similar issues and company moment. Run FIRST.
+
+    Repository: {repo_path}
+    GitHub repo: {github_repo}
+    Task (for search keywords): {task}
+
+    If github_repo is empty, output: "## Similar Issues\nSkipped (no github_repo)."
+
+    Otherwise use Repo Shell Tool with gh (add -R "{github_repo}" to all gh commands):
+    - gh issue list -R "{github_repo}" --state=all -L 30 (or -S "keywords" from task)
+    - gh issue view <N> -R "{github_repo}" for relevant issues
+    - gh pr list -R "{github_repo}" --state=merged -L 15
+    - gh issue list -R "{github_repo}" --state=open -L 20
+
+    Produce:
+    ## Similar Issues
+    - Issues consulted: #N, #M (one-line each)
+    - Out-of-scope in similar: (brief)
+    - Company moment: (recent merges, open work)
+  expected_output: >
+    ## Similar Issues section or "Skipped (no github_repo)."
+  agent: similar_issues_synthesizer
+
 analyze_task:
   description: >
-    Parse the following issue card into structured requirements:
+    Parse the following issue card into structured requirements.
+    Use the Similar Issues from the previous task (context) when available.
 
     ## Provided context
     - Repository: {repo_path}
@@ -77,3 +103,50 @@ analyze_task:
     explicit In-scope and Out-of-scope derived from task, similar cards, and
     company moment when available. Acceptance criteria must be numbered.
   agent: issue_analyst
+  context: [similar_issues_task]
+
+validate_scope_task:
+  description: >
+    Review the issue analysis from the previous task (analyze_task) for scope
+    creep and ambiguous criteria. The context contains the full analysis output.
+
+    ## Original task
+    {task}
+
+    Cross-check:
+    1. Are any acceptance criteria too broad or vague?
+    2. Are there conflicts between criteria or scope?
+    3. Does the scope match similar issues (if Context was used)?
+    4. Should this task be split into smaller pieces?
+
+    Append a validation section to the document. Do NOT rewrite the analysis.
+    Keep the original content intact and add:
+
+    ## Scope Validation
+    - Flags: (list any concerns: BROAD_CRITERIA, VAGUE, CONFLICT, SPLIT_RECOMMENDED, or NONE)
+    - Recommendations: (one-line per flag, or "No issues" if clean)
+
+    If no issues, output "NONE" for Flags and "No issues" for Recommendations.
+  expected_output: >
+    The full issue analysis document with an appended ## Scope Validation section.
+  agent: scope_validator
+  context: [analyze_task]
+
+acceptance_criteria_normalize_task:
+  description: >
+    Normalize acceptance criteria. You receive the full analysis from validate_scope_task.
+
+    Ensure each criterion is:
+    - Numbered
+    - Unambiguous and testable
+    - Not vague (split if needed)
+
+    Append:
+    ## Acceptance Criteria (Normalized)
+    (checklist format, each item verifiable)
+
+    Keep all prior sections. Only add/refine the normalized criteria section.
+  expected_output: >
+    Full document with ## Acceptance Criteria (Normalized) appended.
+  agent: acceptance_criteria_normalizer
+  context: [validate_scope_task]

@@ -62,6 +62,9 @@ class PipelineStage(StrEnum):
     IMPLEMENT = "implement"
     REVIEW = "review"
     COMMIT = "commit"
+    PUBLISH = "publish"
+    AUXILIARY = "auxiliary"
+    SECURITY = "security"
 
 
 @dataclass(frozen=True)
@@ -122,6 +125,30 @@ PIPELINE_MODELS: dict[PipelineStage, StageModelConfig] = {
         primary=OpenRouterModel.GEMINI_3_FLASH,
         fallbacks=(
             OpenRouterModel.GPT_5_NANO,
+            OpenRouterModel.TRINITY_MINI,
+            OpenRouterModel.DEEPSEEK_R1,
+        ),
+    ),
+    PipelineStage.PUBLISH: StageModelConfig(
+        primary=OpenRouterModel.GPT_5_NANO,
+        fallbacks=(
+            OpenRouterModel.GEMINI_3_FLASH,
+            OpenRouterModel.TRINITY_MINI,
+            OpenRouterModel.DEEPSEEK_R1,
+        ),
+    ),
+    PipelineStage.AUXILIARY: StageModelConfig(
+        primary=OpenRouterModel.GPT_5_NANO,
+        fallbacks=(
+            OpenRouterModel.TRINITY_MINI,
+            OpenRouterModel.GEMINI_3_FLASH,
+            OpenRouterModel.DEEPSEEK_R1,
+        ),
+    ),
+    PipelineStage.SECURITY: StageModelConfig(
+        primary=OpenRouterModel.GPT_5_NANO,
+        fallbacks=(
+            OpenRouterModel.GEMINI_3_FLASH,
             OpenRouterModel.TRINITY_MINI,
             OpenRouterModel.DEEPSEEK_R1,
         ),

@@ -1,5 +1,6 @@
-"""Clarify crew: asks targeted questions grounded in exploration before planning."""
+"""Clarify crew: detects ambiguities, prioritizes, asks human before planning."""
 
+import os
 from typing import List
 
 from crewai import Agent, Crew, Process, Task
@@ -7,12 +8,13 @@ from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.project import CrewBase, agent, crew, task
 
 from code_pipeline.llm import get_llm_for_stage
+from code_pipeline.tools.factory import get_tools_for_stage
 from code_pipeline.tools.human_tool import ask_human
 
 
 @CrewBase
 class ClarifyCrew:
-    """Clarify crew: resolves ambiguities via human questions before the architect plans."""
+    """Clarify crew: ambiguity detection, prioritization, human questions."""
 
     agents: List[BaseAgent]
     tasks: List[Task]
@@ -21,12 +23,46 @@ class ClarifyCrew:
     tasks_config = "config/tasks.yaml"
 
     @agent
+    def ambiguity_detector(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("scope_validate", repo_path)
+        return Agent(
+            config=self.agents_config["ambiguity_detector"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
+    @agent
+    def question_prioritizer(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("scope_validate", repo_path)
+        return Agent(
+            config=self.agents_config["question_prioritizer"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
+    @agent
     def clarifier(self) -> Agent:
         return Agent(
             config=self.agents_config["clarifier"],  # type: ignore[index]
             tools=[ask_human],
             llm=get_llm_for_stage("analyze_issue"),
             verbose=False,
+        )
+
+    @task
+    def ambiguity_detect_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["ambiguity_detect_task"],  # type: ignore[index]
+        )
+
+    @task
+    def question_prioritize_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["question_prioritize_task"],  # type: ignore[index]
         )
 
     @task

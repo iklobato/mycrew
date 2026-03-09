@@ -11,7 +11,7 @@ from code_pipeline.tools.factory import get_tools_for_stage
 
 @CrewBase
 class ExplorerCrew:
-    """Explorer crew: produces structured repo summary (stack, files, conventions)."""
+    """Explorer crew: repo summary, dependency map, and test layout."""
 
     agents: List[BaseAgent]
     tasks: List[Task]
@@ -31,10 +31,78 @@ class ExplorerCrew:
             verbose=False,
         )
 
+    @agent
+    def dependency_analyzer(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("explore", repo_path)
+        return Agent(
+            config=self.agents_config["dependency_analyzer"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
+    @agent
+    def test_layout_scout(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("explore", repo_path)
+        return Agent(
+            config=self.agents_config["test_layout_scout"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
+    @agent
+    def convention_extractor(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("explore", repo_path)
+        return Agent(
+            config=self.agents_config["convention_extractor"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
+    @agent
+    def api_boundary_scout(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("explore", repo_path)
+        return Agent(
+            config=self.agents_config["api_boundary_scout"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
     @task
     def explore_task(self) -> Task:
         return Task(
             config=self.tasks_config["explore_task"],  # type: ignore[index]
+        )
+
+    @task
+    def dependency_analyze_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["dependency_analyze_task"],  # type: ignore[index]
+        )
+
+    @task
+    def test_layout_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["test_layout_task"],  # type: ignore[index]
+        )
+
+    @task
+    def convention_extract_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["convention_extract_task"],  # type: ignore[index]
+        )
+
+    @task
+    def api_boundary_scout_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["api_boundary_scout_task"],  # type: ignore[index]
         )
 
     @crew

@@ -39,3 +39,100 @@ explore_task:
     A structured repo summary with sections: Tech Stack, Directory Layout,
     Key Files, Conventions. Each section must be present.
   agent: repo_explorer
+
+dependency_analyze_task:
+  description: >
+    Analyze dependencies. You receive the full exploration from explore_task.
+
+    Repository: {repo_path}
+    Issue context: {issue_analysis}
+
+    Use Repo Shell Tool:
+    - grep -r "import" or "from" in relevant paths
+    - cat pyproject.toml, package.json, requirements.txt, go.mod
+    - find import/require statements for key files
+
+    APPEND a new section to the exploration document (keep all prior content):
+
+    ## Dependency Map
+    - For each key module: what depends on it, what it depends on
+    - Blast radius: which areas would be affected by changes
+
+    Output the COMPLETE document: original exploration + your new section.
+  expected_output: >
+    Full exploration document with appended ## Dependency Map section.
+  agent: dependency_analyzer
+  context: [explore_task]
+
+test_layout_task:
+  description: >
+    Document the test layout. You receive the full exploration from the previous task.
+
+    Repository: {repo_path}
+    Test command: {test_command}
+
+    If test_command is empty, append "## Test Layout\nSkipped (no test_command)."
+
+    Otherwise use Repo Shell Tool:
+    - find tests, test_*.py, __tests__, *.test.*
+    - cat conftest.py, pytest.ini, jest.config, package.json scripts
+    - Check how fixtures and mocks are used
+
+    APPEND to the document:
+    ## Test Layout
+    - Directory structure, how to run, fixtures, how to add a new test
+
+    Output the COMPLETE document: all prior sections + ## Test Layout.
+  expected_output: >
+    Full exploration document with appended ## Test Layout section.
+  agent: test_layout_scout
+  context: [dependency_analyze_task]
+
+convention_extract_task:
+  description: >
+    Extract lint and format config. You receive the full exploration.
+
+    Repository: {repo_path}
+
+    Use Repo Shell Tool:
+    - cat pyproject.toml (sections [tool.black], [tool.ruff], [tool.pytest])
+    - cat .eslintrc .eslintrc.json .prettierrc package.json 2>/dev/null
+    - ls -la .*rc* pyproject.toml
+
+    APPEND:
+    ## Lint & Format
+    - Linters: (black, ruff, eslint, etc.)
+    - Formatters: (black, prettier)
+    - Config paths and key options
+
+    Output the COMPLETE document.
+  expected_output: >
+    Full exploration with ## Lint & Format section.
+  agent: convention_extractor
+  context: [test_layout_task]
+
+api_boundary_scout_task:
+  description: >
+    Map API surface when relevant. You receive the full exploration.
+
+    Repository: {repo_path}
+    Task: {task}
+
+    If task does NOT mention "API", "endpoint", "route", "REST", "controller",
+    append "## API Boundary\nSkipped (task does not mention API)."
+
+    Otherwise use Repo Shell Tool:
+    - grep -r "urlpatterns\|router\|@app\.\|routes\|Route" in relevant paths
+    - find * -name "routes*.py" -o -name "*controller*" -o -name "*api*"
+    - cat main router files
+
+    APPEND:
+    ## API Boundary
+    - Routes/endpoints structure
+    - Where to add new endpoints
+
+    Output the COMPLETE document.
+  expected_output: >
+    Full exploration with ## API Boundary section.
+  agent: api_boundary_scout
+  context: [convention_extract_task]

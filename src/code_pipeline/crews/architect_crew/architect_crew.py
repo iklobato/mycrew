@@ -34,10 +34,95 @@ class ArchitectCrew:
             verbose=False,
         )
 
+    @agent
+    def dependency_orderer(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("plan", repo_path)
+        return Agent(
+            config=self.agents_config["dependency_orderer"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
+    @agent
+    def refactor_guard(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("refactor_guard", repo_path)
+        return Agent(
+            config=self.agents_config["refactor_guard"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
+    @agent
+    def test_plan_advisor(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("plan", repo_path)
+        return Agent(
+            config=self.agents_config["test_plan_advisor"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
+    @agent
+    def migration_checker(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("refactor_guard", repo_path)
+        return Agent(
+            config=self.agents_config["migration_checker"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
+    @agent
+    def rollback_planner(self) -> Agent:
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        tools = get_tools_for_stage("refactor_guard", repo_path)
+        return Agent(
+            config=self.agents_config["rollback_planner"],  # type: ignore[index]
+            tools=tools,
+            llm=get_llm_for_stage("auxiliary"),
+            verbose=False,
+        )
+
     @task
     def plan_task(self) -> Task:
         return Task(
             config=self.tasks_config["plan_task"],  # type: ignore[index]
+        )
+
+    @task
+    def dependency_order_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["dependency_order_task"],  # type: ignore[index]
+        )
+
+    @task
+    def refactor_guard_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["refactor_guard_task"],  # type: ignore[index]
+        )
+
+    @task
+    def test_plan_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["test_plan_task"],  # type: ignore[index]
+        )
+
+    @task
+    def migration_check_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["migration_check_task"],  # type: ignore[index]
+        )
+
+    @task
+    def rollback_plan_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["rollback_plan_task"],  # type: ignore[index]
         )
 
     @crew
