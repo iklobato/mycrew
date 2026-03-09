@@ -7,14 +7,14 @@ explore_task:
     Focus exploration on areas relevant to the issue. Do not exhaustively
     document the entire codebase—only what is needed for the plan.
 
-    Use the Repo Shell Tool to:
-    - List directory structure
-    - Identify tech stack (languages, frameworks, build tools)
-    - Find key config files and entry points
-    - Note coding conventions and structure
+    Use DirectoryReadTool to list the repo structure, DirectorySearchTool to
+    search within directories, FileReadTool to read config files (package.json,
+    pyproject.toml, etc.), and CodeDocsSearchTool to search existing
+    documentation and conventions. Also use Repo Shell Tool for commands like
+    ls -la, find, cat, head when needed.
 
-    Example commands: ls -la, find . -name 'package.json' -o -name 'pyproject.toml',
-    cat package.json, cat pyproject.toml, head -50 path/to/main.py
+    Example: Read package.json, pyproject.toml, key source files. Use
+    CodeDocsSearchTool for framework-specific conventions.
 
     Produce your summary with these exact sections:
     ## Tech Stack

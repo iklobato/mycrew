@@ -18,7 +18,9 @@ implement_task:
     structure and style. If the plan says "add X", add X—nothing else.
 
     The File Writer Tool is configured with the repository as base directory.
-    Use relative paths for all file writes. Use the Repo Shell Tool to run the
+    Use FileReadTool to read existing files before modifying. Use
+    CodeInterpreterTool to run and validate code snippets when useful. Use
+    relative paths for all file writes. Use the Repo Shell Tool to run the
     project's test command (e.g. pytest, npm test, cargo test) and fix any
     failures before finishing.
 

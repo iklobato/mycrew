@@ -1,20 +1,41 @@
 commit_task:
   description: >
     Repository: {repo_path}
-    Branch: {branch}
+    Base branch (branch from): {branch}
+    Feature branch (create and commit to): {feature_branch}
     Dry run: {dry_run}
     Issue ID (include in commit message if provided): {issue_id}
 
+    Create a proper feature branch for this task. Steps:
+    1. git checkout {branch}  (ensure we're on base branch)
+    2. git checkout -b {feature_branch}  (create and switch to feature branch)
+    3. git add -A && git commit -m "your message"
+
     If issue_id is provided, include "fixes #X" or similar in the commit message.
 
-    If dry_run is "true", do NOT run git commit. List files that would be
-    staged and the commit message you would use.
-    If dry_run is "false", run: git add -A && git commit -m "your message"
+    If dry_run is "true", do NOT run git commands. List: the feature branch
+    you would create, files that would be staged, and the commit message.
+    If dry_run is "false", run the steps above.
 
-    Commit message should summarize the changes (e.g. "Add user auth" or
-    "Fix login validation"). Avoid committing .env, secrets, or large binaries;
-    check git status first.
+    ALWAYS use Conventional Commits format for the commit message:
+      <type>[optional scope]: <description>
+
+    Conventions:
+      - feat: new feature
+      - fix: bug fix
+      - docs: documentation only
+      - style: formatting, whitespace, no code change
+      - refactor: code change that neither fixes nor adds a feature
+      - test: adding or updating tests
+      - chore: maintenance, deps, tooling
+      - perf: performance improvement
+      - ci: CI config or scripts
+
+    Examples: "feat(auth): add login form", "fix(api): handle null response",
+    "docs: update README", "refactor(utils): simplify validation".
+
+    Avoid committing .env, secrets, or large binaries; check git status first.
   expected_output: >
-    Either the git commit output or a message listing files to stage and
-    the proposed commit message (if dry_run).
+    Either the git commit output (including the new branch name) or a message
+    listing the feature branch, files to stage, and proposed commit message (if dry_run).
   agent: git_agent

@@ -11,4 +11,6 @@ issue_analyst:
     produce clear, structured output that downstream crews can use
     directly. Prefer the smallest interpretation of scope that satisfies
     the issue. Flag scope creep. If the issue is vague, assume minimal
-    scope. No tools needed; you work from the issue text alone.
+    scope. Use ScrapeWebsiteTool when the task contains a URL to fetch
+    the full issue. Use GithubSearchTool when available to find related
+    issues or similar implementations.

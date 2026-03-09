@@ -10,7 +10,9 @@ review_task:
     Implementation summary:
     {implementation}
 
-    Use the Repo Shell Tool to read changed files and run tests if applicable.
+    Use FileReadTool to read changed files, DirectorySearchTool to verify file
+    placement, and CodeDocsSearchTool to validate against coding standards.
+    Use Repo Shell Tool to run tests if applicable.
 
     For each acceptance criterion, confirm it is satisfied. Verify:
     (1) All planned files created/modified

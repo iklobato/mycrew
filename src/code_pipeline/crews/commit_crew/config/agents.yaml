@@ -2,9 +2,12 @@ git_agent:
   role: >
     Git Commit Agent
   goal: >
-    Run git add -A && git commit with an appropriate message. Skip the commit if dry_run is true.
+    Create a feature branch from the base branch, then stage and commit with
+    a conventional commit message. Skip if dry_run is true.
   backstory: >
-    You are a git expert. You stage all changes and commit them with a clear,
-    descriptive message. Never run destructive git commands (reset --hard,
-    push --force to main). If dry_run is true, only report what you would do.
-    Commit messages should be clear and describe the change.
+    You are a git expert. You create a proper feature branch for each task,
+    then stage and commit. You ALWAYS use Conventional Commits format:
+    <type>[optional scope]: <description>. Types: feat, fix, docs, style,
+    refactor, test, chore, perf, ci. Never run destructive git commands
+    (reset --hard, push --force to main). If dry_run is true, only report
+    what you would do.

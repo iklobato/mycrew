@@ -5,7 +5,8 @@ from crewai import Agent, Crew, Process, Task
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.project import CrewBase, agent, crew, task
 
-from code_pipeline.tools.repo_shell_tool import RepoShellTool
+from code_pipeline.llm import get_llm_for_stage
+from code_pipeline.tools.factory import get_tools_for_stage
 
 
 @CrewBase
@@ -20,10 +21,16 @@ class ArchitectCrew:
 
     @agent
     def architect(self) -> Agent:
-        repo_path = os.environ.get("REPO_PATH", os.getcwd())
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        github_repo = (os.environ.get("GITHUB_REPO", "") or "").strip() or None
+        docs_url = (os.environ.get("DOCS_URL", "") or "").strip() or None
+        tools = get_tools_for_stage(
+            "plan", repo_path, github_repo=github_repo, docs_url=docs_url
+        )
         return Agent(
             config=self.agents_config["architect"],  # type: ignore[index]
-            tools=[RepoShellTool(repo_path=repo_path)],
+            tools=tools,
+            llm=get_llm_for_stage("plan"),
             verbose=True,
         )
 
@@ -40,4 +47,6 @@ class ArchitectCrew:
             tasks=self.tasks,
             process=Process.sequential,
             verbose=True,
+            output_log_file=True,
+            memory=False,
         )

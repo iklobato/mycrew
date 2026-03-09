@@ -5,7 +5,8 @@ from crewai import Agent, Crew, Process, Task
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.project import CrewBase, agent, crew, task
 
-from code_pipeline.tools.repo_shell_tool import RepoShellTool
+from code_pipeline.llm import get_llm_for_stage
+from code_pipeline.tools.factory import get_tools_for_stage
 
 
 @CrewBase
@@ -20,10 +21,13 @@ class ExplorerCrew:
 
     @agent
     def repo_explorer(self) -> Agent:
-        repo_path = os.environ.get("REPO_PATH", os.getcwd())
+        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        docs_url = (os.environ.get("DOCS_URL", "") or "").strip() or None
+        tools = get_tools_for_stage("explore", repo_path, docs_url=docs_url)
         return Agent(
             config=self.agents_config["repo_explorer"],  # type: ignore[index]
-            tools=[RepoShellTool(repo_path=repo_path)],
+            tools=tools,
+            llm=get_llm_for_stage("explore"),
             verbose=True,
         )
 
@@ -40,4 +44,6 @@ class ExplorerCrew:
             tasks=self.tasks,
             process=Process.sequential,
             verbose=True,
+            output_log_file=True,
+            memory=False,
         )

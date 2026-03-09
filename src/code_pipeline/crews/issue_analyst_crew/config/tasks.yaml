@@ -4,6 +4,11 @@ analyze_task:
 
     {task}
 
+    When the task contains a URL (e.g. GitHub issue, Jira, Linear), use
+    ScrapeWebsiteTool to fetch the full issue content. When github_repo is
+    available, use GithubSearchTool to find related issues or similar past
+    implementations.
+
     Extract and produce output with these exact sections:
     ## Summary
     (one-line description)

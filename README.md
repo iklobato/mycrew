@@ -28,8 +28,25 @@ crewai install
 3. Create a `.env` file in the project root and add your API key:
 
 ```
+# OpenRouter (DeepSeek) - used by default
+OPENROUTER_API_KEY=your_key_here
+
+# Or use OpenAI
 OPENAI_API_KEY=your_key_here
 ```
+
+The pipeline uses OpenRouter with DeepSeek R1 by default. Set `OPENROUTER_API_KEY` for OpenRouter models, or `OPENAI_API_KEY` as fallback.
+
+### Optional: GitHub and Documentation Tools
+
+- **GITHUB_TOKEN** — Required for GithubSearchTool (semantic search in GitHub repos). Set in `.env` or environment. Used when `--github-repo` is provided.
+- **--github-repo** — GitHub repo in `owner/repo` format. Enables GithubSearchTool for Analyze and Plan stages to find similar implementations and issues.
+- **--docs-url** — Documentation URL for CodeDocsSearchTool (e.g. `https://docs.djangoproject.com`). Enables framework-specific doc search in Explore, Plan, and Review.
+- **--issue-url** — URL of the issue when the task references a web-based tracker (Jira, Linear, GitHub). Enables ScrapeWebsiteTool in Analyze to fetch full issue content.
+
+### CodeInterpreterTool (Implement stage)
+
+The Implement stage can use CodeInterpreterTool for running Python code snippets when **Docker** is available. If Docker is not installed or not running, the tool is skipped and the pipeline continues with other tools (FileWriterTool, RepoShellTool, FileReadTool).
 
 ## How to Use
 
@@ -52,6 +69,9 @@ uv run kickoff --task "add a hello world function" --repo-path /path/to/your/rep
 | `--dry-run` | — | Skip actual git commit; only report what would be committed | `false` |
 | `--test-command` | — | Command for quality gate and verification (e.g. pytest, npm test) | — |
 | `--issue-id` | — | Issue ID for commit message (e.g. fixes #42) | — |
+| `--github-repo` | — | GitHub repo (owner/repo) for GithubSearchTool; requires GITHUB_TOKEN | — |
+| `--issue-url` | — | URL of the issue for ScrapeWebsiteTool (e.g. GitHub, Jira) | — |
+| `--docs-url` | — | Documentation URL for CodeDocsSearchTool (e.g. https://docs.djangoproject.com) | — |
 
 **Examples:**
 
@@ -67,6 +87,12 @@ uv run kickoff -t "add validation" -r ./backend --test-command "pytest"
 
 # Include issue ID in commit message
 uv run kickoff -t "Fix PROJ-123: null pointer" -r ./api --issue-id "PROJ-123"
+
+# With GitHub repo for semantic search (requires GITHUB_TOKEN)
+uv run kickoff -t "add feature X" -r ./my-repo --github-repo "owner/repo"
+
+# With docs URL for framework-specific conventions
+uv run kickoff -t "add Django view" -r ./backend --docs-url "https://docs.djangoproject.com"
 ```
 
 ## Pipeline Overview
