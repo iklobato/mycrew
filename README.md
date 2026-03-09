@@ -1,6 +1,36 @@
-# mycrew
+# code_pipeline
 
-A software development crew powered by [crewAI](https://crewai.com). mycrew runs an event-driven pipeline that explores a codebase, plans changes, implements them, reviews the work, and commits—exclusively for software development tasks.
+A software development crew powered by [crewAI](https://crewai.com). The pipeline explores a codebase, plans changes, implements them, reviews the work, clarifies feedback when needed, and commits—exclusively for software development tasks.
+
+## Project Structure
+
+```
+code_pipeline/
+├── config.example.yaml       # Example YAML config for run parameters
+├── REMOVED # Example project-specific config
+├── Taskfile.yml               # Task runner (task run, task plot, etc.)
+├── pyproject.toml             # Python project config and CLI entry points
+├── docs/
+│   └── TOOLS_REFERENCE.md     # Tool parameters and example commands
+└── src/code_pipeline/
+    ├── main.py                # Flow orchestration, kickoff, checkpoint/resume
+    ├── llm.py                 # LLM configuration (OpenRouter, OpenAI)
+    ├── utils.py               # Shared utilities
+    ├── crews/
+    │   ├── issue_analyst_crew/ # Analyzes task/issue into structured requirements
+    │   ├── explorer_crew/      # Scans repo structure, tech stack, conventions
+    │   ├── architect_crew/     # Designs implementation plan
+    │   ├── implementer_crew/   # Writes and applies code changes
+    │   ├── reviewer_crew/     # Validates implementation
+    │   ├── clarify_crew/      # Refines review feedback for implementer
+    │   └── commit_crew/       # Stages and commits changes
+    └── tools/
+        ├── factory.py          # Tool selection per pipeline stage
+        ├── repo_shell_tool.py  # Shell commands in repo context
+        └── human_tool.py      # Human-in-the-loop feedback
+```
+
+Each crew has `config/agents.yaml` and `config/tasks.yaml`. The flow is defined in `main.py` as a crewAI Flow with checkpoint persistence under `.code_pipeline/checkpoint.json` in the target repo.
 
 ## Installation
 
@@ -15,7 +45,7 @@ pip install uv
 2. Clone this repository and install dependencies:
 
 ```bash
-cd mycrew  # or your project directory
+cd code_pipeline  # or your project directory
 uv sync
 ```
 
@@ -209,7 +239,7 @@ The flow runs multiple stages with quality gates:
 3. **Plan** — Designs the implementation approach, mapped to acceptance criteria
 4. **Implement** — Writes and applies code changes
 5. **Quality Gate** — If `--test-command` is set, runs tests; on failure, retries Implement
-6. **Review** — Validates the implementation; on rejection, loops back to Implement (up to `--retries`)
+6. **Review** — Validates the implementation; on rejection, runs Clarify to refine feedback, then loops back to Implement (up to `--retries`)
 7. **Verification** — If `--test-command` is set and review approved, runs tests again; on failure, retries Implement
 8. **Commit** — Stages and commits the changes (skipped when `--dry-run` is set)
 
