@@ -1,8 +1,10 @@
 # Code pipeline run configuration
-# task run uses this by default (from scratch). CLI/Task/Docker args override values.
+# Copy to config.yaml and edit. task run uses config.yaml by default (from scratch).
 # Use: task run
+# Or:  task run CONFIG=other.yaml
 # Or:  uv run kickoff -c config.yaml
 # Or:  docker run -it --rm -v $(pwd):/workspace -w /workspace -e OPENROUTER_API_KEY=$OPENROUTER_API_KEY iklobato/mycrew -c config.yaml
+# CLI/Task/Docker args override values from this file.
 
 task: "Add a feature or fix based on the issue"
 repo_path: "."
