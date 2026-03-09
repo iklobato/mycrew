@@ -312,9 +312,21 @@ def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
     api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if api_key:
         os.environ["OPENROUTER_API_KEY"] = api_key
+
+    logger.info(
+        "┌─[ LLM SELECTION ]─ Trying %d model(s): %s",
+        len(models),
+        ", ".join(str(m) for m in models),
+    )
+
     last_error = None
-    for model in models:
+    for idx, model in enumerate(models):
         model_str = str(model)
+        attempt = idx + 1
+        total = len(models)
+
+        logger.info("│ Attempt %d/%d: %s", attempt, total, model_str)
+
         try:
             llm = LLM(
                 model=model_str,
@@ -332,13 +344,28 @@ def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
                     "ensure_alternating_roles": True,
                 },
             )
-            logger.info("LLM initialized: %s", model_str)
+            logger.info(
+                "└─[ LLM SUCCESS ]─ Selected: %s (attempt %d/%d)",
+                model_str,
+                attempt,
+                total,
+            )
             return llm
         except Exception as e:
             last_error = e
-            logger.error("LLM model %s failed: %s", model_str, e, exc_info=True)
+            error_msg = str(e)
+            if "429" in error_msg or "RateLimitError" in error_msg:
+                logger.warning("│ Model %s rate limited, trying next...", model_str)
+            elif "None or empty" in error_msg or "Invalid response" in error_msg:
+                logger.warning(
+                    "│ Model %s returned empty response, trying next...", model_str
+                )
+            else:
+                logger.warning("│ Model %s failed: %s", model_str, error_msg[:100])
             continue
+
     if last_error is not None:
+        logger.error("└─[ LLM FAILED ]─ All models failed")
         raise Exception("All models failed") from last_error
     raise Exception("All models failed")
 

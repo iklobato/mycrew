@@ -50,11 +50,15 @@ class CreatePRToolInput(BaseModel):
     task: str = Field(..., description="Task description for PR title and body")
     implementation: str = Field(default="", description="Implementation summary")
     plan: str = Field(default="", description="Plan summary")
-    review_verdict: str = Field(default="", description="Review verdict (APPROVED or ISSUES)")
+    review_verdict: str = Field(
+        default="", description="Review verdict (APPROVED or ISSUES)"
+    )
     issue_url: str = Field(default="", description="Issue URL link")
     issue_id: str = Field(default="", description="Issue ID (e.g. fixes #42)")
     github_repo: str = Field(..., description="GitHub repo owner/name for gh")
-    labels: str = Field(default="", description="Comma-separated PR labels (e.g. feat, fix)")
+    labels: str = Field(
+        default="", description="Comma-separated PR labels (e.g. feat, fix)"
+    )
 
 
 class CreatePRTool(BaseTool):
@@ -89,9 +93,18 @@ class CreatePRTool(BaseTool):
             return f"Error: repo_path does not exist: {repo}"
         github_repo = (github_repo or "").strip()
         if not github_repo:
+            logger.info("└─[ CreatePRTool FAILED ]─ github_repo is required")
             return "Error: github_repo is required to create a PR"
 
-        logger.info("Publishing branch %s to origin", feature_branch)
+        logger.info("┌─[ CreatePRTool EXECUTE ]─")
+        logger.info("│ Input:")
+        logger.info("│   Feature branch: %s", feature_branch)
+        logger.info("│   Base branch: %s", base_branch)
+        logger.info("│   GitHub repo: %s", github_repo)
+        logger.info("│   Task: %s", task[:100] + "..." if len(task) > 100 else task)
+        logger.info("│   Issue ID: %s", issue_id if issue_id else "(none)")
+        logger.info("│   Labels: %s", labels if labels else "(none)")
+        logger.info("│ Publishing branch %s to origin", feature_branch)
         try:
             push = subprocess.run(
                 ["git", "push", "-u", "origin", feature_branch],
@@ -102,9 +115,11 @@ class CreatePRTool(BaseTool):
             )
             if push.returncode != 0 and "already exists" not in (push.stderr or ""):
                 logger.warning("git push failed: %s", push.stderr or push.stdout)
+                logger.info("└─[ CreatePRTool FAILED ]─ git push failed")
                 return f"Branch not pushed: {push.stderr or push.stdout}"
         except Exception as e:
             logger.error("git push failed: %s", e, exc_info=True)
+            logger.info("└─[ CreatePRTool FAILED ]─ git push failed")
             return f"Failed to push: {e}"
 
         title = task.strip().split("\n")[0][:80] if task else "Code changes"
@@ -112,9 +127,7 @@ class CreatePRTool(BaseTool):
             task, implementation, plan, review_verdict, issue_url, issue_id
         )
         try:
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".md", delete=False
-            ) as f:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
                 f.write(body)
                 body_file = f.name
             try:
@@ -142,10 +155,12 @@ class CreatePRTool(BaseTool):
                     logger.warning(
                         "gh pr create failed: %s", result.stderr or result.stdout
                     )
+                    logger.info("└─[ CreatePRTool FAILED ]─ gh pr create failed")
                     return f"PR creation failed: {result.stderr or result.stdout}"
                 pr_url = (result.stdout or "").strip()
                 if pr_url:
                     print(f"\n🔗 PR opened: {pr_url}\n")
+                    logger.info("│ PR URL: %s", pr_url)
 
                 # Add labels if provided
                 label_list = [x.strip() for x in (labels or "").split(",") if x.strip()]
@@ -154,6 +169,7 @@ class CreatePRTool(BaseTool):
                         match = re.search(r"/pull/(\d+)", pr_url)
                         if match:
                             pr_number = match.group(1)
+                            logger.info("│ Adding labels: %s", ", ".join(label_list))
                             for lbl in label_list:
                                 subprocess.run(
                                     ["gh", "pr", "edit", pr_number, "--add-label", lbl],
@@ -163,16 +179,19 @@ class CreatePRTool(BaseTool):
                                     timeout=15,
                                     env={**os.environ, "GH_REPO": github_repo},
                                 )
-                            logger.info("Labels added: %s", label_list)
+                            logger.info("│ Labels added successfully")
                     except Exception as e:
                         logger.warning("Failed to add labels: %s", e)
 
+                logger.info("└─[ CreatePRTool COMPLETE ]─")
                 return pr_url or "PR created"
             finally:
                 os.unlink(body_file)
         except FileNotFoundError:
             logger.warning("gh CLI not found; install from https://cli.github.com")
+            logger.info("└─[ CreatePRTool FAILED ]─ gh CLI not found")
             return "gh CLI not found; install to create PRs"
         except Exception as e:
             logger.error("gh pr create failed: %s", e, exc_info=True)
+            logger.info("└─[ CreatePRTool FAILED ]─")
             return f"PR creation failed: {e}"

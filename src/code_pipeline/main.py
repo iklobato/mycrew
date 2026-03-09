@@ -381,20 +381,23 @@ def _normalize_raw_verdict(raw: str) -> str:
 def _log_crew_metrics(crew, result, crew_name: str = "Crew") -> None:
     """Log crew output (tasks_output, token_usage) and per-agent usage_metrics."""
     try:
-        if hasattr(result, "tasks_output") and result.tasks_output:
-            summaries = []
-            for j, to in enumerate(result.tasks_output):
-                s = str(to)
-                summaries.append(f"[{j}] {s[:300]}{'...' if len(s) > 300 else ''}")
-            logger.debug(
-                "%s tasks_output (%d tasks): %s",
-                crew_name,
-                len(result.tasks_output),
-                summaries,
-            )
-        if hasattr(result, "token_usage") and result.token_usage is not None:
-            logger.debug("%s token_usage: %s", crew_name, result.token_usage)
+        # Log basic crew info
         agents = getattr(crew, "agents", None) or []
+        logger.info("│ Crew %s has %d agent(s)", crew_name, len(agents))
+
+        # Log token usage at INFO level
+        if hasattr(result, "token_usage") and result.token_usage is not None:
+            tu = result.token_usage
+            total_tokens = getattr(tu, "total_tokens", 0)
+            total_cost = getattr(tu, "total_cost", 0)
+            if total_tokens > 0:
+                logger.info(
+                    "│ Token usage: %d tokens, estimated cost: $%.6f",
+                    total_tokens,
+                    total_cost,
+                )
+
+        # Log per-agent usage metrics at INFO level
         for i, agent in enumerate(agents):
             um = getattr(agent, "usage_metrics", None)
             if um is not None:
@@ -403,12 +406,37 @@ def _log_crew_metrics(crew, result, crew_name: str = "Crew") -> None:
                     or getattr(agent, "name", None)
                     or f"agent_{i}"
                 )
-                logger.debug(
-                    "%s agent[%s] usage_metrics: %s", crew_name, agent_name, um
-                )
+                tokens = getattr(um, "total_tokens", 0)
+                cost = getattr(um, "total_cost", 0)
+                if tokens > 0:
+                    logger.info(
+                        "│ Agent '%s': %d tokens, $%.6f",
+                        agent_name,
+                        tokens,
+                        cost,
+                    )
+
+        # Log crew-level usage metrics
         crew_um = getattr(crew, "usage_metrics", None)
         if crew_um is not None:
-            logger.debug("%s crew usage_metrics: %s", crew_name, crew_um)
+            crew_tokens = getattr(crew_um, "total_tokens", 0)
+            crew_cost = getattr(crew_um, "total_cost", 0)
+            if crew_tokens > 0:
+                logger.info(
+                    "│ Crew total: %d tokens, $%.6f",
+                    crew_tokens,
+                    crew_cost,
+                )
+
+        # Log task output summaries at DEBUG level
+        if hasattr(result, "tasks_output") and result.tasks_output:
+            logger.debug("%s completed %d tasks", crew_name, len(result.tasks_output))
+            for j, to in enumerate(result.tasks_output):
+                s = str(to)
+                if len(s) > 100:
+                    logger.debug("[%s] Task %d: %s...", crew_name, j, s[:100])
+                else:
+                    logger.debug("[%s] Task %d: %s", crew_name, j, s)
     except Exception as e:
         logger.debug("Could not log crew metrics: %s", e)
 
@@ -738,6 +766,8 @@ class CodePipelineFlow(Flow[PipelineState]):
     def _run_crew(self, crew_class, inputs: dict, state_attr: str | None = None):
         """Run a crew and optionally store result in state. Returns raw output."""
         crew_name = crew_class.__name__
+
+        # Build repo context if not provided
         if "repo_context" not in inputs:
             inputs = dict(inputs)
             inputs["repo_context"] = build_repo_context(
@@ -747,8 +777,13 @@ class CodePipelineFlow(Flow[PipelineState]):
                 inputs.get("docs_url", "") or self.state.docs_url,
                 inputs.get("test_command", "") or self.state.test_command,
             )
-        logger.info("Running crew: %s", crew_name)
+
+        # Enhanced crew execution logging
+        logger.info("┌─[ CREW START: %s ]─", crew_name)
+        logger.info("│ Stage: %s", state_attr if state_attr else "no state attr")
+        logger.info("│ Input keys: %s", ", ".join(sorted(inputs.keys())))
         _log_crew_context(crew_name, inputs)
+
         try:
             result = _kickoff_with_retry(
                 crew_class().crew(),
@@ -756,22 +791,31 @@ class CodePipelineFlow(Flow[PipelineState]):
                 crew_name=crew_name,
             )
         except Exception as e:
-            logger.error("Crew %s failed: %s", crew_name, e, exc_info=True)
+            logger.error("└─[ CREW FAILED: %s ]─ %s", crew_name, e)
             raise
+
         raw = result.raw if hasattr(result, "raw") else str(result)
+
         if state_attr:
             setattr(self.state, state_attr, raw)
             if state_attr == "implementation":
                 _log_implementer_summary(raw)
             else:
                 logger.info(
-                    "Crew %s completed -> state.%s (len=%d)",
+                    "└─[ CREW COMPLETED: %s -> %s ]─ Output length: %d chars",
                     crew_name,
                     state_attr,
                     len(raw),
                 )
+                # Log first 200 chars of output for visibility
+                if raw:
+                    preview = raw[:200].replace("\n", " ")
+                    if len(raw) > 200:
+                        preview += "..."
+                    logger.info("│ Output preview: %s", preview)
         else:
-            logger.info("Crew %s completed (no state_attr)", crew_name)
+            logger.info("└─[ CREW COMPLETED: %s ]─ (no state attr)", crew_name)
+
         return raw
 
     def _retry_or_abort(self, prior_issues_prefix: str, output: str) -> str:

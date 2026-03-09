@@ -24,7 +24,9 @@ def _strtobool(val: Any) -> bool:
 class RepoFileWriterToolInput(BaseModel):
     """Input schema for RepoFileWriterTool."""
 
-    filename: str = Field(..., description="Relative path to the file (e.g. src/module.py)")
+    filename: str = Field(
+        ..., description="Relative path to the file (e.g. src/module.py)"
+    )
     content: str = Field(..., description="Full content to write")
     overwrite: bool | str = Field(
         default=False,
@@ -58,32 +60,51 @@ class RepoFileWriterTool(BaseTool):
         **kwargs: Any,
     ) -> str:
         action = "modifying" if _strtobool(overwrite) else "creating"
-        logger.info("Implementer writing file (%s): %s", action, filename)
+        logger.info("┌─[ RepoFileWriterTool EXECUTE ]─")
+        logger.info("│ Input:")
+        logger.info("│   Action: %s", action)
+        logger.info("│   Filename: %s", filename)
+        logger.info("│   Directory: %s", directory if directory else "(repo root)")
+        logger.info("│   Overwrite: %s", overwrite)
+        logger.info("│   Content length: %d chars", len(content))
+        logger.info(
+            "│   Content preview: %s",
+            content[:100] + "..." if len(content) > 100 else content,
+        )
+
         if not self.repo_path:
             logger.warning("RepoFileWriterTool: repo_path not set")
+            logger.info("└─[ RepoFileWriterTool FAILED ]─ repo_path not set")
             return "Error: repo_path is not set."
 
         repo = os.path.abspath(self.repo_path)
         if not os.path.isdir(repo):
+            logger.info("└─[ RepoFileWriterTool FAILED ]─ repo_path does not exist")
             return f"Error: repo_path does not exist: {repo}"
 
+        # Calculate filepath first (outside try block for exception handler)
+        base = repo
+        if directory and directory.strip():
+            sub = directory.strip().lstrip("/")
+            if sub and sub != ".":
+                base = os.path.join(repo, sub)
+                base = os.path.normpath(base)
+                if not base.startswith(repo):
+                    logger.info(
+                        "└─[ RepoFileWriterTool FAILED ]─ directory escapes repo"
+                    )
+                    return f"Error: directory must be inside repo: {directory}"
+
+        filepath = os.path.normpath(os.path.join(base, filename.lstrip("/")))
+        if not os.path.abspath(filepath).startswith(os.path.abspath(repo)):
+            logger.info("└─[ RepoFileWriterTool FAILED ]─ path escapes repo")
+            return f"Error: path escapes repo: {filename}"
+
         try:
-            base = repo
-            if directory and directory.strip():
-                sub = directory.strip().lstrip("/")
-                if sub and sub != ".":
-                    base = os.path.join(repo, sub)
-                    base = os.path.normpath(base)
-                    if not base.startswith(repo):
-                        return f"Error: directory must be inside repo: {directory}"
-
-            filepath = os.path.normpath(os.path.join(base, filename.lstrip("/")))
-            if not os.path.abspath(filepath).startswith(os.path.abspath(repo)):
-                return f"Error: path escapes repo: {filename}"
-
             overwrite_flag = _strtobool(overwrite)
 
             if not overwrite_flag and os.path.exists(filepath):
+                logger.info("└─[ RepoFileWriterTool FAILED ]─ file already exists")
                 return f"File {filepath} already exists. Set overwrite=true to modify."
 
             parent = os.path.dirname(filepath)
@@ -94,11 +115,15 @@ class RepoFileWriterTool(BaseTool):
                 f.write(content)
 
             rel = os.path.relpath(filepath, repo)
-            logger.info("Wrote: %s", rel)
+            logger.info("│ Output: Wrote %s", rel)
+            logger.info("│ File size: %d bytes", len(content))
+            logger.info("└─[ RepoFileWriterTool COMPLETE ]─")
             return f"Wrote {rel}"
 
         except FileExistsError:
+            logger.info("└─[ RepoFileWriterTool FAILED ]─ file already exists")
             return f"File {filepath} already exists. Set overwrite=true to modify."
         except Exception as e:
             logger.error("RepoFileWriterTool failed: %s", e, exc_info=True)
+            logger.info("└─[ RepoFileWriterTool FAILED ]─")
             return f"Error writing file: {e}"
