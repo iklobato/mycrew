@@ -2,10 +2,12 @@
 
 import logging
 import os
+import time
 import yaml
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from crewai import LLM
@@ -370,7 +372,7 @@ def _get_agent_model_config(stage: PipelineStage, agent_name: str) -> StageModel
 
 
 def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
-    """Try models in order, return the first that works."""
+    """Try models in order, return the first that works with smart retry strategy."""
     api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if api_key:
         os.environ["OPENROUTER_API_KEY"] = api_key
@@ -390,10 +392,13 @@ def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
         logger.info("│ Attempt %d/%d: %s", attempt, total, model_str)
 
         try:
+            # Configure retry strategy based on model type
+            retry_config = _get_retry_config_for_model(model_str)
+
             llm = LLM(
                 model=model_str,
-                num_retries=5,
-                time_between_retries=8,
+                num_retries=retry_config["num_retries"],
+                time_between_retries=retry_config["time_between_retries"],
                 timeout=120,
                 max_tokens=8192,
                 stream=False,  # Avoid empty responses from streaming with some OpenRouter models
@@ -417,7 +422,16 @@ def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
             last_error = e
             error_msg = str(e)
             if "429" in error_msg or "RateLimitError" in error_msg:
+                # Rate limit hit - apply longer backoff for this model
                 logger.warning("│ Model %s rate limited, trying next...", model_str)
+                # If it's a free model with strict limits, wait longer before retrying same model
+                if "free" in model_str.lower():
+                    logger.warning(
+                        "│ Free model rate limited, waiting 30s before next attempt..."
+                    )
+                    import time
+
+                    time.sleep(30)
             elif "None or empty" in error_msg or "Invalid response" in error_msg:
                 logger.warning(
                     "│ Model %s returned empty response, trying next...", model_str
@@ -430,6 +444,32 @@ def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
         logger.error("└─[ LLM FAILED ]─ All models failed")
         raise Exception("All models failed") from last_error
     raise Exception("All models failed")
+
+
+def _get_retry_config_for_model(model_str: str) -> dict:
+    """Get retry configuration optimized for specific model types."""
+    model_lower = model_str.lower()
+
+    # Free models have stricter rate limits - need more conservative retry strategy
+    if "free" in model_lower:
+        return {
+            "num_retries": 3,  # Fewer retries for free models
+            "time_between_retries": 30,  # Longer wait between retries (30 seconds)
+        }
+    # Paid models can have more aggressive retry
+    elif any(
+        paid_model in model_lower for paid_model in ["gpt-", "claude-", "gemini-"]
+    ):
+        return {
+            "num_retries": 5,
+            "time_between_retries": 10,  # 10 seconds for paid models
+        }
+    # Default for other models
+    else:
+        return {
+            "num_retries": 4,
+            "time_between_retries": 15,  # 15 seconds default
+        }
 
 
 def get_llm_for_stage(stage: str | PipelineStage, agent_name: str | None = None) -> LLM:

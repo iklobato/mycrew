@@ -8,6 +8,35 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
+from pathlib import Path
+
+# Load .env file if it exists (before any other imports)
+env_path = Path.cwd() / ".env"
+if env_path.exists():
+    try:
+        # Simple .env file parsing
+        with open(env_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    key = key.strip()
+                    value = value.strip()
+                    # Remove quotes if present
+                    if (value.startswith('"') and value.endswith('"')) or (
+                        value.startswith("'") and value.endswith("'")
+                    ):
+                        value = value[1:-1]
+                    # Only set if not already in environment
+                    if key and value and key not in os.environ:
+                        os.environ[key] = value
+                        logging.getLogger(__name__).debug(
+                            f"Loaded from .env: {key}={value[:10]}..."
+                            if len(value) > 10
+                            else f"Loaded from .env: {key}={value}"
+                        )
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Failed to load .env file: {e}")
 
 # Disable CrewAI telemetry by default to avoid SSL certificate errors
 # This must be set BEFORE any CrewAI imports
@@ -517,6 +546,8 @@ class PipelineArgs:
     docs_url: str = ""
     focus_paths: str = ""
     exclude_paths: str = ""
+    serper_enabled: bool = False
+    serper_n_results: int = 5
 
     def to_flow_inputs(self) -> dict:
         """Convert to flow inputs dict with repo_path normalized."""
@@ -534,6 +565,8 @@ class PipelineArgs:
             "docs_url": self.docs_url,
             "focus_paths": self.focus_paths,
             "exclude_paths": self.exclude_paths,
+            "serper_enabled": self.serper_enabled,
+            "serper_n_results": self.serper_n_results,
         }
 
     def replace(self, **overrides) -> "PipelineArgs":
@@ -572,6 +605,8 @@ def _load_config(path: str) -> dict:
         "docs_url": "docs_url",
         "focus_paths": "focus_paths",
         "exclude_paths": "exclude_paths",
+        "serper_enabled": "serper_enabled",
+        "serper_n_results": "serper_n_results",
     }
 
     # First check if we have the new nested structure
@@ -585,6 +620,24 @@ def _load_config(path: str) -> dict:
                 if key in ("focus_paths", "exclude_paths") and isinstance(v, list):
                     val = ",".join(str(x) for x in v) if v else ""
                 out[key_map[key]] = val
+
+        # Extract serper configuration from tools section
+        tools_data = data.get("tools", {})
+        serper_config = tools_data.get("serper", {})
+        if serper_config:
+            if "enabled" in serper_config:
+                out["serper_enabled"] = serper_config.get("enabled", False)
+            if "n_results" in serper_config:
+                out["serper_n_results"] = serper_config.get("n_results", 5)
+
+        # Also set environment variables for serper configuration
+        if serper_config:
+            if "enabled" in serper_config:
+                os.environ["SERPER_ENABLED"] = str(
+                    serper_config.get("enabled", False)
+                ).lower()
+            if "n_results" in serper_config:
+                os.environ["SERPER_N_RESULTS"] = str(serper_config.get("n_results", 5))
     else:
         # Old flat structure
         for k, v in data.items():
@@ -594,6 +647,16 @@ def _load_config(path: str) -> dict:
                 if key in ("focus_paths", "exclude_paths") and isinstance(v, list):
                     val = ",".join(str(x) for x in v) if v else ""
                 out[key_map[key]] = val
+
+        # Extract serper configuration from old flat structure
+        if "serper_enabled" in data:
+            out["serper_enabled"] = data.get("serper_enabled", False)
+            os.environ["SERPER_ENABLED"] = str(
+                data.get("serper_enabled", False)
+            ).lower()
+        if "serper_n_results" in data:
+            out["serper_n_results"] = data.get("serper_n_results", 5)
+            os.environ["SERPER_N_RESULTS"] = str(data.get("serper_n_results", 5))
 
     # Extract model configuration if present
     if "models" in data:
@@ -615,6 +678,8 @@ def _load_config(path: str) -> dict:
             os.environ["OPENAI_API_KEY"] = api_keys["openai_api_key"]
         if "github_token" in api_keys and api_keys["github_token"]:
             os.environ["GITHUB_TOKEN"] = api_keys["github_token"]
+        if "serper_api_key" in api_keys and api_keys["serper_api_key"]:
+            os.environ["SERPER_API_KEY"] = api_keys["serper_api_key"]
 
     # Extract logging configuration if present
     if "logging" in data:
@@ -667,6 +732,17 @@ def _parse_args() -> PipelineArgs:
         help="Comma-separated paths to skip in exploration (e.g. node_modules,vendor)",
     )
     parser.add_argument(
+        "--serper-enabled",
+        action="store_true",
+        help="Enable web search via SerperDevTool (requires SERPER_API_KEY)",
+    )
+    parser.add_argument(
+        "--serper-n-results",
+        type=int,
+        default=None,
+        help="Number of search results to return (default: 5)",
+    )
+    parser.add_argument(
         "-v", "--verbose", action="store_true", help="Enable DEBUG logging"
     )
     parser.add_argument(
@@ -703,6 +779,8 @@ def _parse_args() -> PipelineArgs:
         "docs_url": "",
         "focus_paths": "",
         "exclude_paths": "",
+        "serper_enabled": False,
+        "serper_n_results": 5,
     }
     # Merge: config first, then defaults, then CLI overrides
     base = {**defaults, **config_data}
@@ -718,6 +796,8 @@ def _parse_args() -> PipelineArgs:
         "docs_url": ns.docs_url,
         "focus_paths": ns.focus_paths,
         "exclude_paths": ns.exclude_paths,
+        "serper_enabled": ns.serper_enabled,
+        "serper_n_results": ns.serper_n_results,
     }
     # store_true: only override when user explicitly passed the flag (don't overwrite config with False)
     if getattr(ns, "from_scratch", False):
@@ -901,6 +981,10 @@ class CodePipelineFlow(Flow[PipelineState]):
         os.environ["GITHUB_REPO"] = self.state.github_repo or ""
         os.environ["ISSUE_URL"] = self.state.issue_url or ""
         os.environ["DOCS_URL"] = self.state.docs_url or ""
+        os.environ["SERPER_ENABLED"] = str(
+            getattr(self.state, "serper_enabled", False)
+        ).lower()
+        os.environ["SERPER_N_RESULTS"] = str(getattr(self.state, "serper_n_results", 5))
         return self._run_crew(
             IssueAnalystCrew,
             {
@@ -924,6 +1008,10 @@ class CodePipelineFlow(Flow[PipelineState]):
         logger.info("Flow step: explore")
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
         os.environ["REPO_PATH"] = repo_path
+        os.environ["SERPER_ENABLED"] = str(
+            getattr(self.state, "serper_enabled", False)
+        ).lower()
+        os.environ["SERPER_N_RESULTS"] = str(getattr(self.state, "serper_n_results", 5))
         self.state.repo_path = repo_path
         _log_crew_context(
             "ExplorerCrew",

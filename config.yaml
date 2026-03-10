@@ -53,7 +53,7 @@ pipeline:
 # API Keys and Authentication
 # ---------------------------
 # Note: For security, these can also be set as environment variables:
-#   OPENROUTER_API_KEY, OPENAI_API_KEY, GITHUB_TOKEN
+#   OPENROUTER_API_KEY, OPENAI_API_KEY, GITHUB_TOKEN, SERPER_API_KEY
 api_keys:
   # OpenRouter API key (required for model access)
   openrouter_api_key: ""
@@ -63,6 +63,9 @@ api_keys:
   
   # GitHub Personal Access Token (for GitHub API access)
   github_token: ""
+  
+  # Serper API key for web search (optional - enables SerperDevTool)
+  serper_api_key: ""
 
 # Logging Configuration
 # ---------------------
@@ -158,6 +161,12 @@ tools:
   
   # Timeout for PR creation (seconds)
   pr_creation_timeout: 30
+  
+  # Web search configuration (SerperDevTool)
+  serper:
+    enabled: true  # Enable/disable web search (opt-in for cost control)
+    n_results: 5    # Default number of search results
+    timeout: 30     # Search timeout in seconds
   
   # Dangerous command patterns to block
   dangerous_patterns:

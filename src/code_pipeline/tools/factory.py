@@ -18,13 +18,19 @@ def _repo_shell_plus_optional(
     *,
     docs_url: str | None = None,
     github_repo: str | None = None,
+    serper_enabled: bool = False,
+    serper_n_results: int = 5,
 ) -> list[BaseTool]:
-    """RepoShellTool plus optional CodeDocsSearch and GithubSearch. Avoids crewai_tools segfault on macOS."""
+    """RepoShellTool plus optional CodeDocsSearch, GithubSearch, and SerperDevTool."""
     tools: list[BaseTool] = [RepoShellTool(repo_path=repo_path)]
     if docs_url and (cd := get_code_docs_search_tool(docs_url)):
         tools.append(cd)
     if github_repo and (gh := get_github_search_tool(github_repo)):
         tools.append(gh)
+    if serper_enabled and (
+        sp := get_serper_tool(enabled=True, n_results=serper_n_results)
+    ):
+        tools.append(sp)
     return tools
 
 
@@ -33,12 +39,19 @@ def get_tools_for_stage(
     repo_path: str,
     github_repo: str | None = None,
     docs_url: str | None = None,
+    serper_enabled: bool = False,
+    serper_n_results: int = 5,
 ) -> list[BaseTool]:
     """Return the full tool list for a pipeline stage. Centralizes tool selection."""
     repo_path = os.path.abspath(repo_path)
     github_repo = (github_repo or "").strip() or None
     docs_url = (docs_url or "").strip() or None
-    logger.debug("get_tools_for_stage: stage=%s, repo_path=%s", stage, repo_path)
+    logger.debug(
+        "get_tools_for_stage: stage=%s, repo_path=%s, serper_enabled=%s",
+        stage,
+        repo_path,
+        serper_enabled,
+    )
 
     if stage == "analyze_issue":
         tools: list[BaseTool] = [
@@ -47,27 +60,50 @@ def get_tools_for_stage(
         ]
         gh = get_github_search_tool(github_repo)
         cd = get_code_docs_search_tool(docs_url)
+        sp = get_serper_tool(enabled=serper_enabled, n_results=serper_n_results)
         if gh:
             tools.append(gh)
         if cd:
             tools.append(cd)
+        if sp:
+            tools.append(sp)
         logger.debug(
-            "Stage %s: %d tools (scrape, RepoShell, github=%s, docs=%s)",
+            "Stage %s: %d tools (scrape, RepoShell, github=%s, docs=%s, serper=%s)",
             stage,
             len(tools),
             gh is not None,
             cd is not None,
+            sp is not None,
         )
         return tools
 
     if stage == "explore":
-        tools = _repo_shell_plus_optional(repo_path, docs_url=docs_url)
-        logger.debug("Stage %s: %d tools (RepoShell, docs=%s)", stage, len(tools), bool(docs_url))
+        tools = _repo_shell_plus_optional(
+            repo_path,
+            docs_url=docs_url,
+            serper_enabled=serper_enabled,
+            serper_n_results=serper_n_results,
+        )
+        logger.debug(
+            "Stage %s: %d tools (RepoShell, docs=%s, serper=%s)",
+            stage,
+            len(tools),
+            bool(docs_url),
+            serper_enabled,
+        )
         return tools
 
     if stage == "plan":
-        tools = _repo_shell_plus_optional(repo_path, docs_url=docs_url, github_repo=github_repo)
-        logger.debug("Stage %s: %d tools", stage, len(tools))
+        tools = _repo_shell_plus_optional(
+            repo_path,
+            docs_url=docs_url,
+            github_repo=github_repo,
+            serper_enabled=serper_enabled,
+            serper_n_results=serper_n_results,
+        )
+        logger.debug(
+            "Stage %s: %d tools (serper=%s)", stage, len(tools), serper_enabled
+        )
         return tools
 
     if stage == "implement":
@@ -79,12 +115,24 @@ def get_tools_for_stage(
         ci = get_code_interpreter_tool()
         if ci:
             tools.append(ci)
-        logger.debug("Stage %s: %d tools (FileWriter, CodeInterpreter=%s)", stage, len(tools), ci is not None)
+        logger.debug(
+            "Stage %s: %d tools (FileWriter, CodeInterpreter=%s)",
+            stage,
+            len(tools),
+            ci is not None,
+        )
         return tools
 
     if stage == "review":
-        tools = _repo_shell_plus_optional(repo_path, docs_url=docs_url)
-        logger.debug("Stage %s: %d tools", stage, len(tools))
+        tools = _repo_shell_plus_optional(
+            repo_path,
+            docs_url=docs_url,
+            serper_enabled=serper_enabled,
+            serper_n_results=serper_n_results,
+        )
+        logger.debug(
+            "Stage %s: %d tools (serper=%s)", stage, len(tools), serper_enabled
+        )
         return tools
 
     if stage == "commit":
@@ -120,8 +168,15 @@ def get_tools_for_stage(
         return tools
 
     if stage == "security_review":
-        tools = _repo_shell_plus_optional(repo_path, docs_url=docs_url)
-        logger.debug("Stage %s: %d tools", stage, len(tools))
+        tools = _repo_shell_plus_optional(
+            repo_path,
+            docs_url=docs_url,
+            serper_enabled=serper_enabled,
+            serper_n_results=serper_n_results,
+        )
+        logger.debug(
+            "Stage %s: %d tools (serper=%s)", stage, len(tools), serper_enabled
+        )
         return tools
 
     logger.warning("Unknown stage %s, returning empty tools", stage)
@@ -167,4 +222,26 @@ def get_code_interpreter_tool() -> BaseTool | None:
         return CodeInterpreterTool()
     except Exception as e:
         logger.error("CodeInterpreterTool unavailable: %s", e, exc_info=True)
+        return None
+
+
+@log_exceptions("SerperDevTool")
+def get_serper_tool(enabled: bool = True, n_results: int = 5) -> BaseTool | None:
+    """Return SerperDevTool for web search if enabled and API key is available."""
+    if not enabled:
+        logger.debug("SerperDevTool disabled by configuration")
+        return None
+
+    api_key = os.environ.get("SERPER_API_KEY", "").strip()
+    if not api_key:
+        logger.warning("SerperDevTool disabled: SERPER_API_KEY not set")
+        return None
+
+    try:
+        from crewai_tools import SerperDevTool
+
+        logger.info("SerperDevTool enabled with n_results=%d", n_results)
+        return SerperDevTool(n_results=n_results)
+    except Exception as e:
+        logger.error("SerperDevTool unavailable: %s", e, exc_info=True)
         return None
