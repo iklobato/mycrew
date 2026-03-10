@@ -56,6 +56,8 @@ class CommitCrew:
             tools=tools,
             llm=get_llm_for_stage("auxiliary", agent_name="changelog_agent"),
             verbose=False,
+            max_iter=3,
+            max_rpm=10,
         )
 
     @agent
@@ -65,6 +67,8 @@ class CommitCrew:
             tools=[],
             llm=get_llm_for_stage("auxiliary", agent_name="pr_labels_suggester"),
             verbose=False,
+            max_iter=3,
+            max_rpm=10,
         )
 
     @agent
@@ -76,6 +80,8 @@ class CommitCrew:
             tools=tools,
             llm=get_llm_for_stage("publish", agent_name="publish_agent"),
             verbose=False,
+            max_iter=3,
+            max_rpm=10,
         )
 
     @task

@@ -204,6 +204,29 @@ def _configure_logging(level: str | int | None = None) -> None:
         log.setLevel(getattr(logging, env_level, logging.INFO))
 
 
+def _log_with_context(
+    logger: logging.Logger,
+    level: str,
+    message: str,
+    step: str = "",
+    crew: str = "",
+    agent: str = "",
+    *args,
+    **kwargs,
+) -> None:
+    """Log a message with pipeline context (step, crew, agent)."""
+    extra = {}
+    if step:
+        extra["pipeline_step"] = step
+    if crew:
+        extra["pipeline_crew"] = crew
+    if agent:
+        extra["pipeline_agent"] = agent
+
+    log_method = getattr(logger, level.lower())
+    log_method(message, *args, extra=extra, **kwargs)
+
+
 def _log_section(title: str, body: str, char: str = "─") -> None:
     """Log a section with a visual separator."""
     width = 60
@@ -293,7 +316,7 @@ def _log_implementer_summary(implementation: str) -> None:
             logger.info("  ... (%d more)", len(wrote) - 15)
     else:
         # Fallback: first few lines
-        preview = "\n  ".join(l.strip() for l in lines[:8] if l.strip())
+        preview = "\n  ".join(line.strip() for line in lines[:8] if line.strip())
         if preview:
             logger.info(
                 "Implementer summary:\n  %s",
@@ -346,10 +369,10 @@ def _fallback_exploration(repo_path: str, issue_analysis: str) -> str:
         entries = []
         try:
             for e in sorted(os.listdir(repo_path))[:30]:
-                st = os.stat(os.path.join(repo_path, e))
-                entries.append(
-                    f"{'d' if os.path.isdir(os.path.join(repo_path, e)) else '-'} {e}"
-                )
+                # Get file/directory info
+                entry_path = os.path.join(repo_path, e)
+                is_dir = os.path.isdir(entry_path)
+                entries.append(f"{'d' if is_dir else '-'} {e}")
         except OSError as e:
             logger.error(
                 "Fallback exploration: failed to list directory %s: %s",
@@ -957,10 +980,28 @@ class CodePipelineFlow(Flow[PipelineState]):
                 inputs.get("test_command", "") or self.state.test_command,
             )
 
-        # Enhanced crew execution logging
-        logger.info("┌─[ CREW START: %s ]─", crew_name)
-        logger.info("│ Stage: %s", state_attr if state_attr else "no state attr")
-        logger.info("│ Input keys: %s", ", ".join(sorted(inputs.keys())))
+        # Enhanced crew execution logging with context
+        _log_with_context(
+            logger,
+            "INFO",
+            f"┌─[ CREW START: {crew_name} ]─",
+            step="crew",
+            crew=crew_name,
+        )
+        _log_with_context(
+            logger,
+            "INFO",
+            f"│ Stage: {state_attr if state_attr else 'no state attr'}",
+            step="crew",
+            crew=crew_name,
+        )
+        _log_with_context(
+            logger,
+            "INFO",
+            f"│ Input keys: {', '.join(sorted(inputs.keys()))}",
+            step="crew",
+            crew=crew_name,
+        )
         _log_crew_context(crew_name, inputs)
 
         try:
@@ -970,7 +1011,13 @@ class CodePipelineFlow(Flow[PipelineState]):
                 crew_name=crew_name,
             )
         except Exception as e:
-            logger.error("└─[ CREW FAILED: %s ]─ %s", crew_name, e)
+            _log_with_context(
+                logger,
+                "ERROR",
+                f"└─[ CREW FAILED: {crew_name} ]─ {e}",
+                step="crew",
+                crew=crew_name,
+            )
             raise
 
         # Handle different types of results to ensure we always get a string
@@ -998,20 +1045,33 @@ class CodePipelineFlow(Flow[PipelineState]):
             if state_attr == "implementation":
                 _log_implementer_summary(raw)
             else:
-                logger.info(
-                    "└─[ CREW COMPLETED: %s -> %s ]─ Output length: %d chars",
-                    crew_name,
-                    state_attr,
-                    len(raw),
+                _log_with_context(
+                    logger,
+                    "INFO",
+                    f"└─[ CREW COMPLETED: {crew_name} -> {state_attr} ]─ Output length: {len(raw)} chars",
+                    step="crew",
+                    crew=crew_name,
                 )
                 # Log first 200 chars of output for visibility
                 if raw:
                     preview = raw[:200].replace("\n", " ")
                     if len(raw) > 200:
                         preview += "..."
-                    logger.info("│ Output preview: %s", preview)
+                    _log_with_context(
+                        logger,
+                        "INFO",
+                        f"│ Output preview: {preview}",
+                        step="crew",
+                        crew=crew_name,
+                    )
         else:
-            logger.info("└─[ CREW COMPLETED: %s ]─ (no state attr)", crew_name)
+            _log_with_context(
+                logger,
+                "INFO",
+                f"└─[ CREW COMPLETED: {crew_name} ]─ (no state attr)",
+                step="crew",
+                crew=crew_name,
+            )
 
         return raw
 
@@ -1037,7 +1097,9 @@ class CodePipelineFlow(Flow[PipelineState]):
         if self.state.issue_analysis and not self.state.from_scratch:
             logger.info("Flow step: analyze_issue (resumed, cached)")
             return self.state.issue_analysis
-        logger.info("Flow step: analyze_issue (start)")
+        _log_with_context(
+            logger, "INFO", "Flow step: analyze_issue (start)", step="analyze_issue"
+        )
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
         os.environ["REPO_PATH"] = repo_path
         os.environ["GITHUB_REPO"] = self.state.github_repo or ""
@@ -1067,7 +1129,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         if self.state.exploration and not self.state.from_scratch:
             logger.info("Flow step: explore (resumed, cached)")
             return self.state.exploration
-        logger.info("Flow step: explore")
+        _log_with_context(logger, "INFO", "Flow step: explore", step="explore")
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
         os.environ["REPO_PATH"] = repo_path
         os.environ["SERPER_ENABLED"] = str(
@@ -1114,7 +1176,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         if self.state.clarifications and not self.state.from_scratch:
             logger.info("Flow step: clarify (resumed, cached)")
             return self.state.clarifications
-        logger.info("Flow step: clarify")
+        _log_with_context(logger, "INFO", "Flow step: clarify", step="clarify")
         return self._run_crew(
             ClarifyCrew,
             {
@@ -1131,7 +1193,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         if self.state.plan and not self.state.from_scratch:
             logger.info("Flow step: plan (resumed, cached)")
             return self.state.plan
-        logger.info("Flow step: plan")
+        _log_with_context(logger, "INFO", "Flow step: plan", step="plan")
         return self._run_crew(
             ArchitectCrew,
             {
@@ -1163,7 +1225,12 @@ class CodePipelineFlow(Flow[PipelineState]):
 
     def _run_implement(self):
         """Shared implementation logic for initial run and retries."""
-        logger.info("Flow step: implement (retry_count=%d)", self.state.retry_count)
+        _log_with_context(
+            logger,
+            "INFO",
+            f"Flow step: implement (retry_count={self.state.retry_count})",
+            step="implement",
+        )
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
         os.environ["REPO_PATH"] = repo_path
         return self._run_crew(
@@ -1207,7 +1274,7 @@ class CodePipelineFlow(Flow[PipelineState]):
             )
             out = (result.stdout or "").strip()
             # Filter out .code_pipeline — pipeline state, not application changes
-            lines = [l for l in out.splitlines() if ".code_pipeline" not in l]
+            lines = [line for line in out.splitlines() if ".code_pipeline" not in line]
             filtered = "\n".join(lines).strip()
             return bool(filtered), filtered or out or "(no changes)"
         except Exception as e:
@@ -1216,7 +1283,9 @@ class CodePipelineFlow(Flow[PipelineState]):
 
     def _run_quality_gate(self):
         """Shared quality gate logic. Fails if no file changes detected."""
-        logger.info("Flow step: quality_gate")
+        _log_with_context(
+            logger, "INFO", "Flow step: quality_gate", step="quality_gate"
+        )
         has_changes, status_out = self._repo_has_changes()
         if not has_changes:
             msg = (
@@ -1259,7 +1328,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         if self.state.review_verdict and not self.state.from_scratch:
             logger.info("Flow step: review (resumed, cached)")
             return self.state.review_verdict
-        logger.info("Flow step: review")
+        _log_with_context(logger, "INFO", "Flow step: review", step="review")
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
         os.environ["REPO_PATH"] = repo_path
         _log_crew_context(
@@ -1414,7 +1483,13 @@ class CodePipelineFlow(Flow[PipelineState]):
         task_lower = self.state.task.lower()
         commit_type = "feat"  # default
 
-        # Map keywords to commit types
+        # First, remove conventional commit prefix if present (e.g., "feat:", "fix:")
+        # This prevents matching the prefix itself as a keyword
+        task_without_prefix = re.sub(
+            r"^(feat|fix|docs|style|refactor|test|chore|perf|ci):\s*", "", task_lower
+        )
+
+        # Map keywords to commit types (search in task without prefix)
         type_patterns = {
             "fix": r"\b(fix|bug|error|issue|problem|crash|broken)\b",
             "docs": r"\b(doc|readme|documentation|comment|changelog)\b",
@@ -1427,7 +1502,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         }
 
         for ctype, pattern in type_patterns.items():
-            if re.search(pattern, task_lower):
+            if re.search(pattern, task_without_prefix):
                 commit_type = ctype
                 break
 
@@ -1436,7 +1511,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         clean_task = re.sub(
             r"^(add|update|implement|create|fix|improve|enhance|refactor|remove|delete)\s+",
             "",
-            task_lower,
+            task_without_prefix,
             flags=re.IGNORECASE,
         )
         clean_task = re.sub(
