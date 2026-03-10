@@ -60,6 +60,8 @@ class ExplorerCrew:
     @agent
     def test_layout_scout(self) -> Agent:
         repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        serper_n_results = int(os.environ.get("SERPER_N_RESULTS", "5"))
         tools = get_tools_for_stage(
             "explore",
             repo_path,
@@ -76,6 +78,8 @@ class ExplorerCrew:
     @agent
     def convention_extractor(self) -> Agent:
         repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        serper_n_results = int(os.environ.get("SERPER_N_RESULTS", "5"))
         tools = get_tools_for_stage(
             "explore",
             repo_path,
@@ -92,6 +96,8 @@ class ExplorerCrew:
     @agent
     def api_boundary_scout(self) -> Agent:
         repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
+        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        serper_n_results = int(os.environ.get("SERPER_N_RESULTS", "5"))
         tools = get_tools_for_stage(
             "explore",
             repo_path,

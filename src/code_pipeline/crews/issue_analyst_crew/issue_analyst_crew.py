@@ -57,7 +57,14 @@ class IssueAnalystCrew:
     @agent
     def similar_issues_synthesizer(self) -> Agent:
         repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        tools = get_tools_for_stage("analyze_issue", repo_path, serper_enabled=serper_enabled, serper_n_results=serper_n_results)
+        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        serper_n_results = int(os.environ.get("SERPER_N_RESULTS", "5"))
+        tools = get_tools_for_stage(
+            "analyze_issue",
+            repo_path,
+            serper_enabled=serper_enabled,
+            serper_n_results=serper_n_results,
+        )
         return Agent(
             config=self.agents_config["similar_issues_synthesizer"],  # type: ignore[index]
             tools=tools,

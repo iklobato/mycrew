@@ -38,7 +38,15 @@ class ReviewerCrew:
     def reviewer(self) -> Agent:
         repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
         docs_url = (os.environ.get("DOCS_URL", "") or "").strip() or None
-        tools = get_tools_for_stage("review", repo_path, , docs_url=docs_url, serper_enabled=serper_enabled, serper_n_results=serper_n_results)
+        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        serper_n_results = int(os.environ.get("SERPER_N_RESULTS", "5"))
+        tools = get_tools_for_stage(
+            "review",
+            repo_path,
+            docs_url=docs_url,
+            serper_enabled=serper_enabled,
+            serper_n_results=serper_n_results,
+        )
         return Agent(
             config=self.agents_config["reviewer"],  # type: ignore[index]
             tools=tools,
@@ -50,7 +58,15 @@ class ReviewerCrew:
     def security_reviewer(self) -> Agent:
         repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
         docs_url = (os.environ.get("DOCS_URL", "") or "").strip() or None
-        tools = get_tools_for_stage("security_review", repo_path, , docs_url=docs_url, serper_enabled=serper_enabled, serper_n_results=serper_n_results)
+        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        serper_n_results = int(os.environ.get("SERPER_N_RESULTS", "5"))
+        tools = get_tools_for_stage(
+            "security_review",
+            repo_path,
+            docs_url=docs_url,
+            serper_enabled=serper_enabled,
+            serper_n_results=serper_n_results,
+        )
         return Agent(
             config=self.agents_config["security_reviewer"],  # type: ignore[index]
             tools=tools,
@@ -61,7 +77,14 @@ class ReviewerCrew:
     @agent
     def performance_reviewer(self) -> Agent:
         repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        tools = get_tools_for_stage("security_review", repo_path, serper_enabled=serper_enabled, serper_n_results=serper_n_results)
+        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        serper_n_results = int(os.environ.get("SERPER_N_RESULTS", "5"))
+        tools = get_tools_for_stage(
+            "security_review",
+            repo_path,
+            serper_enabled=serper_enabled,
+            serper_n_results=serper_n_results,
+        )
         return Agent(
             config=self.agents_config["performance_reviewer"],  # type: ignore[index]
             tools=tools,
@@ -72,7 +95,14 @@ class ReviewerCrew:
     @agent
     def accessibility_checker(self) -> Agent:
         repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        tools = get_tools_for_stage("security_review", repo_path, serper_enabled=serper_enabled, serper_n_results=serper_n_results)
+        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        serper_n_results = int(os.environ.get("SERPER_N_RESULTS", "5"))
+        tools = get_tools_for_stage(
+            "security_review",
+            repo_path,
+            serper_enabled=serper_enabled,
+            serper_n_results=serper_n_results,
+        )
         return Agent(
             config=self.agents_config["accessibility_checker"],  # type: ignore[index]
             tools=tools,
@@ -83,7 +113,14 @@ class ReviewerCrew:
     @agent
     def backward_compat_checker(self) -> Agent:
         repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        tools = get_tools_for_stage("security_review", repo_path, serper_enabled=serper_enabled, serper_n_results=serper_n_results)
+        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        serper_n_results = int(os.environ.get("SERPER_N_RESULTS", "5"))
+        tools = get_tools_for_stage(
+            "security_review",
+            repo_path,
+            serper_enabled=serper_enabled,
+            serper_n_results=serper_n_results,
+        )
         return Agent(
             config=self.agents_config["backward_compat_checker"],  # type: ignore[index]
             tools=tools,
@@ -95,7 +132,15 @@ class ReviewerCrew:
     def convention_checker(self) -> Agent:
         repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
         docs_url = (os.environ.get("DOCS_URL", "") or "").strip() or None
-        tools = get_tools_for_stage("review", repo_path, , docs_url=docs_url, serper_enabled=serper_enabled, serper_n_results=serper_n_results)
+        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        serper_n_results = int(os.environ.get("SERPER_N_RESULTS", "5"))
+        tools = get_tools_for_stage(
+            "review",
+            repo_path,
+            docs_url=docs_url,
+            serper_enabled=serper_enabled,
+            serper_n_results=serper_n_results,
+        )
         return Agent(
             config=self.agents_config["convention_checker"],  # type: ignore[index]
             tools=tools,
