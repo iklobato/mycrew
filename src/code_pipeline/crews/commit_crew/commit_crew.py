@@ -30,6 +30,8 @@ class CommitCrew:
             tools=tools,
             llm=get_llm_for_stage("commit", agent_name="git_agent"),
             verbose=False,
+            max_iter=3,  # Limit iterations to prevent infinite loops
+            max_rpm=10,  # Limit requests per minute
         )
 
     @agent
