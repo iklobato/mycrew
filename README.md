@@ -141,17 +141,39 @@ Available task variables: `TASK_DESC`, `R` (repo_path), `B` (branch), `V` (from_
 
 ## 👥 Crews & Agents
 
+The pipeline consists of 7 sequential crews with 28 specialized agents. Each crew processes the task through multiple agents, with output flowing sequentially to the next crew.
+
+**Pipeline Flow**: `Issue Analyst → Explorer → Clarify → Architect → Implementer → Reviewer → Commit`
+
+**Crew Overview:**
+- **Issue Analyst** (`analyze_issue`): Parse raw task into structured requirements with clear scope boundaries
+- **Explorer** (`explore`): Comprehensive codebase analysis to understand structure, dependencies, and conventions
+- **Clarify** (`auxiliary`/`analyze_issue`): Resolve ambiguities before planning via targeted human questions
+- **Architect** (`plan`): Create minimal file-level implementation plan (no code)
+- **Implementer** (`implement`): Execute plan by writing actual code and tests
+- **Reviewer** (`review`/`security`/`auxiliary`): Comprehensive code review with quality gates
+- **Commit** (`commit`/`publish`/`auxiliary`): Create feature branch, commit changes, and publish PR
+
 ### 1. Issue Analyst Crew (`analyze_issue` stage)
 **Primary Model**: `openrouter/google/gemini-3-flash-preview`  
 **Fallbacks**: `openrouter/deepseek/deepseek-v3.2`, `openrouter/deepseek/deepseek-r1`  
 **Purpose**: Parse raw task descriptions into structured requirements with clear scope boundaries.
 
-| Agent | Tools | Key Responsibilities | Web Search Integration |
-|-------|-------|---------------------|------------------------|
-| **similar_issues_synthesizer** | `RepoShellTool`, `SerperDevTool` (when enabled) | • Fetch similar GitHub issues/PRs via `gh` CLI<br>• Produce "company moment" (recent merges + open work)<br>• Research issue patterns via web search | Searches: "GitHub issue patterns [technology]", "Common solutions for [problem]", "[Technology] implementation approaches" |
-| **issue_analyst** | `ScrapeWebsiteTool`, `GithubSearchTool`, `RepoShellTool`, `CodeDocsSearchTool`, `SerperDevTool` (when enabled) | • Parse task into structured requirements (Summary, Acceptance Criteria, Scope, Technical Hints)<br>• Use web/GitHub/docs for context gathering<br>• Derive scope from task + similar issues<br>• Keep acceptance criteria minimal - NO additions | Searches: "technology best practices", "implementation patterns", "common pitfalls", "migration strategies" |
-| **scope_validator** | None (context only) | • Cross-check for scope creep, vague criteria, conflicts<br>• Flag: `BROAD_CRITERIA`, `VAGUE`, `CONFLICT`, `SPLIT_RECOMMENDED`, or `NONE`<br>• Append validation without rewriting original | N/A - Pure validation agent |
-| **acceptance_criteria_normalizer** | None (context only) | • Normalize criteria into numbered, unambiguous, testable checklist<br>• Ensure each criterion is verifiable<br>• Maintain all prior sections | N/A - Pure normalization agent |
+**Agents:**
+- **similar_issues_synthesizer**
+  - **Tools**: `RepoShellTool`, `SerperDevTool` (when enabled)
+  - **Responsibilities**: Fetch similar GitHub issues/PRs via `gh` CLI, produce "company moment" (recent merges + open work), research issue patterns via web search
+  - **Web Search**: "GitHub issue patterns [technology]", "Common solutions for [problem]", "[Technology] implementation approaches"
+- **issue_analyst**
+  - **Tools**: `ScrapeWebsiteTool`, `GithubSearchTool`, `RepoShellTool`, `CodeDocsSearchTool`, `SerperDevTool` (when enabled)
+  - **Responsibilities**: Parse task into structured requirements (Summary, Acceptance Criteria, Scope, Technical Hints), use web/GitHub/docs for context gathering, derive scope from task + similar issues, keep acceptance criteria minimal - NO additions
+  - **Web Search**: "technology best practices", "implementation patterns", "common pitfalls", "migration strategies"
+- **scope_validator**
+  - **Tools**: None (context only)
+  - **Responsibilities**: Cross-check for scope creep, vague criteria, conflicts, flag: `BROAD_CRITERIA`, `VAGUE`, `CONFLICT`, `SPLIT_RECOMMENDED`, or `NONE`, append validation without rewriting original
+- **acceptance_criteria_normalizer**
+  - **Tools**: None (context only)
+  - **Responsibilities**: Normalize criteria into numbered, unambiguous, testable checklist, ensure each criterion is verifiable, maintain all prior sections
 
 **Output**: Structured document with sections: Context (optional), Summary, Acceptance Criteria, Scope (In-scope/Out-of-scope), Technical Hints.
 
@@ -160,13 +182,24 @@ Available task variables: `TASK_DESC`, `R` (repo_path), `B` (branch), `V` (from_
 **Fallbacks**: `openrouter/google/gemini-3-flash-preview`, `openrouter/deepseek/deepseek-v3.2`  
 **Purpose**: Comprehensive codebase analysis to understand structure, dependencies, and conventions.
 
-| Agent | Tools | Key Responsibilities | Web Search Integration |
-|-------|-------|---------------------|------------------------|
-| **repo_explorer** | `RepoShellTool`, `CodeDocsSearchTool`, `SerperDevTool` (when enabled) | • Scan tech stack, directory layout, key files, conventions<br>• Read-only exploration (ls, find, cat, head, grep)<br>• Document test layout when `test_command` set | Searches: "[Technology] best practices", "[Framework] project structure", "[Library] usage patterns", "Technology comparisons" |
-| **dependency_analyzer** | `RepoShellTool`, `SerperDevTool` (when enabled) | • Map import/dependency graphs for relevant modules<br>• Analyze blast radius (impact of changes)<br>• Identify "what depends on X" and "what X depends on" | Searches: "[Dependency] compatibility", "[Library] migration patterns", "[Technology] dependency management" |
-| **test_layout_scout** | `RepoShellTool` | • Document test directory structure, fixtures, conventions<br>• Skip cleanly when `test_command` empty<br>• Identify how to add new tests | N/A - Pure file system analysis |
-| **convention_extractor** | `RepoShellTool` | • Extract lint/format configuration (black, ruff, eslint, prettier)<br>• Document config paths and key options<br>• Identify code style conventions | N/A - Pure configuration parsing |
-| **api_boundary_scout** | `RepoShellTool` | • Map API surface when task mentions "API", "endpoint", "route", "REST"<br>• Identify routes, controllers, middleware patterns<br>• Skip when task doesn't mention API | N/A - Pure API discovery |
+**Agents:**
+- **repo_explorer**
+  - **Tools**: `RepoShellTool`, `CodeDocsSearchTool`, `SerperDevTool` (when enabled)
+  - **Responsibilities**: Scan tech stack, directory layout, key files, conventions, read-only exploration (ls, find, cat, head, grep), document test layout when `test_command` set
+  - **Web Search**: "[Technology] best practices", "[Framework] project structure", "[Library] usage patterns", "Technology comparisons"
+- **dependency_analyzer**
+  - **Tools**: `RepoShellTool`, `SerperDevTool` (when enabled)
+  - **Responsibilities**: Map import/dependency graphs for relevant modules, analyze blast radius (impact of changes), identify "what depends on X" and "what X depends on"
+  - **Web Search**: "[Dependency] compatibility", "[Library] migration patterns", "[Technology] dependency management"
+- **test_layout_scout**
+  - **Tools**: `RepoShellTool`
+  - **Responsibilities**: Document test directory structure, fixtures, conventions, skip cleanly when `test_command` empty, identify how to add new tests
+- **convention_extractor**
+  - **Tools**: `RepoShellTool`
+  - **Responsibilities**: Extract lint/format configuration (black, ruff, eslint, prettier), document config paths and key options, identify code style conventions
+- **api_boundary_scout**
+  - **Tools**: `RepoShellTool`
+  - **Responsibilities**: Map API surface when task mentions "API", "endpoint", "route", "REST", identify routes, controllers, middleware patterns, skip when task doesn't mention API
 
 **Output**: Complete exploration document with sections: Tech Stack, Directory Layout, Key Files, Conventions, Dependency Map, Test Layout, Lint & Format, API Boundary.
 
@@ -175,11 +208,19 @@ Available task variables: `TASK_DESC`, `R` (repo_path), `B` (branch), `V` (from_
 **Fallbacks**: `openrouter/deepseek/deepseek-v3.2`, `openrouter/deepseek/deepseek-r1`  
 **Purpose**: Resolve ambiguities before planning via targeted human questions.
 
-| Agent | Tools | Key Responsibilities | Special Requirements |
-|-------|-------|---------------------|----------------------|
-| **ambiguity_detector** | None (context only) | • Identify open questions: file/module ownership, convention conflicts, scope boundaries, test strategy, migration concerns<br>• No human interaction - pure detection | Must output `## Open Questions` with numbered list |
-| **question_prioritizer** | None (context only) | • Rank questions by impact (wrong assumption = major rework)<br>• Prepare for human clarification in optimal order | Must output `## Prioritized Questions` with impact ranking |
-| **clarifier** | `ask_human` | • Resolve ambiguities via human interaction<br>• **CRITICAL**: Each question MUST include 2-4 options with code snippets in ` ```language` format<br>• Present best option first, ground in exploration findings | Questions must reference specific files/patterns from exploration |
+**Agents:**
+- **ambiguity_detector**
+  - **Tools**: None (context only)
+  - **Responsibilities**: Identify open questions: file/module ownership, convention conflicts, scope boundaries, test strategy, migration concerns, no human interaction - pure detection
+  - **Requirements**: Must output `## Open Questions` with numbered list
+- **question_prioritizer**
+  - **Tools**: None (context only)
+  - **Responsibilities**: Rank questions by impact (wrong assumption = major rework), prepare for human clarification in optimal order
+  - **Requirements**: Must output `## Prioritized Questions` with impact ranking
+- **clarifier**
+  - **Tools**: `ask_human`
+  - **Responsibilities**: Resolve ambiguities via human interaction, **CRITICAL**: Each question MUST include 2-4 options with code snippets in ` ```language` format, present best option first, ground in exploration findings
+  - **Requirements**: Questions must reference specific files/patterns from exploration
 
 **Output**: Structured `Clarifications & Development Guidelines` document with Q/A sections that override all assumptions for the Architect.
 
@@ -188,14 +229,26 @@ Available task variables: `TASK_DESC`, `R` (repo_path), `B` (branch), `V` (from_
 **Fallbacks**: `openrouter/deepseek/deepseek-v3.2`, `openrouter/deepseek/deepseek-r1`  
 **Purpose**: Create minimal file-level implementation plan (no code).
 
-| Agent | Tools | Key Responsibilities | Web Search Integration |
-|-------|-------|---------------------|------------------------|
-| **architect** | `GithubSearchTool`, `CodeDocsSearchTool`, `RepoShellTool`, `SerperDevTool` (when enabled) | • Create file-level plan with `## Files to Create` and `## Files to Modify`<br>• **CRITICAL**: Output exact paths, no code<br>• Minimum changes: prefer modifying over creating<br>• Follow clarifications as hard constraints | Searches: "[Pattern] implementation examples", "[Technology] best practices", "[Problem] solution architectures", "Alternative approaches" |
-| **dependency_orderer** | `RepoShellTool` | • Order files by dependency (import graph)<br>• Flag high-risk areas in `## Risk` section<br>• Fix ordering if architect got it wrong | N/A - Pure dependency analysis |
-| **refactor_guard** | None (context only) | • Flag unnecessary refactors beyond acceptance criteria<br>• Output `REFACTOR_FLAGS` or `NONE`<br>• Prevent scope creep through refactoring | N/A - Pure scope validation |
-| **test_plan_advisor** | `RepoShellTool` | • Add `## Test Plan` when `test_command` set<br>• Specify test files to add/update, coverage requirements<br>• Skip cleanly when no `test_command` | N/A - Pure test planning |
-| **migration_checker** | None (context only) | • Flag migration steps when plan touches DB, schema, config, env<br>• Output `## Migration` or `NONE`<br>• Identify data migration needs | N/A - Pure migration detection |
-| **rollback_planner** | None (context only) | • Add `## Rollback` for high-risk areas (from `## Risk`)<br>• Specify revert steps for risky changes<br>• Output `NONE` for low-risk plans | N/A - Pure contingency planning |
+**Agents:**
+- **architect**
+  - **Tools**: `GithubSearchTool`, `CodeDocsSearchTool`, `RepoShellTool`, `SerperDevTool` (when enabled)
+  - **Responsibilities**: Create file-level plan with `## Files to Create` and `## Files to Modify`, **CRITICAL**: Output exact paths, no code, minimum changes: prefer modifying over creating, follow clarifications as hard constraints
+  - **Web Search**: "[Pattern] implementation examples", "[Technology] best practices", "[Problem] solution architectures", "Alternative approaches"
+- **dependency_orderer**
+  - **Tools**: `RepoShellTool`
+  - **Responsibilities**: Order files by dependency (import graph), flag high-risk areas in `## Risk` section, fix ordering if architect got it wrong
+- **refactor_guard**
+  - **Tools**: None (context only)
+  - **Responsibilities**: Flag unnecessary refactors beyond acceptance criteria, output `REFACTOR_FLAGS` or `NONE`, prevent scope creep through refactoring
+- **test_plan_advisor**
+  - **Tools**: `RepoShellTool`
+  - **Responsibilities**: Add `## Test Plan` when `test_command` set, specify test files to add/update, coverage requirements, skip cleanly when no `test_command`
+- **migration_checker**
+  - **Tools**: None (context only)
+  - **Responsibilities**: Flag migration steps when plan touches DB, schema, config, env, output `## Migration` or `NONE`, identify data migration needs
+- **rollback_planner**
+  - **Tools**: None (context only)
+  - **Responsibilities**: Add `## Rollback` for high-risk areas (from `## Risk`), specify revert steps for risky changes, output `NONE` for low-risk plans
 
 **Output**: Complete plan with sections: Files to Create, Files to Modify, Order (verified), Risk, Refactor Guard, Test Plan, Migration, Rollback.
 
@@ -204,14 +257,31 @@ Available task variables: `TASK_DESC`, `R` (repo_path), `B` (branch), `V` (from_
 **Fallbacks**: `openrouter/google/gemini-3-flash-preview`, `openrouter/deepseek/deepseek-r1`  
 **Purpose**: Execute plan by writing actual code and tests.
 
-| Agent | Tools | Key Responsibilities | Critical Rules |
-|-------|-------|---------------------|----------------|
-| **implementer** | `RepoFileWriterTool` (REQUIRED), `RepoShellTool`, `CodeInterpreterTool` | • **MUST** call Repo File Writer Tool for EVERY file in plan<br>• Surgical changes only - no extra files/abstractions<br>• Read existing files before modifying<br>• Fix `prior_issues` if non-empty | If plan lists 3 files, MUST call tool 3 times - NO exceptions |
-| **docstring_writer** | `RepoFileWriterTool`, `RepoShellTool` | • Add/update docstrings for new/changed functions/classes<br>• Python: Google/NumPy style; JS/TS: JSDoc<br>• Use `git diff --name-only` to find changed files | Must maintain existing docstring conventions |
-| **type_hint_checker** | `RepoFileWriterTool`, `RepoShellTool` | • Ensure Python changed files have type hints<br>• Add parameter and return type annotations<br>• Skip non-Python files | Focus only on .py files with changes |
-| **test_writer** | `RepoFileWriterTool`, `RepoShellTool` | • Add/update tests per plan's test file paths<br>• Run `test_command` to verify<br>• Skip when `test_command` empty<br>• Follow Test Layout from exploration | Must run tests after writing to verify |
-| **lint_fixer** | `RepoShellTool` | • Run project linter (black, ruff, eslint --fix) from exploration<br>• Fix auto-fixable issues<br>• Skip when no linter configured | Use exploration's Lint & Format section |
-| **self_reviewer** | `RepoShellTool` | • Verify only planned files were touched<br>• Verify EVERY file in plan was modified<br>• Output `SELF_REVIEW: PASS` or `ISSUES:`<br>• Final gate before external review | Use `git status` and `git diff --name-only` |
+**Agents:**
+- **implementer**
+  - **Tools**: `RepoFileWriterTool` (REQUIRED), `RepoShellTool`, `CodeInterpreterTool`
+  - **Responsibilities**: **MUST** call Repo File Writer Tool for EVERY file in plan, surgical changes only - no extra files/abstractions, read existing files before modifying, fix `prior_issues` if non-empty
+  - **Rules**: If plan lists 3 files, MUST call tool 3 times - NO exceptions
+- **docstring_writer**
+  - **Tools**: `RepoFileWriterTool`, `RepoShellTool`
+  - **Responsibilities**: Add/update docstrings for new/changed functions/classes, Python: Google/NumPy style; JS/TS: JSDoc, use `git diff --name-only` to find changed files
+  - **Rules**: Must maintain existing docstring conventions
+- **type_hint_checker**
+  - **Tools**: `RepoFileWriterTool`, `RepoShellTool`
+  - **Responsibilities**: Ensure Python changed files have type hints, add parameter and return type annotations, skip non-Python files
+  - **Rules**: Focus only on .py files with changes
+- **test_writer**
+  - **Tools**: `RepoFileWriterTool`, `RepoShellTool`
+  - **Responsibilities**: Add/update tests per plan's test file paths, run `test_command` to verify, skip when `test_command` empty, follow Test Layout from exploration
+  - **Rules**: Must run tests after writing to verify
+- **lint_fixer**
+  - **Tools**: `RepoShellTool`
+  - **Responsibilities**: Run project linter (black, ruff, eslint --fix) from exploration, fix auto-fixable issues, skip when no linter configured
+  - **Rules**: Use exploration's Lint & Format section
+- **self_reviewer**
+  - **Tools**: `RepoShellTool`
+  - **Responsibilities**: Verify only planned files were touched, verify EVERY file in plan was modified, output `SELF_REVIEW: PASS` or `ISSUES:`, final gate before external review
+  - **Rules**: Use `git status` and `git diff --name-only`
 
 **Output**: Implementation summary with `SELF_REVIEW: PASS/ISSUES` status.
 
@@ -220,14 +290,27 @@ Available task variables: `TASK_DESC`, `R` (repo_path), `B` (branch), `V` (from_
 **Fallbacks**: `openrouter/google/gemini-3-flash-preview`, `openrouter/deepseek/deepseek-r1`  
 **Purpose**: Comprehensive code review with quality gates.
 
-| Agent | Tools | Key Responsibilities | Web Search Integration |
-|-------|-------|---------------------|------------------------|
-| **reviewer** | `RepoShellTool`, `CodeDocsSearchTool`, `SerperDevTool` (when enabled) | • **CRITICAL**: First line must be exactly `APPROVED` or `ISSUES:`<br>• Review against task, acceptance criteria, plan<br>• Reject overengineering and scope creep<br>• Verify actual file changes (not intent) | Searches: "[Pattern] security implications", "[Technology] common pitfalls", "[Implementation] best practice validation" |
-| **security_reviewer** | `RepoShellTool`, `SerperDevTool` (when enabled) | • Check for SQL injection, XSS, auth bypass, unsafe input, exposed secrets<br>• Output `SECURE` or `SECURITY_ISSUES:`<br>• Append `## Security` section | Searches: "[Technology] security best practices", "[Pattern] vulnerability patterns", "[Library] security advisories" |
-| **performance_reviewer** | `RepoShellTool` | • Flag N+1 queries, unindexed lookups, large in-memory loops<br>• Output `PERF_OK` or `PERF_ISSUES:`<br>• Append `## Performance` section | N/A - Pure performance analysis |
-| **accessibility_checker** | `RepoShellTool` | • Check a11y compliance when UI files changed (.jsx, .tsx, .vue, .html)<br>• Check labels, ARIA, focus, contrast<br>• Skip when no UI changes | N/A - Pure accessibility checking |
-| **backward_compat_checker** | `RepoShellTool` | • Flag breaking changes: signature changes, removed exports, changed return types<br>• Output `COMPAT_OK` or `BREAKING:`<br>• Append `## Backward Compatibility` | N/A - Pure API compatibility check |
-| **convention_checker** | `RepoShellTool`, `CodeDocsSearchTool` | • Verify conventions (imports, formatting, naming)<br>• Merge findings from all reviewers<br>• Produce FINAL output with merged issue list<br>• Pipeline parses first line for routing | N/A - Pure convention validation |
+**Agents:**
+- **reviewer**
+  - **Tools**: `RepoShellTool`, `CodeDocsSearchTool`, `SerperDevTool` (when enabled)
+  - **Responsibilities**: **CRITICAL**: First line must be exactly `APPROVED` or `ISSUES:`, review against task, acceptance criteria, plan, reject overengineering and scope creep, verify actual file changes (not intent)
+  - **Web Search**: "[Pattern] security implications", "[Technology] common pitfalls", "[Implementation] best practice validation"
+- **security_reviewer**
+  - **Tools**: `RepoShellTool`, `SerperDevTool` (when enabled)
+  - **Responsibilities**: Check for SQL injection, XSS, auth bypass, unsafe input, exposed secrets, output `SECURE` or `SECURITY_ISSUES:`, append `## Security` section
+  - **Web Search**: "[Technology] security best practices", "[Pattern] vulnerability patterns", "[Library] security advisories"
+- **performance_reviewer**
+  - **Tools**: `RepoShellTool`
+  - **Responsibilities**: Flag N+1 queries, unindexed lookups, large in-memory loops, output `PERF_OK` or `PERF_ISSUES:`, append `## Performance` section
+- **accessibility_checker**
+  - **Tools**: `RepoShellTool`
+  - **Responsibilities**: Check a11y compliance when UI files changed (.jsx, .tsx, .vue, .html), check labels, ARIA, focus, contrast, skip when no UI changes
+- **backward_compat_checker**
+  - **Tools**: `RepoShellTool`
+  - **Responsibilities**: Flag breaking changes: signature changes, removed exports, changed return types, output `COMPAT_OK` or `BREAKING:`, append `## Backward Compatibility` section
+- **convention_checker**
+  - **Tools**: `RepoShellTool`, `CodeDocsSearchTool`
+  - **Responsibilities**: Verify conventions (imports, formatting, naming), merge findings from all reviewers, produce FINAL output with merged issue list, pipeline parses first line for routing
 
 **Output**: Final verdict with first line `APPROVED` or `ISSUES:` followed by merged issue list from all reviewers.
 
@@ -236,13 +319,27 @@ Available task variables: `TASK_DESC`, `R` (repo_path), `B` (branch), `V` (from_
 **Fallbacks**: `openrouter/deepseek/deepseek-v3.2`, `openrouter/deepseek/deepseek-r1`  
 **Purpose**: Create feature branch, commit changes, and publish PR.
 
-| Agent | Tools | Key Responsibilities | Critical Rules |
-|-------|-------|---------------------|----------------|
-| **git_agent** | `RepoShellTool` | • Create feature branch from base branch<br>• Stage changes (excluding `.code_pipeline`)<br>• Commit with Conventional Commits format<br>• Skip when `dry_run` true | Must exclude `.code_pipeline` (pipeline state) from commits |
-| **commit_message_reviewer** | `RepoShellTool` | • Validate last commit message via `git log -1 --format=%B`<br>• Conventional Commits: `<type>[scope]: <description>`<br>• Amend if invalid, confirm if valid | Types: feat, fix, docs, style, refactor, test, chore, perf, ci |
-| **changelog_agent** | `RepoFileWriterTool`, `RepoShellTool` | • Update CHANGELOG if file exists<br>• Append `## [Unreleased]` or `### YYYY-MM-DD` entry<br>• Skip when `dry_run` or no CHANGELOG file | Must check for CHANGELOG.md or CHANGELOG.rst |
-| **pr_labels_suggester** | None (context only) | • Analyze task and plan to suggest 1-5 relevant GitHub labels<br>• Common: feat, fix, docs, refactor, test, chore, dependencies, breaking-change<br>• Output: `Suggested labels: label1, label2, ...` | Labels must be lowercase, hyphenated for multi-word |
-| **publish_agent** | `CreatePRTool` | • Push feature branch to origin<br>• Create PR via GitHub API<br>• Include task, implementation, plan, review_verdict<br>• Apply suggested labels<br>• Skip when `dry_run` or no `github_repo` | Must extract labels from `pr_labels_suggester` output |
+**Agents:**
+- **git_agent**
+  - **Tools**: `RepoShellTool`
+  - **Responsibilities**: Create feature branch from base branch, stage changes (excluding `.code_pipeline`), commit with Conventional Commits format, skip when `dry_run` true
+  - **Rules**: Must exclude `.code_pipeline` (pipeline state) from commits
+- **commit_message_reviewer**
+  - **Tools**: `RepoShellTool`
+  - **Responsibilities**: Validate last commit message via `git log -1 --format=%B`, Conventional Commits: `<type>[scope]: <description>`, amend if invalid, confirm if valid
+  - **Rules**: Types: feat, fix, docs, style, refactor, test, chore, perf, ci
+- **changelog_agent**
+  - **Tools**: `RepoFileWriterTool`, `RepoShellTool`
+  - **Responsibilities**: Update CHANGELOG if file exists, append `## [Unreleased]` or `### YYYY-MM-DD` entry, skip when `dry_run` or no CHANGELOG file
+  - **Rules**: Must check for CHANGELOG.md or CHANGELOG.rst
+- **pr_labels_suggester**
+  - **Tools**: None (context only)
+  - **Responsibilities**: Analyze task and plan to suggest 1-5 relevant GitHub labels, common: feat, fix, docs, refactor, test, chore, dependencies, breaking-change, output: `Suggested labels: label1, label2, ...`
+  - **Rules**: Labels must be lowercase, hyphenated for multi-word
+- **publish_agent**
+  - **Tools**: `CreatePRTool`
+  - **Responsibilities**: Push feature branch to origin, create PR via GitHub API, include task, implementation, plan, review_verdict, apply suggested labels, skip when `dry_run` or no `github_repo`
+  - **Rules**: Must extract labels from `pr_labels_suggester` output
 
 **Output**: PR URL or skip message with commit/PR creation details.
 
@@ -250,82 +347,64 @@ Available task variables: `TASK_DESC`, `R` (repo_path), `B` (branch), `V` (from_
 
 Each agent receives specific inputs and produces defined outputs that flow through the pipeline:
 
+**Data Flow**: `task` → `issue_analysis` → `exploration` → `clarifications` → `plan` → `implementation` → `review_verdict` → `commit/PR`
+
 ### **Issue Analyst Crew**
-| Agent | Primary Inputs | Key Outputs |
-|-------|---------------|-------------|
-| **similar_issues_synthesizer** | `task`, `github_repo`, `repo_path` | Similar issues analysis, "company moment" (recent merges + open work) |
-| **issue_analyst** | `task`, `issue_url`, `github_repo`, `docs_url`, `repo_path` | Structured requirements: Summary, Acceptance Criteria, Scope, Technical Hints |
-| **scope_validator** | Issue analyst output | Validation flags: `BROAD_CRITERIA`, `VAGUE`, `CONFLICT`, `SPLIT_RECOMMENDED`, or `NONE` |
-| **acceptance_criteria_normalizer** | Issue analyst + scope validator outputs | Normalized, numbered, testable acceptance criteria checklist |
+- **similar_issues_synthesizer**
+  - **Inputs**: `task`, `github_repo`, `repo_path`
+  - **Outputs**: Similar issues analysis, "company moment" (recent merges + open work)
+- **issue_analyst**
+  - **Inputs**: `task`, `issue_url`, `github_repo`, `docs_url`, `repo_path`
+  - **Outputs**: Structured requirements: Summary, Acceptance Criteria, Scope, Technical Hints
+- **scope_validator**
+  - **Inputs**: Issue analyst output
+  - **Outputs**: Validation flags: `BROAD_CRITERIA`, `VAGUE`, `CONFLICT`, `SPLIT_RECOMMENDED`, or `NONE`
+- **issue_analyst**: `task`, `issue_url`, `github_repo`, `docs_url`, `repo_path` → Structured requirements: Summary, Acceptance Criteria, Scope, Technical Hints
+- **scope_validator**: Issue analyst output → Validation flags
+- **acceptance_criteria_normalizer**: Issue analyst + scope validator outputs → Normalized, numbered, testable acceptance criteria checklist
 
 ### **Explorer Crew**
-| Agent | Primary Inputs | Key Outputs |
-|-------|---------------|-------------|
-| **repo_explorer** | `repo_path`, `task`, `test_command`, `focus_paths`, `exclude_paths` | Tech stack analysis, directory layout, key files, conventions |
-| **dependency_analyzer** | `repo_path`, task context | Dependency graphs, blast radius analysis, import relationships |
-| **test_layout_scout** | `repo_path`, `test_command` | Test directory structure, fixtures, test conventions |
-| **convention_extractor** | `repo_path` | Lint/format configuration, code style conventions |
-| **api_boundary_scout** | `repo_path`, task (if mentions API) | API surface mapping, routes, controllers, middleware patterns |
+- **repo_explorer**: `repo_path`, `task`, `test_command`, `focus_paths`, `exclude_paths` → Tech stack analysis, directory layout, key files, conventions
+- **dependency_analyzer**: `repo_path`, task context → Dependency graphs, blast radius analysis, import relationships
+- **test_layout_scout**: `repo_path`, `test_command` → Test directory structure, fixtures, test conventions
+- **convention_extractor**: `repo_path` → Lint/format configuration, code style conventions
+- **api_boundary_scout**: `repo_path`, task (if mentions API) → API surface mapping, routes, controllers, middleware patterns
 
 ### **Clarify Crew**
-| Agent | Primary Inputs | Key Outputs |
-|-------|---------------|-------------|
-| **ambiguity_detector** | `task`, `exploration`, `issue_analysis` | `## Open Questions` with numbered list of ambiguities |
-| **question_prioritizer** | Open questions from ambiguity detector | `## Prioritized Questions` with impact ranking |
-| **clarifier** | Prioritized questions, exploration findings | Human Q/A with code snippet options, final clarifications document |
+- **ambiguity_detector**: `task`, `exploration`, `issue_analysis` → `## Open Questions` with numbered list of ambiguities
+- **question_prioritizer**: Open questions from ambiguity detector → `## Prioritized Questions` with impact ranking
+- **clarifier**: Prioritized questions, exploration findings → Human Q/A with code snippet options, final clarifications document
 
 ### **Architect Crew**
-| Agent | Primary Inputs | Key Outputs |
-|-------|---------------|-------------|
-| **architect** | `task`, `exploration`, `issue_analysis`, `clarifications` | File-level plan: `## Files to Create`, `## Files to Modify` (paths only) |
-| **dependency_orderer** | Architect's file list, `repo_path` | Ordered file list by dependency, `## Risk` section |
-| **refactor_guard** | Architect plan, acceptance criteria | `REFACTOR_FLAGS` or `NONE` (prevents scope creep) |
-| **test_plan_advisor** | Architect plan, `test_command` | `## Test Plan` or skipped if no test command |
-| **migration_checker** | Architect plan | `## Migration` or `NONE` (for DB/schema/config changes) |
-| **rollback_planner** | Architect plan, risk section | `## Rollback` or `NONE` (for high-risk changes) |
+- **architect**: `task`, `exploration`, `issue_analysis`, `clarifications` → File-level plan: `## Files to Create`, `## Files to Modify` (paths only)
+- **dependency_orderer**: Architect's file list, `repo_path` → Ordered file list by dependency, `## Risk` section
+- **refactor_guard**: Architect plan, acceptance criteria → `REFACTOR_FLAGS` or `NONE` (prevents scope creep)
+- **test_plan_advisor**: Architect plan, `test_command` → `## Test Plan` or skipped if no test command
+- **migration_checker**: Architect plan → `## Migration` or `NONE` (for DB/schema/config changes)
+- **rollback_planner**: Architect plan, risk section → `## Rollback` or `NONE` (for high-risk changes)
 
 ### **Implementer Crew**
-| Agent | Primary Inputs | Key Outputs |
-|-------|---------------|-------------|
-| **implementer** | `plan`, `repo_path`, `prior_issues` | Actual code written to files, implementation summary |
-| **docstring_writer** | Changed files (via `git diff`), `repo_path` | Updated docstrings following project conventions |
-| **type_hint_checker** | Changed Python files, `repo_path` | Added/updated type hints for Python functions/classes |
-| **test_writer** | Test plan, `test_command`, `repo_path` | Added/updated test files, test execution results |
-| **lint_fixer** | Changed files, exploration conventions, `repo_path` | Lint fixes applied, auto-fixed issues summary |
-| **self_reviewer** | Plan vs actual changes (via `git status`/`git diff`) | `SELF_REVIEW: PASS` or `ISSUES:` with discrepancies |
+- **implementer**: `plan`, `repo_path`, `prior_issues` → Actual code written to files, implementation summary
+- **docstring_writer**: Changed files (via `git diff`), `repo_path` → Updated docstrings following project conventions
+- **type_hint_checker**: Changed Python files, `repo_path` → Added/updated type hints for Python functions/classes
+- **test_writer**: Test plan, `test_command`, `repo_path` → Added/updated test files, test execution results
+- **lint_fixer**: Changed files, exploration conventions, `repo_path` → Lint fixes applied, auto-fixed issues summary
+- **self_reviewer**: Plan vs actual changes (via `git status`/`git diff`) → `SELF_REVIEW: PASS` or `ISSUES:` with discrepancies
 
 ### **Reviewer Crew**
-| Agent | Primary Inputs | Key Outputs |
-|-------|---------------|-------------|
-| **reviewer** | `task`, `plan`, `implementation`, `repo_path` | First line: `APPROVED` or `ISSUES:` with detailed review |
-| **security_reviewer** | Implementation changes, `repo_path` | `SECURE` or `SECURITY_ISSUES:` with security findings |
-| **performance_reviewer** | Implementation changes, `repo_path` | `PERF_OK` or `PERF_ISSUES:` with performance findings |
-| **accessibility_checker** | UI file changes, `repo_path` | A11y compliance check (skipped if no UI changes) |
-| **backward_compat_checker** | API changes, `repo_path` | `COMPAT_OK` or `BREAKING:` with compatibility findings |
-| **convention_checker** | All reviewer outputs, `repo_path` | Merged final verdict with all issues consolidated |
+- **reviewer**: `task`, `plan`, `implementation`, `repo_path` → First line: `APPROVED` or `ISSUES:` with detailed review
+- **security_reviewer**: Implementation changes, `repo_path` → `SECURE` or `SECURITY_ISSUES:` with security findings
+- **performance_reviewer**: Implementation changes, `repo_path` → `PERF_OK` or `PERF_ISSUES:` with performance findings
+- **accessibility_checker**: UI file changes, `repo_path` → A11y compliance check (skipped if no UI changes)
+- **backward_compat_checker**: API changes, `repo_path` → `COMPAT_OK` or `BREAKING:` with compatibility findings
+- **convention_checker**: All reviewer outputs, `repo_path` → Merged final verdict with all issues consolidated
 
 ### **Commit Crew**
-| Agent | Primary Inputs | Key Outputs |
-|-------|---------------|-------------|
-| **git_agent** | `branch`, `feature_branch`, `dry_run`, `issue_id`, `repo_path` | Git commit output or dry-run summary |
-| **commit_message_reviewer** | Last commit message (via `git log`), `dry_run` | `Commit message valid: ...` or amended message |
-| **changelog_agent** | CHANGELOG file status, task summary, `dry_run` | Updated CHANGELOG or skip message |
-| **pr_labels_suggester** | `task`, `plan` | `Suggested labels: label1, label2, ...` |
-| **publish_agent** | `feature_branch`, `base_branch`, `task`, `implementation`, `plan`, `review_verdict`, `issue_url`, `issue_id`, `github_repo`, `dry_run` | PR URL or skip message |
-
-**Data Flow**: Inputs flow sequentially through the pipeline: `task` → `issue_analysis` → `exploration` → `clarifications` → `plan` → `implementation` → `review_verdict` → `commit/PR`.
-
-## Crew Members & Responsibilities
-
-| Crew | Agents | Primary Responsibilities | Web Search Integration |
-|------|--------|-------------------------|------------------------|
-| **Issue Analyst** | similar_issues_synthesizer, issue_analyst, scope_validator, acceptance_criteria_normalizer | • Parse raw task into structured requirements with clear scope boundaries<br>• Fetch similar GitHub issues for context and scope guidance<br>• Validate scope creep and normalize criteria to testable checklist | ✅ Yes - Research technologies, patterns, solutions via SerperDevTool |
-| **Explorer** | repo_explorer, dependency_analyzer, test_layout_scout, convention_extractor, api_boundary_scout | • Comprehensive codebase analysis: structure, dependencies, conventions<br>• Map tech stack, directory layout, key files, and patterns<br>• Extract lint/config and document test architecture | ✅ Yes - Research technologies, best practices, dependency patterns |
-| **Clarify** | ambiguity_detector, question_prioritizer, clarifier | • Detect and prioritize implementation ambiguities<br>• Resolve via human interaction with code-snippet options<br>• Create authoritative development guidelines for Architect | ❌ No - Pure human interaction for ambiguity resolution |
-| **Architect** | architect, dependency_orderer, refactor_guard, test_plan_advisor, migration_checker, rollback_planner | • Create minimal file-level implementation plan (paths only, no code)<br>• Order by dependency, flag risks, guard against refactor creep<br>• Plan tests, migrations, and rollback strategies | ✅ Yes - Research solution architectures and implementation patterns |
-| **Implementer** | implementer, docstring_writer, type_hint_checker, test_writer, lint_fixer, self_reviewer | • Execute plan by writing actual code to specified files<br>• Add documentation, type hints, tests as per conventions<br>• Run linters and perform self-review before external review | ❌ No - Pure code writing and project tool execution |
-| **Reviewer** | reviewer, security_reviewer, performance_reviewer, accessibility_checker, backward_compat_checker, convention_checker | • Comprehensive quality gates: main review, security, performance, a11y<br>• Check API compatibility and convention adherence<br>• Merge findings into final APPROVED/ISSUES verdict | ✅ Yes - Validate approaches against industry standards and security best practices |
-| **Commit** | git_agent, commit_message_reviewer, changelog_agent, pr_labels_suggester, publish_agent | • Create feature branch, commit with Conventional Commits format<br>• Update CHANGELOG, suggest PR labels, create and publish PR<br>• Complete deployment cycle with proper GitHub integration | ❌ No - Pure Git and GitHub operations |
+- **git_agent**: `branch`, `feature_branch`, `dry_run`, `issue_id`, `repo_path` → Git commit output or dry-run summary
+- **commit_message_reviewer**: Last commit message (via `git log`), `dry_run` → `Commit message valid: ...` or amended message
+- **changelog_agent**: CHANGELOG file status, task summary, `dry_run` → Updated CHANGELOG or skip message
+- **pr_labels_suggester**: `task`, `plan` → `Suggested labels: label1, label2, ...`
+- **publish_agent**: `feature_branch`, `base_branch`, `task`, `implementation`, `plan`, `review_verdict`, `issue_url`, `issue_id`, `github_repo`, `dry_run` → PR URL or skip message
 
 **Pipeline Flow**: Each crew processes output from previous crew, with quality gates between stages. The `ReviewVerdict` from Reviewer crew determines if pipeline proceeds to Commit or retries implementation.
 
