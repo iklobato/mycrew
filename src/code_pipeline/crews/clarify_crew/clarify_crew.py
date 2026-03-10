@@ -29,7 +29,7 @@ class ClarifyCrew:
         return Agent(
             config=self.agents_config["ambiguity_detector"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("auxiliary", agent_name="ambiguity_detector"),
             verbose=False,
         )
 
@@ -40,7 +40,7 @@ class ClarifyCrew:
         return Agent(
             config=self.agents_config["question_prioritizer"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("auxiliary", agent_name="question_prioritizer"),
             verbose=False,
         )
 
@@ -49,7 +49,7 @@ class ClarifyCrew:
         return Agent(
             config=self.agents_config["clarifier"],  # type: ignore[index]
             tools=[ask_human],
-            llm=get_llm_for_stage("analyze_issue"),
+            llm=get_llm_for_stage("analyze_issue", agent_name="clarifier"),
             verbose=False,
         )
 
@@ -79,5 +79,5 @@ class ClarifyCrew:
             tasks=self.tasks,
             process=Process.sequential,
             verbose=False,
-            tracing=True,
+            tracing=False,
         )

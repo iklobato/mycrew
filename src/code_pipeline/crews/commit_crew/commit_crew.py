@@ -28,7 +28,7 @@ class CommitCrew:
         return Agent(
             config=self.agents_config["git_agent"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("commit"),
+            llm=get_llm_for_stage("commit", agent_name="git_agent"),
             verbose=False,
         )
 
@@ -39,7 +39,7 @@ class CommitCrew:
         return Agent(
             config=self.agents_config["commit_message_reviewer"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("auxiliary", agent_name="commit_message_reviewer"),
             verbose=False,
         )
 
@@ -50,7 +50,7 @@ class CommitCrew:
         return Agent(
             config=self.agents_config["changelog_agent"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("auxiliary", agent_name="changelog_agent"),
             verbose=False,
         )
 
@@ -59,7 +59,7 @@ class CommitCrew:
         return Agent(
             config=self.agents_config["pr_labels_suggester"],  # type: ignore[index]
             tools=[],
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("auxiliary", agent_name="pr_labels_suggester"),
             verbose=False,
         )
 
@@ -70,7 +70,7 @@ class CommitCrew:
         return Agent(
             config=self.agents_config["publish_agent"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("publish"),
+            llm=get_llm_for_stage("publish", agent_name="publish_agent"),
             verbose=False,
         )
 
@@ -112,7 +112,7 @@ class CommitCrew:
             tasks=self.tasks,
             process=Process.sequential,
             verbose=False,
-            tracing=True,
+            tracing=False,
             output_log_file=True,
             memory=False,
         )

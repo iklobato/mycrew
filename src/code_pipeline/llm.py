@@ -226,11 +226,73 @@ def _load_model_config_from_file(
         return DEFAULT_PIPELINE_MODELS
 
 
-# Load models on module import
+# Load models on module import (can be overridden)
 PIPELINE_MODELS = _load_model_config_from_file()
 
 # Agent-specific configuration cache
 _agent_model_cache: dict[str, StageModelConfig] = {}
+
+
+def update_model_config(config_data: dict[str, Any] | None = None) -> None:
+    """Update the global model configuration with new data."""
+    global PIPELINE_MODELS, _agent_model_cache
+
+    if config_data and "models" in config_data:
+        # Parse config data
+        pipeline_models = DEFAULT_PIPELINE_MODELS.copy()
+
+        for stage_name, stage_config in config_data["models"].items():
+            try:
+                stage_enum = PipelineStage(stage_name)
+
+                # Parse primary model
+                primary = stage_config.get("primary")
+                if not primary:
+                    logger.warning(
+                        "No primary model specified for stage %s", stage_name
+                    )
+                    continue
+
+                primary_model = None
+                for model in OpenRouterModel:
+                    if model.value == primary:
+                        primary_model = model
+                        break
+                if primary_model is None:
+                    primary_model = primary
+                    logger.info("Using custom primary model not in enum: %s", primary)
+
+                # Parse fallback models
+                fallback_models = []
+                for fb in stage_config.get("fallbacks", []):
+                    fb_model = None
+                    for model in OpenRouterModel:
+                        if model.value == fb:
+                            fb_model = model
+                            break
+                    if fb_model is None:
+                        fb_model = fb
+                        logger.info("Using custom fallback model not in enum: %s", fb)
+                    fallback_models.append(fb_model)
+
+                pipeline_models[stage_enum] = StageModelConfig(
+                    primary=primary_model, fallbacks=tuple(fallback_models)
+                )
+                logger.info(
+                    "Updated model config for stage %s: primary=%s", stage_name, primary
+                )
+
+            except ValueError:
+                logger.warning("Invalid pipeline stage name in config: %s", stage_name)
+                continue
+
+        PIPELINE_MODELS = pipeline_models
+        _agent_model_cache.clear()  # Clear agent cache
+        logger.info("Model configuration updated successfully")
+    elif config_data:
+        logger.warning(
+            "No 'models' section in config data, keeping existing configuration"
+        )
 
 
 def _get_agent_model_config(stage: PipelineStage, agent_name: str) -> StageModelConfig:
@@ -240,7 +302,7 @@ def _get_agent_model_config(stage: PipelineStage, agent_name: str) -> StageModel
     if cache_key in _agent_model_cache:
         return _agent_model_cache[cache_key]
 
-    # Try to load agent-specific config from config file
+    # Try to load agent-specific config from current PIPELINE_MODELS
     config_path = Path(__file__).parent.parent.parent / "config.yaml"
     if config_path.exists():
         try:

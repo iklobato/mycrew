@@ -25,7 +25,7 @@ class ImplementerCrew:
         return Agent(
             config=self.agents_config["implementer"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("implement"),
+            llm=get_llm_for_stage("implement", agent_name="implementer"),
             verbose=False,
         )
 
@@ -36,7 +36,7 @@ class ImplementerCrew:
         return Agent(
             config=self.agents_config["test_writer"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("auxiliary", agent_name="test_writer"),
             verbose=False,
         )
 
@@ -47,7 +47,7 @@ class ImplementerCrew:
         return Agent(
             config=self.agents_config["docstring_writer"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("auxiliary", agent_name="docstring_writer"),
             verbose=False,
         )
 
@@ -58,7 +58,7 @@ class ImplementerCrew:
         return Agent(
             config=self.agents_config["type_hint_checker"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("auxiliary", agent_name="type_hint_checker"),
             verbose=False,
         )
 
@@ -69,7 +69,7 @@ class ImplementerCrew:
         return Agent(
             config=self.agents_config["lint_fixer"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("auxiliary", agent_name="lint_fixer"),
             verbose=False,
         )
 
@@ -80,7 +80,7 @@ class ImplementerCrew:
         return Agent(
             config=self.agents_config["self_reviewer"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("auxiliary", agent_name="self_reviewer"),
             verbose=False,
         )
 
@@ -127,7 +127,7 @@ class ImplementerCrew:
             tasks=self.tasks,
             process=Process.sequential,
             verbose=False,
-            tracing=True,
+            tracing=False,
             output_log_file=True,
             memory=False,
         )

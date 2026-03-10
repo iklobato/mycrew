@@ -9,6 +9,10 @@ import logging
 import os
 from datetime import datetime, timezone
 
+# Disable CrewAI telemetry by default to avoid SSL certificate errors
+# This must be set BEFORE any CrewAI imports
+os.environ["CREWAI_TRACING_ENABLED"] = "false"
+
 import yaml
 import re
 import subprocess
@@ -24,6 +28,9 @@ from crewai.flow.human_feedback import HumanFeedbackResult, human_feedback
 from crewai.flow.persistence import SQLiteFlowPersistence, persist
 from crewai.utilities.paths import db_storage_path
 
+# Apply Anthropic message-format monkey-patch before any crew/LLM usage
+import code_pipeline.llm  # noqa: F401
+
 # Suppress CrewAI event pairing mismatch warnings (Flow + Crew + tracing can reorder
 # scope events; see crewai.events.event_context)
 from crewai.events.event_context import (
@@ -31,17 +38,6 @@ from crewai.events.event_context import (
     MismatchBehavior,
     _event_context_config,
 )
-
-_event_context_config.set(
-    EventContextConfig(
-        mismatch_behavior=MismatchBehavior.SILENT,
-        empty_pop_behavior=MismatchBehavior.SILENT,
-    )
-)
-
-# Apply Anthropic message-format monkey-patch before any crew/LLM usage
-import code_pipeline.llm  # noqa: F401
-from code_pipeline.llm import get_llm_for_stage
 
 from code_pipeline.crews.architect_crew.architect_crew import ArchitectCrew
 from code_pipeline.crews.clarify_crew.clarify_crew import ClarifyCrew
@@ -51,6 +47,13 @@ from code_pipeline.crews.implementer_crew.implementer_crew import ImplementerCre
 from code_pipeline.crews.issue_analyst_crew.issue_analyst_crew import IssueAnalystCrew
 from code_pipeline.crews.reviewer_crew.reviewer_crew import ReviewerCrew, ReviewVerdict
 from code_pipeline.utils import build_repo_context, enrich_repo_context, log_exceptions
+
+_event_context_config.set(
+    EventContextConfig(
+        mismatch_behavior=MismatchBehavior.SILENT,
+        empty_pop_behavior=MismatchBehavior.SILENT,
+    )
+)
 
 logger = logging.getLogger(__name__)
 
@@ -202,9 +205,11 @@ def _log_implementer_summary(implementation: str) -> None:
     # Extract "Wrote path" patterns or bullet points
     lines = impl.split("\n")
     wrote = [
-        l.strip()
-        for l in lines
-        if "wrote" in l.lower() or "wrote:" in l.lower() or l.strip().startswith("- ")
+        line.strip()
+        for line in lines
+        if "wrote" in line.lower()
+        or "wrote:" in line.lower()
+        or line.strip().startswith("- ")
     ]
     if wrote:
         logger.info("Implementer changes:")
@@ -548,6 +553,10 @@ def _load_config(path: str) -> dict:
     data = yaml.safe_load(p.read_text())
     if not isinstance(data, dict):
         raise ValueError(f"Config must be a YAML object, got {type(data)}")
+
+    # Handle new nested structure or old flat structure
+    out = {}
+
     # Map config keys (snake_case) to PipelineArgs fields
     key_map = {
         "task": "task",
@@ -564,14 +573,60 @@ def _load_config(path: str) -> dict:
         "focus_paths": "focus_paths",
         "exclude_paths": "exclude_paths",
     }
-    out = {}
-    for k, v in data.items():
-        key = k.replace("-", "_")  # support kebab-case
-        if key in key_map:
-            val = v
-            if key in ("focus_paths", "exclude_paths") and isinstance(v, list):
-                val = ",".join(str(x) for x in v) if v else ""
-            out[key_map[key]] = val
+
+    # First check if we have the new nested structure
+    if "pipeline" in data:
+        # New structure: extract from pipeline section
+        pipeline_data = data.get("pipeline", {})
+        for k, v in pipeline_data.items():
+            key = k.replace("-", "_")
+            if key in key_map:
+                val = v
+                if key in ("focus_paths", "exclude_paths") and isinstance(v, list):
+                    val = ",".join(str(x) for x in v) if v else ""
+                out[key_map[key]] = val
+    else:
+        # Old flat structure
+        for k, v in data.items():
+            key = k.replace("-", "_")  # support kebab-case
+            if key in key_map:
+                val = v
+                if key in ("focus_paths", "exclude_paths") and isinstance(v, list):
+                    val = ",".join(str(x) for x in v) if v else ""
+                out[key_map[key]] = val
+
+    # Extract model configuration if present
+    if "models" in data:
+        out["models"] = data["models"]
+        # Update the global model configuration
+        try:
+            from code_pipeline.llm import update_model_config
+
+            update_model_config(data)
+        except ImportError:
+            logger.warning("Failed to import update_model_config from llm.py")
+
+    # Extract API keys if present
+    if "api_keys" in data:
+        api_keys = data["api_keys"]
+        if "openrouter_api_key" in api_keys and api_keys["openrouter_api_key"]:
+            os.environ["OPENROUTER_API_KEY"] = api_keys["openrouter_api_key"]
+        if "openai_api_key" in api_keys and api_keys["openai_api_key"]:
+            os.environ["OPENAI_API_KEY"] = api_keys["openai_api_key"]
+        if "github_token" in api_keys and api_keys["github_token"]:
+            os.environ["GITHUB_TOKEN"] = api_keys["github_token"]
+
+    # Extract logging configuration if present
+    if "logging" in data:
+        logging_config = data["logging"]
+        if "level" in logging_config and logging_config["level"]:
+            os.environ["CODE_PIPELINE_LOG_LEVEL"] = logging_config["level"].upper()
+        if "crewai_telemetry" in logging_config:
+            # Only enable telemetry if explicitly set to true in config
+            if logging_config["crewai_telemetry"]:
+                os.environ["CREWAI_TRACING_ENABLED"] = "true"
+            # If false or not specified, keep it disabled (default)
+
     return out
 
 

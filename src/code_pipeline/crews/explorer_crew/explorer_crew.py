@@ -112,7 +112,7 @@ class ExplorerCrew:
             tasks=self.tasks,
             process=Process.sequential,
             verbose=False,
-            tracing=True,
+            tracing=False,
             output_log_file=True,
             memory=False,
         )

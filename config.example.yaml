@@ -1,92 +1,178 @@
-# Code pipeline run configuration
-# Copy to config.yaml and edit. task run uses config.yaml by default (from scratch).
-# Use: task run
-# Or:  task run CONFIG=other.yaml
-# Or:  uv run kickoff -c config.yaml
-# Or:  docker run -it --rm -v $(pwd):/workspace -w /workspace -e OPENROUTER_API_KEY=$OPENROUTER_API_KEY iklobato/mycrew -c config.yaml
-# CLI/Task/Docker args override values from this file.
+# Code Pipeline Configuration - Example
+# =====================================
+# Copy to config.yaml and edit. CLI/Task/Docker args override values from this file.
 
-task: "Add a feature or fix based on the issue"
-repo_path: "."
-branch: main
-from_scratch: false
-max_retries: 3
-dry_run: false
-test_command: ""  # e.g. "pytest" or "npm test"
-issue_id: ""
-github_repo: ""   # owner/repo for GithubSearchTool
-issue_url: ""     # URL for ScrapeWebsiteTool
-docs_url: ""      # URL for CodeDocsSearchTool
-focus_paths: ""   # comma-separated paths to prioritize (e.g. src,lib)
-exclude_paths: "" # comma-separated paths to skip (e.g. node_modules,vendor)
+# Core Pipeline Configuration
+# ---------------------------
+pipeline:
+  # Task description or issue to work on
+  task: "Add a feature or fix based on the issue"
+  
+  # Repository path (defaults to current directory)
+  repo_path: "."
+  
+  # Base branch for feature branches
+  branch: main
+  
+  # Start from scratch ignoring previous checkpoints
+  from_scratch: false
+  
+  # Maximum retry attempts for failed implementations
+  max_retries: 3
+  
+  # Dry run mode (no commits, no pushes)
+  dry_run: false
+  
+  # Test command to run (e.g., "pytest", "npm test", "go test ./...")
+  test_command: ""
+  
+  # GitHub issue/PR identifier
+  issue_id: ""
+  
+  # GitHub repository in owner/repo format
+  github_repo: ""
+  
+  # Issue URL for web scraping
+  issue_url: ""
+  
+  # Documentation URL for code documentation search
+  docs_url: ""
+  
+  # Paths to focus on (comma-separated)
+  focus_paths: ""
+  
+  # Paths to exclude (comma-separated)
+  exclude_paths: ""
 
-# Model configuration for pipeline stages and agents
-# 
+# API Keys and Authentication
+# ---------------------------
+# Note: For security, these can also be set as environment variables:
+#   OPENROUTER_API_KEY, OPENAI_API_KEY, GITHUB_TOKEN
+api_keys:
+  # OpenRouter API key (required for model access)
+  openrouter_api_key: "YOUR_OPENROUTER_API_KEY_HERE"
+  
+  # OpenAI API key (alternative to OpenRouter)
+  openai_api_key: ""
+  
+  # GitHub Personal Access Token (for GitHub API access)
+  github_token: "YOUR_GITHUB_TOKEN_HERE"
+
+# Logging Configuration
+# ---------------------
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: "INFO"
+  
+  # Enable/disable CrewAI telemetry (disabled to avoid SSL issues)
+  crewai_telemetry: false
+
+# Model Configuration
+# -------------------
 # Two-level configuration:
 # 1. Stage-level: All agents in a crew use the same model configuration
 # 2. Agent-level: Override for specific agents within a crew
-#
-# Example structure:
-# models:
-#   stage_name:
-#     primary: "model_id"
-#     fallbacks: ["model1", "model2"]
-#     agents:
-#       specific_agent_name:
-#         primary: "different_model"
-#         fallbacks: ["alt1", "alt2"]
+models:
+  # Issue Analyst Crew
+  analyze_issue:
+    primary: "openrouter/deepseek/deepseek-r1"
+    fallbacks:
+      - "openrouter/qwen/qwen3-coder:free"
+      - "openrouter/google/gemini-3-flash-preview"
+    # Optional: agent-level overrides
+    # agents:
+    #   issue_analyst:
+    #     primary: "openrouter/google/gemini-3-flash-preview"
+    #     fallbacks: ["openrouter/deepseek/deepseek-r1"]
+  
+  # Explorer Crew
+  explore:
+    primary: "openrouter/deepseek/deepseek-r1"
+    fallbacks:
+      - "openrouter/qwen/qwen3-coder:free"
+      - "openrouter/google/gemini-3-flash-preview"
+  
+  # Architect Crew
+  plan:
+    primary: "openrouter/google/gemini-3-flash-preview"
+    fallbacks:
+      - "openrouter/deepseek/deepseek-v3.2"
+      - "openrouter/deepseek/deepseek-r1"
+  
+  # Implementer Crew
+  implement:
+    primary: "openrouter/deepseek/deepseek-v3.2"
+    fallbacks:
+      - "openrouter/qwen/qwen3-coder:free"
+      - "openrouter/google/gemini-3-flash-preview"
+  
+  # Reviewer Crew
+  review:
+    primary: "openrouter/deepseek/deepseek-v3.2"
+    fallbacks:
+      - "openrouter/google/gemini-3-flash-preview"
+      - "openrouter/deepseek/deepseek-r1"
+  
+  # Commit Crew
+  commit:
+    primary: "openrouter/qwen/qwen3-coder:free"
+    fallbacks:
+      - "openrouter/arcee-ai/trinity-mini:free"
+      - "openrouter/google/gemini-3-flash-preview"
+  
+  # Publish stage
+  publish:
+    primary: "openrouter/arcee-ai/trinity-mini:free"
+    fallbacks:
+      - "openrouter/qwen/qwen3-coder:free"
+      - "openrouter/openai/gpt-5-nano"
+  
+  # Auxiliary stage (used by various agents)
+  auxiliary:
+    primary: "openrouter/arcee-ai/trinity-mini:free"
+    fallbacks:
+      - "openrouter/qwen/qwen3-coder:free"
+      - "openrouter/openai/gpt-5-nano"
+  
+  # Security stage
+  security:
+    primary: "openrouter/arcee-ai/trinity-mini:free"
+    fallbacks:
+      - "openrouter/openai/gpt-5-nano"
+      - "openrouter/google/gemini-3-flash-preview"
 
-# models:
-#   analyze_issue:
-#     primary: "openrouter/deepseek/deepseek-r1"
-#     fallbacks:
-#       - "openrouter/qwen/qwen3-coder:free"
-#       - "openrouter/google/gemini-3-flash-preview"
-#   
-#   explore:
-#     primary: "openrouter/deepseek/deepseek-r1"
-#     fallbacks:
-#       - "openrouter/qwen/qwen3-coder:free"
-#       - "openrouter/google/gemini-3-flash-preview"
-#   
-#   plan:
-#     primary: "openrouter/google/gemini-3-flash-preview"
-#     fallbacks:
-#       - "openrouter/deepseek/deepseek-v3.2"
-#       - "openrouter/deepseek/deepseek-r1"
-#   
-#   implement:
-#     primary: "openrouter/deepseek/deepseek-v3.2"
-#     fallbacks:
-#       - "openrouter/qwen/qwen3-coder:free"
-#       - "openrouter/google/gemini-3-flash-preview"
-#   
-#   review:
-#     primary: "openrouter/deepseek/deepseek-v3.2"
-#     fallbacks:
-#       - "openrouter/google/gemini-3-flash-preview"
-#       - "openrouter/deepseek/deepseek-r1"
-#   
-#   commit:
-#     primary: "openrouter/qwen/qwen3-coder:free"
-#     fallbacks:
-#       - "openrouter/arcee-ai/trinity-mini:free"
-#       - "openrouter/google/gemini-3-flash-preview"
-#   
-#   publish:
-#     primary: "openrouter/arcee-ai/trinity-mini:free"
-#     fallbacks:
-#       - "openrouter/qwen/qwen3-coder:free"
-#       - "openrouter/openai/gpt-5-nano"
-#   
-#   auxiliary:
-#     primary: "openrouter/arcee-ai/trinity-mini:free"
-#     fallbacks:
-#       - "openrouter/qwen/qwen3-coder:free"
-#       - "openrouter/openai/gpt-5-nano"
-#   
-#   security:
-#     primary: "openrouter/arcee-ai/trinity-mini:free"
-#     fallbacks:
-#       - "openrouter/openai/gpt-5-nano"
-#       - "openrouter/google/gemini-3-flash-preview"
+# Tool Configuration
+# ------------------
+tools:
+  # Timeout for shell commands (seconds)
+  shell_timeout: 120
+  
+  # Maximum output length for shell commands (characters)
+  shell_max_output: 8000
+  
+  # Timeout for PR creation (seconds)
+  pr_creation_timeout: 30
+  
+  # Dangerous command patterns to block
+  dangerous_patterns:
+    - "rm\\s+-rf\\s+/"
+    - "rm\\s+-rf\\s+/\\*"
+    - "mkfs"
+    - "dd\\s+if="
+    - ">\\s*/dev/sd"
+    - ">\\s*/dev/hd"
+    - "chmod\\s+-R\\s+777\\s+/"
+    - "shutdown\\s+-"
+    - "reboot"
+
+# Agent Behavior Tuning
+# ---------------------
+agents:
+  # Enable verbose agent output
+  verbose: false
+  
+  # Enable agent memory
+  memory: false
+  
+  # Enable output log files
+  output_log_file: true

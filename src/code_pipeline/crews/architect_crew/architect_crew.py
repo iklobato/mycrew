@@ -30,7 +30,7 @@ class ArchitectCrew:
         return Agent(
             config=self.agents_config["architect"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("plan"),
+            llm=get_llm_for_stage("plan", agent_name="architect"),
             verbose=False,
         )
 
@@ -41,7 +41,7 @@ class ArchitectCrew:
         return Agent(
             config=self.agents_config["dependency_orderer"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("auxiliary", agent_name="dependency_orderer"),
             verbose=False,
         )
 
@@ -52,7 +52,7 @@ class ArchitectCrew:
         return Agent(
             config=self.agents_config["refactor_guard"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("auxiliary", agent_name="refactor_guard"),
             verbose=False,
         )
 
@@ -63,7 +63,7 @@ class ArchitectCrew:
         return Agent(
             config=self.agents_config["test_plan_advisor"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("auxiliary", agent_name="test_plan_advisor"),
             verbose=False,
         )
 
@@ -74,7 +74,7 @@ class ArchitectCrew:
         return Agent(
             config=self.agents_config["migration_checker"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("auxiliary", agent_name="migration_checker"),
             verbose=False,
         )
 
@@ -85,7 +85,7 @@ class ArchitectCrew:
         return Agent(
             config=self.agents_config["rollback_planner"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("auxiliary", agent_name="rollback_planner"),
             verbose=False,
         )
 
@@ -132,7 +132,7 @@ class ArchitectCrew:
             tasks=self.tasks,
             process=Process.sequential,
             verbose=False,
-            tracing=True,
+            tracing=False,
             output_log_file=True,
             memory=False,
         )

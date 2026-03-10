@@ -42,7 +42,7 @@ class ReviewerCrew:
         return Agent(
             config=self.agents_config["reviewer"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("review"),
+            llm=get_llm_for_stage("review", agent_name="reviewer"),
             verbose=False,
         )
 
@@ -54,7 +54,7 @@ class ReviewerCrew:
         return Agent(
             config=self.agents_config["security_reviewer"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("security"),
+            llm=get_llm_for_stage("security", agent_name="security_reviewer"),
             verbose=False,
         )
 
@@ -65,7 +65,7 @@ class ReviewerCrew:
         return Agent(
             config=self.agents_config["performance_reviewer"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("auxiliary", agent_name="performance_reviewer"),
             verbose=False,
         )
 
@@ -76,7 +76,7 @@ class ReviewerCrew:
         return Agent(
             config=self.agents_config["accessibility_checker"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("auxiliary", agent_name="accessibility_checker"),
             verbose=False,
         )
 
@@ -87,7 +87,7 @@ class ReviewerCrew:
         return Agent(
             config=self.agents_config["backward_compat_checker"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("auxiliary", agent_name="backward_compat_checker"),
             verbose=False,
         )
 
@@ -99,7 +99,7 @@ class ReviewerCrew:
         return Agent(
             config=self.agents_config["convention_checker"],  # type: ignore[index]
             tools=tools,
-            llm=get_llm_for_stage("auxiliary"),
+            llm=get_llm_for_stage("auxiliary", agent_name="convention_checker"),
             verbose=False,
         )
 
@@ -148,7 +148,7 @@ class ReviewerCrew:
             tasks=self.tasks,
             process=Process.sequential,
             verbose=False,
-            tracing=True,
+            tracing=False,
             output_log_file=True,
             memory=False,
         )
