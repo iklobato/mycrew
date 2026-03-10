@@ -118,29 +118,29 @@ DEFAULT_PIPELINE_MODELS: dict[PipelineStage, StageModelConfig] = {
     PipelineStage.COMMIT: StageModelConfig(
         primary=OpenRouterModel.QWEN3_CODER,
         fallbacks=(
-            OpenRouterModel.TRINITY_MINI,
             OpenRouterModel.GEMINI_3_FLASH,
+            OpenRouterModel.DEEPSEEK_R1,
         ),
     ),
     PipelineStage.PUBLISH: StageModelConfig(
-        primary=OpenRouterModel.TRINITY_MINI,
+        primary=OpenRouterModel.QWEN3_CODER,
         fallbacks=(
-            OpenRouterModel.QWEN3_CODER,
+            OpenRouterModel.GEMINI_3_FLASH,
             OpenRouterModel.GPT_5_NANO,
         ),
     ),
     PipelineStage.AUXILIARY: StageModelConfig(
-        primary=OpenRouterModel.TRINITY_MINI,
+        primary=OpenRouterModel.QWEN3_CODER,
         fallbacks=(
-            OpenRouterModel.QWEN3_CODER,
+            OpenRouterModel.GEMINI_3_FLASH,
             OpenRouterModel.GPT_5_NANO,
         ),
     ),
     PipelineStage.SECURITY: StageModelConfig(
-        primary=OpenRouterModel.TRINITY_MINI,
+        primary=OpenRouterModel.QWEN3_CODER,
         fallbacks=(
-            OpenRouterModel.GPT_5_NANO,
             OpenRouterModel.GEMINI_3_FLASH,
+            OpenRouterModel.GPT_5_NANO,
         ),
     ),
 }

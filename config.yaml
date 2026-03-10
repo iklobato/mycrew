@@ -123,29 +123,29 @@ models:
   commit:
     primary: "openrouter/qwen/qwen3-coder:free"
     fallbacks:
-      - "openrouter/arcee-ai/trinity-mini:free"
       - "openrouter/google/gemini-3-flash-preview"
+      - "openrouter/deepseek/deepseek-r1"
   
   # Publish stage
   publish:
-    primary: "openrouter/arcee-ai/trinity-mini:free"
+    primary: "openrouter/qwen/qwen3-coder:free"
     fallbacks:
-      - "openrouter/qwen/qwen3-coder:free"
+      - "openrouter/google/gemini-3-flash-preview"
       - "openrouter/openai/gpt-5-nano"
   
   # Auxiliary stage (used by various agents)
   auxiliary:
-    primary: "openrouter/arcee-ai/trinity-mini:free"
+    primary: "openrouter/qwen/qwen3-coder:free"
     fallbacks:
-      - "openrouter/qwen/qwen3-coder:free"
+      - "openrouter/google/gemini-3-flash-preview"
       - "openrouter/openai/gpt-5-nano"
   
   # Security stage
   security:
-    primary: "openrouter/arcee-ai/trinity-mini:free"
+    primary: "openrouter/qwen/qwen3-coder:free"
     fallbacks:
-      - "openrouter/openai/gpt-5-nano"
       - "openrouter/google/gemini-3-flash-preview"
+      - "openrouter/openai/gpt-5-nano"
 
 # Tool Configuration
 # ------------------
