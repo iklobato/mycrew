@@ -69,74 +69,81 @@ logging:
 # Two-level configuration:
 # 1. Stage-level: All agents in a crew use the same model configuration
 # 2. Agent-level: Override for specific agents within a crew
+#
+# Cost-optimized model selection based on task requirements:
+# - DeepSeek Chat: Good reasoning, ~70% cheaper than v3.2
+# - Qwen2.5 Coder: Specialized for coding, ~60% cheaper than qwen3-coder
+# - Gemini 2.0 Flash: Fast and cheap for text generation
+# - Llama 3.3 70B: Excellent for complex reasoning tasks
+# - Mistral Small: Very cost-effective for general tasks
 models:
-  # Issue Analyst Crew
+  # Issue Analyst Crew: Needs reasoning + GitHub issue understanding
   analyze_issue:
-    primary: "openrouter/deepseek/deepseek-r1"
+    primary: "openrouter/deepseek/deepseek-chat"
     fallbacks:
-      - "openrouter/google/gemini-3-flash-preview"
-      - "openrouter/deepseek/deepseek-v3.2"
+      - "openrouter/meta-llama/llama-3.3-70b-instruct"
+      - "openrouter/qwen/qwen2.5-coder-32b"
     # Optional: agent-level overrides
     # agents:
     #   issue_analyst:
-    #     primary: "openrouter/google/gemini-3-flash-preview"
-    #     fallbacks: ["openrouter/deepseek/deepseek-r1"]
+    #     primary: "openrouter/meta-llama/llama-3.3-70b-instruct"
+    #     fallbacks: ["openrouter/deepseek/deepseek-chat"]
   
-  # Explorer Crew
+  # Explorer Crew: Needs code understanding + tech stack analysis
   explore:
-    primary: "openrouter/deepseek/deepseek-r1"
+    primary: "openrouter/qwen/qwen2.5-coder-32b"
     fallbacks:
-      - "openrouter/google/gemini-3-flash-preview"
-      - "openrouter/deepseek/deepseek-v3.2"
+      - "openrouter/deepseek/deepseek-chat"
+      - "openrouter/meta-llama/llama-3.3-70b-instruct"
   
-  # Architect Crew
+  # Architect Crew: Needs design thinking + architecture planning
   plan:
-    primary: "openrouter/google/gemini-3-flash-preview"
+    primary: "openrouter/google/gemini-2.0-flash-exp"
     fallbacks:
-      - "openrouter/deepseek/deepseek-v3.2"
-      - "openrouter/deepseek/deepseek-r1"
+      - "openrouter/deepseek/deepseek-chat"
+      - "openrouter/mistralai/mistral-small-24b-instruct-2507"
   
-  # Implementer Crew
+  # Implementer Crew: Needs coding excellence + precision
   implement:
-    primary: "openrouter/deepseek/deepseek-v3.2"
+    primary: "openrouter/qwen/qwen2.5-coder-32b"
     fallbacks:
-      - "openrouter/google/gemini-3-flash-preview"
-      - "openrouter/deepseek/deepseek-r1"
+      - "openrouter/deepseek/deepseek-chat"
+      - "openrouter/meta-llama/llama-3.3-70b-instruct"
   
-  # Reviewer Crew
+  # Reviewer Crew: Needs critical thinking + code review skills
   review:
-    primary: "openrouter/deepseek/deepseek-v3.2"
+    primary: "openrouter/deepseek/deepseek-chat"
     fallbacks:
-      - "openrouter/google/gemini-3-flash-preview"
-      - "openrouter/deepseek/deepseek-r1"
+      - "openrouter/meta-llama/llama-3.3-70b-instruct"
+      - "openrouter/qwen/qwen2.5-coder-32b"
   
-  # Commit Crew
+  # Commit Crew: Needs concise, clear writing for commit messages
   commit:
-    primary: "openrouter/google/gemini-3-flash-preview"
+    primary: "openrouter/google/gemini-2.0-flash-exp"
     fallbacks:
-      - "openrouter/deepseek/deepseek-v3.2"
-      - "openrouter/deepseek/deepseek-r1"
+      - "openrouter/mistralai/mistral-small-24b-instruct-2507"
+      - "openrouter/deepseek/deepseek-chat"
   
-  # Publish stage
+  # Publish stage: Needs PR description writing + communication
   publish:
-    primary: "openrouter/google/gemini-3-flash-preview"
+    primary: "openrouter/google/gemini-2.0-flash-exp"
     fallbacks:
-      - "openrouter/deepseek/deepseek-v3.2"
-      - "openrouter/deepseek/deepseek-r1"
+      - "openrouter/mistralai/mistral-small-24b-instruct-2507"
+      - "openrouter/deepseek/deepseek-chat"
   
-  # Auxiliary stage (used by various agents)
+  # Auxiliary stage: General-purpose tasks, needs to be cheap
   auxiliary:
-    primary: "openrouter/google/gemini-3-flash-preview"
+    primary: "openrouter/mistralai/mistral-small-24b-instruct-2507"
     fallbacks:
-      - "openrouter/deepseek/deepseek-v3.2"
-      - "openrouter/deepseek/deepseek-r1"
+      - "openrouter/google/gemini-2.0-flash-exp"
+      - "openrouter/deepseek/deepseek-chat"
   
-  # Security stage
+  # Security stage: Needs security reasoning + vulnerability analysis
   security:
-    primary: "openrouter/deepseek/deepseek-v3.2"
+    primary: "openrouter/meta-llama/llama-3.3-70b-instruct"
     fallbacks:
-      - "openrouter/google/gemini-3-flash-preview"
-      - "openrouter/deepseek/deepseek-r1"
+      - "openrouter/deepseek/deepseek-chat"
+      - "openrouter/qwen/qwen2.5-coder-32b"
 
 # Tool Configuration
 # ------------------

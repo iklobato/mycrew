@@ -47,15 +47,27 @@ LLM._format_messages_for_provider = _patched_format_messages
 class OpenRouterModel(StrEnum):
     """OpenRouter model IDs. Single source of truth for reuse across stages."""
 
+    # Expensive models (keep for fallback)
     DEEPSEEK_R1 = "openrouter/deepseek/deepseek-r1"
     DEEPSEEK_V3_2 = "openrouter/deepseek/deepseek-v3.2"
     GEMINI_3_FLASH = "openrouter/google/gemini-3-flash-preview"
+    QWEN3_CODER = "openrouter/qwen/qwen3-coder"
+
+    # Cheaper alternatives (primary recommendations)
+    DEEPSEEK_CHAT = "openrouter/deepseek/deepseek-chat"  # ~70% cheaper than v3.2
+    GEMINI_2_FLASH = "openrouter/google/gemini-2.0-flash-exp"  # Cheaper than gemini-3
+    QWEN2_5_CODER = "openrouter/qwen/qwen2.5-coder-32b"  # ~60% cheaper than qwen3-coder
+    MISTRAL_SMALL = "openrouter/mistralai/mistral-small-24b-instruct-2507"
+    LLAMA_3_3_70B = (
+        "openrouter/meta-llama/llama-3.3-70b-instruct"  # Good for complex tasks
+    )
+
+    # Legacy/fallback options
     GPT_5_NANO = "openrouter/openai/gpt-5-nano"
     KIMI_K25 = "openrouter/moonshotai/kimi-k2.5"
     QWEN3_235B_THINKING = "openrouter/qwen/qwen3-235b-a22b-thinking-2507"
-    QWEN3_CODER = "openrouter/qwen/qwen3-coder"  # Non-free version
-    QWEN3_NEXT_80B = "openrouter/qwen/qwen3-next-80b-a3b-instruct"  # Non-free version
-    TRINITY_MINI = "openrouter/arcee-ai/trinity-mini"  # Non-free version
+    QWEN3_NEXT_80B = "openrouter/qwen/qwen3-next-80b-a3b-instruct"
+    TRINITY_MINI = "openrouter/arcee-ai/trinity-mini"
 
 
 class PipelineStage(StrEnum):
@@ -80,69 +92,87 @@ class StageModelConfig:
     fallbacks: tuple[OpenRouterModel, ...]
 
 
-# Default model configuration
+# Default model configuration - optimized for cost-effectiveness and task suitability
 DEFAULT_PIPELINE_MODELS: dict[PipelineStage, StageModelConfig] = {
+    # Issue Analysis: Needs reasoning + GitHub issue understanding
+    # DeepSeek Chat provides good reasoning at ~70% cheaper cost than v3.2
     PipelineStage.ANALYZE_ISSUE: StageModelConfig(
-        primary=OpenRouterModel.DEEPSEEK_R1,
+        primary=OpenRouterModel.DEEPSEEK_CHAT,
         fallbacks=(
-            OpenRouterModel.QWEN3_CODER,
-            OpenRouterModel.GEMINI_3_FLASH,
+            OpenRouterModel.LLAMA_3_3_70B,  # Excellent for complex reasoning
+            OpenRouterModel.QWEN2_5_CODER,  # Good code understanding
         ),
     ),
+    # Exploration: Needs code understanding + tech stack analysis
+    # Qwen2.5 Coder is specialized for code analysis and ~60% cheaper than qwen3-coder
     PipelineStage.EXPLORE: StageModelConfig(
-        primary=OpenRouterModel.DEEPSEEK_R1,
+        primary=OpenRouterModel.QWEN2_5_CODER,
         fallbacks=(
-            OpenRouterModel.QWEN3_CODER,
-            OpenRouterModel.GEMINI_3_FLASH,
+            OpenRouterModel.DEEPSEEK_CHAT,  # Good all-around understanding
+            OpenRouterModel.LLAMA_3_3_70B,  # For complex codebase analysis
         ),
     ),
+    # Planning: Needs design thinking + architecture planning
+    # Gemini 2.0 Flash is fast, cheap, and good for brainstorming
     PipelineStage.PLAN: StageModelConfig(
-        primary=OpenRouterModel.GEMINI_3_FLASH,
+        primary=OpenRouterModel.GEMINI_2_FLASH,
         fallbacks=(
-            OpenRouterModel.DEEPSEEK_V3_2,
-            OpenRouterModel.DEEPSEEK_R1,
+            OpenRouterModel.DEEPSEEK_CHAT,  # Good for detailed planning
+            OpenRouterModel.MISTRAL_SMALL,  # Fast alternative
         ),
     ),
+    # Implementation: Needs coding excellence + precision
+    # Qwen2.5 Coder is specialized for coding tasks and much cheaper than v3.2
     PipelineStage.IMPLEMENT: StageModelConfig(
-        primary=OpenRouterModel.DEEPSEEK_V3_2,
+        primary=OpenRouterModel.QWEN2_5_CODER,
         fallbacks=(
-            OpenRouterModel.QWEN3_CODER,
-            OpenRouterModel.GEMINI_3_FLASH,
+            OpenRouterModel.DEEPSEEK_CHAT,  # Good coding capability
+            OpenRouterModel.LLAMA_3_3_70B,  # For complex implementations
         ),
     ),
+    # Review: Needs critical thinking + code review skills
+    # DeepSeek Chat provides good reasoning for review at lower cost
     PipelineStage.REVIEW: StageModelConfig(
-        primary=OpenRouterModel.DEEPSEEK_V3_2,
+        primary=OpenRouterModel.DEEPSEEK_CHAT,
         fallbacks=(
-            OpenRouterModel.GEMINI_3_FLASH,
-            OpenRouterModel.DEEPSEEK_R1,
+            OpenRouterModel.LLAMA_3_3_70B,  # Excellent for thorough reviews
+            OpenRouterModel.QWEN2_5_CODER,  # Good for code-specific reviews
         ),
     ),
+    # Commit: Needs concise, clear writing for commit messages
+    # Gemini 2.0 Flash is perfect for short, clear text generation
     PipelineStage.COMMIT: StageModelConfig(
-        primary=OpenRouterModel.GEMINI_3_FLASH,
+        primary=OpenRouterModel.GEMINI_2_FLASH,
         fallbacks=(
-            OpenRouterModel.DEEPSEEK_R1,
-            OpenRouterModel.QWEN3_CODER,
+            OpenRouterModel.MISTRAL_SMALL,  # Fast and cheap
+            OpenRouterModel.DEEPSEEK_CHAT,  # For more complex commit messages
         ),
     ),
+    # Publish: Needs PR description writing + communication
+    # Gemini 2.0 Flash excels at clear documentation writing
     PipelineStage.PUBLISH: StageModelConfig(
-        primary=OpenRouterModel.GEMINI_3_FLASH,
+        primary=OpenRouterModel.GEMINI_2_FLASH,
         fallbacks=(
-            OpenRouterModel.DEEPSEEK_R1,
-            OpenRouterModel.QWEN3_CODER,
+            OpenRouterModel.MISTRAL_SMALL,  # Fast alternative
+            OpenRouterModel.DEEPSEEK_CHAT,  # For detailed PR descriptions
         ),
     ),
+    # Auxiliary: General-purpose tasks, needs to be cheap
+    # Mistral Small is very cost-effective for general tasks
     PipelineStage.AUXILIARY: StageModelConfig(
-        primary=OpenRouterModel.QWEN3_CODER,
+        primary=OpenRouterModel.MISTRAL_SMALL,
         fallbacks=(
-            OpenRouterModel.GEMINI_3_FLASH,
-            OpenRouterModel.GPT_5_NANO,
+            OpenRouterModel.GEMINI_2_FLASH,  # Fast fallback
+            OpenRouterModel.DEEPSEEK_CHAT,  # More capable fallback
         ),
     ),
+    # Security: Needs security reasoning + vulnerability analysis
+    # Llama 3.3 70B is excellent for complex security reasoning
     PipelineStage.SECURITY: StageModelConfig(
-        primary=OpenRouterModel.QWEN3_CODER,
+        primary=OpenRouterModel.LLAMA_3_3_70B,
         fallbacks=(
-            OpenRouterModel.GEMINI_3_FLASH,
-            OpenRouterModel.GPT_5_NANO,
+            OpenRouterModel.DEEPSEEK_CHAT,  # Good security reasoning
+            OpenRouterModel.QWEN2_5_CODER,  # For code-specific security issues
         ),
     ),
 }
