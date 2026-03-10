@@ -43,6 +43,8 @@ class CommitCrew:
             tools=tools,
             llm=get_llm_for_stage("auxiliary", agent_name="commit_message_reviewer"),
             verbose=False,
+            max_iter=3,
+            max_rpm=10,
         )
 
     @agent
