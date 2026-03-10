@@ -32,8 +32,6 @@ tasks:
         echo "  GITHUB_REPO GitHub repo owner/repo for search"
         echo "  ISSUE_URL   Issue URL for scraping"
         echo "  DOCS        Docs URL for CodeDocsSearchTool"
-        echo "  FOCUS_PATHS Comma-separated paths to prioritize (e.g. src,lib)"
-        echo "  EXCLUDE_PATHS Comma-separated paths to skip (e.g. node_modules,vendor)"
         echo ""
         echo "=== Usage Examples ==="
         echo "  # CLI args (pass kickoff flags after --)"
@@ -84,8 +82,6 @@ tasks:
       GITHUB_REPO: "{{.GITHUB_REPO}}"
       ISSUE_URL: "{{.ISSUE_URL}}"
       DOCS: "{{.DOCS}}"
-      FOCUS_PATHS: "{{.FOCUS_PATHS}}"
-      EXCLUDE_PATHS: "{{.EXCLUDE_PATHS}}"
       V: "{{.V}}"
     cmds:
       - |
@@ -139,8 +135,6 @@ tasks:
         [ -n "$GITHUB_REPO" ] && ARGS+=(--github-repo "$GITHUB_REPO")
         [ -n "$ISSUE_URL" ] && ARGS+=(--issue-url "$ISSUE_URL")
         [ -n "$DOCS" ] && ARGS+=(--docs-url "$DOCS")
-        [ -n "$FOCUS_PATHS" ] && ARGS+=(--focus-paths "$FOCUS_PATHS")
-        [ -n "$EXCLUDE_PATHS" ] && ARGS+=(--exclude-paths "$EXCLUDE_PATHS")
         echo "  Running: uv run kickoff ${ARGS[*]}"
         echo ""
         uv run kickoff "${ARGS[@]}"

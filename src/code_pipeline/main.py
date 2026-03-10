@@ -411,8 +411,6 @@ def _run_explore_in_process(
     *,
     task: str = "",
     test_command: str = "",
-    focus_paths: str = "",
-    exclude_paths: str = "",
     github_repo: str = "",
     repo_context: str = "",
 ) -> str:
@@ -424,8 +422,6 @@ def _run_explore_in_process(
             "task": task,
             "issue_analysis": issue_analysis,
             "test_command": test_command,
-            "focus_paths": focus_paths,
-            "exclude_paths": exclude_paths,
             "github_repo": github_repo,
             "repo_context": repo_context
             or build_repo_context(repo_path, github_repo, "", "", test_command),
@@ -611,8 +607,6 @@ class PipelineArgs:
     github_repo: str = ""
     issue_url: str = ""
     docs_url: str = ""
-    focus_paths: str = ""
-    exclude_paths: str = ""
     serper_enabled: bool = False
     serper_n_results: int = 5
 
@@ -630,8 +624,6 @@ class PipelineArgs:
             "github_repo": self.github_repo,
             "issue_url": self.issue_url,
             "docs_url": self.docs_url,
-            "focus_paths": self.focus_paths,
-            "exclude_paths": self.exclude_paths,
             "serper_enabled": self.serper_enabled,
             "serper_n_results": self.serper_n_results,
         }
@@ -670,8 +662,6 @@ def _load_config(path: str) -> dict:
         "github_repo": "github_repo",
         "issue_url": "issue_url",
         "docs_url": "docs_url",
-        "focus_paths": "focus_paths",
-        "exclude_paths": "exclude_paths",
         "serper_enabled": "serper_enabled",
         "serper_n_results": "serper_n_results",
     }
@@ -683,10 +673,7 @@ def _load_config(path: str) -> dict:
         for k, v in pipeline_data.items():
             key = k.replace("-", "_")
             if key in key_map:
-                val = v
-                if key in ("focus_paths", "exclude_paths") and isinstance(v, list):
-                    val = ",".join(str(x) for x in v) if v else ""
-                out[key_map[key]] = val
+                out[key_map[key]] = v
 
         # Extract serper configuration from tools section
         tools_data = data.get("tools", {})
@@ -710,10 +697,7 @@ def _load_config(path: str) -> dict:
         for k, v in data.items():
             key = k.replace("-", "_")  # support kebab-case
             if key in key_map:
-                val = v
-                if key in ("focus_paths", "exclude_paths") and isinstance(v, list):
-                    val = ",".join(str(x) for x in v) if v else ""
-                out[key_map[key]] = val
+                out[key_map[key]] = v
 
         # Extract serper configuration from old flat structure
         if "serper_enabled" in data:
@@ -789,16 +773,6 @@ def _parse_args() -> PipelineArgs:
         "--docs-url", default=None, help="Docs URL for CodeDocsSearchTool"
     )
     parser.add_argument(
-        "--focus-paths",
-        default=None,
-        help="Comma-separated paths to prioritize in exploration (e.g. src,lib)",
-    )
-    parser.add_argument(
-        "--exclude-paths",
-        default=None,
-        help="Comma-separated paths to skip in exploration (e.g. node_modules,vendor)",
-    )
-    parser.add_argument(
         "--serper-enabled",
         action="store_true",
         help="Enable web search via SerperDevTool (requires SERPER_API_KEY)",
@@ -844,8 +818,6 @@ def _parse_args() -> PipelineArgs:
         "github_repo": "",
         "issue_url": "",
         "docs_url": "",
-        "focus_paths": "",
-        "exclude_paths": "",
         "serper_enabled": False,
         "serper_n_results": 5,
     }
@@ -861,8 +833,6 @@ def _parse_args() -> PipelineArgs:
         "github_repo": ns.github_repo,
         "issue_url": ns.issue_url,
         "docs_url": ns.docs_url,
-        "focus_paths": ns.focus_paths,
-        "exclude_paths": ns.exclude_paths,
         "serper_enabled": ns.serper_enabled,
         "serper_n_results": ns.serper_n_results,
     }
@@ -887,8 +857,6 @@ def _parse_args() -> PipelineArgs:
         github_repo=base["github_repo"] or "",
         issue_url=base["issue_url"] or "",
         docs_url=base["docs_url"] or "",
-        focus_paths=base.get("focus_paths", "") or "",
-        exclude_paths=base.get("exclude_paths", "") or "",
     )
 
 
@@ -902,8 +870,6 @@ class PipelineState(BaseModel):
     task: str = ""
     branch: str = "main"
     dry_run: bool = False
-    focus_paths: str = ""
-    exclude_paths: str = ""
     max_retries: int = 3
     test_command: str = ""
     issue_id: str = ""
@@ -1142,8 +1108,6 @@ class CodePipelineFlow(Flow[PipelineState]):
             {
                 "repo_path": repo_path,
                 "test_command": self.state.test_command,
-                "focus_paths": getattr(self.state, "focus_paths", "") or "",
-                "exclude_paths": getattr(self.state, "exclude_paths", "") or "",
                 "github_repo": self.state.github_repo or "",
             },
             exclude_keys=(
@@ -1159,8 +1123,6 @@ class CodePipelineFlow(Flow[PipelineState]):
             self.state.issue_analysis,
             task=self.state.task,
             test_command=self.state.test_command,
-            focus_paths=getattr(self.state, "focus_paths", "") or "",
-            exclude_paths=getattr(self.state, "exclude_paths", "") or "",
             github_repo=self.state.github_repo or "",
             repo_context=getattr(self.state, "repo_context", "") or "",
         )
@@ -1597,8 +1559,6 @@ def kickoff(
     github_repo: str | None = None,
     issue_url: str | None = None,
     docs_url: str | None = None,
-    focus_paths: str | None = None,
-    exclude_paths: str | None = None,
     inputs: dict | None = None,
 ):
     """Run the code pipeline flow. Uses argparse when invoked from CLI."""
@@ -1615,8 +1575,6 @@ def kickoff(
         "github_repo": github_repo,
         "issue_url": issue_url,
         "docs_url": docs_url,
-        "focus_paths": focus_paths,
-        "exclude_paths": exclude_paths,
     }
     args = _parse_args().replace(**overrides)
     flow_inputs = (inputs or {}) | args.to_flow_inputs()
@@ -1728,8 +1686,6 @@ def _main():
         github_repo=getattr(args, "github_repo", ""),
         issue_url=getattr(args, "issue_url", ""),
         docs_url=getattr(args, "docs_url", ""),
-        focus_paths=getattr(args, "focus_paths", "") or "",
-        exclude_paths=getattr(args, "exclude_paths", "") or "",
     )
 
 
