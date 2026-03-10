@@ -246,6 +246,75 @@ Available task variables: `TASK_DESC`, `R` (repo_path), `B` (branch), `V` (from_
 
 **Output**: PR URL or skip message with commit/PR creation details.
 
+## 📊 Agent Inputs & Outputs
+
+Each agent receives specific inputs and produces defined outputs that flow through the pipeline:
+
+### **Issue Analyst Crew**
+| Agent | Primary Inputs | Key Outputs |
+|-------|---------------|-------------|
+| **similar_issues_synthesizer** | `task`, `github_repo`, `repo_path` | Similar issues analysis, "company moment" (recent merges + open work) |
+| **issue_analyst** | `task`, `issue_url`, `github_repo`, `docs_url`, `repo_path` | Structured requirements: Summary, Acceptance Criteria, Scope, Technical Hints |
+| **scope_validator** | Issue analyst output | Validation flags: `BROAD_CRITERIA`, `VAGUE`, `CONFLICT`, `SPLIT_RECOMMENDED`, or `NONE` |
+| **acceptance_criteria_normalizer** | Issue analyst + scope validator outputs | Normalized, numbered, testable acceptance criteria checklist |
+
+### **Explorer Crew**
+| Agent | Primary Inputs | Key Outputs |
+|-------|---------------|-------------|
+| **repo_explorer** | `repo_path`, `task`, `test_command`, `focus_paths`, `exclude_paths` | Tech stack analysis, directory layout, key files, conventions |
+| **dependency_analyzer** | `repo_path`, task context | Dependency graphs, blast radius analysis, import relationships |
+| **test_layout_scout** | `repo_path`, `test_command` | Test directory structure, fixtures, test conventions |
+| **convention_extractor** | `repo_path` | Lint/format configuration, code style conventions |
+| **api_boundary_scout** | `repo_path`, task (if mentions API) | API surface mapping, routes, controllers, middleware patterns |
+
+### **Clarify Crew**
+| Agent | Primary Inputs | Key Outputs |
+|-------|---------------|-------------|
+| **ambiguity_detector** | `task`, `exploration`, `issue_analysis` | `## Open Questions` with numbered list of ambiguities |
+| **question_prioritizer** | Open questions from ambiguity detector | `## Prioritized Questions` with impact ranking |
+| **clarifier** | Prioritized questions, exploration findings | Human Q/A with code snippet options, final clarifications document |
+
+### **Architect Crew**
+| Agent | Primary Inputs | Key Outputs |
+|-------|---------------|-------------|
+| **architect** | `task`, `exploration`, `issue_analysis`, `clarifications` | File-level plan: `## Files to Create`, `## Files to Modify` (paths only) |
+| **dependency_orderer** | Architect's file list, `repo_path` | Ordered file list by dependency, `## Risk` section |
+| **refactor_guard** | Architect plan, acceptance criteria | `REFACTOR_FLAGS` or `NONE` (prevents scope creep) |
+| **test_plan_advisor** | Architect plan, `test_command` | `## Test Plan` or skipped if no test command |
+| **migration_checker** | Architect plan | `## Migration` or `NONE` (for DB/schema/config changes) |
+| **rollback_planner** | Architect plan, risk section | `## Rollback` or `NONE` (for high-risk changes) |
+
+### **Implementer Crew**
+| Agent | Primary Inputs | Key Outputs |
+|-------|---------------|-------------|
+| **implementer** | `plan`, `repo_path`, `prior_issues` | Actual code written to files, implementation summary |
+| **docstring_writer** | Changed files (via `git diff`), `repo_path` | Updated docstrings following project conventions |
+| **type_hint_checker** | Changed Python files, `repo_path` | Added/updated type hints for Python functions/classes |
+| **test_writer** | Test plan, `test_command`, `repo_path` | Added/updated test files, test execution results |
+| **lint_fixer** | Changed files, exploration conventions, `repo_path` | Lint fixes applied, auto-fixed issues summary |
+| **self_reviewer** | Plan vs actual changes (via `git status`/`git diff`) | `SELF_REVIEW: PASS` or `ISSUES:` with discrepancies |
+
+### **Reviewer Crew**
+| Agent | Primary Inputs | Key Outputs |
+|-------|---------------|-------------|
+| **reviewer** | `task`, `plan`, `implementation`, `repo_path` | First line: `APPROVED` or `ISSUES:` with detailed review |
+| **security_reviewer** | Implementation changes, `repo_path` | `SECURE` or `SECURITY_ISSUES:` with security findings |
+| **performance_reviewer** | Implementation changes, `repo_path` | `PERF_OK` or `PERF_ISSUES:` with performance findings |
+| **accessibility_checker** | UI file changes, `repo_path` | A11y compliance check (skipped if no UI changes) |
+| **backward_compat_checker** | API changes, `repo_path` | `COMPAT_OK` or `BREAKING:` with compatibility findings |
+| **convention_checker** | All reviewer outputs, `repo_path` | Merged final verdict with all issues consolidated |
+
+### **Commit Crew**
+| Agent | Primary Inputs | Key Outputs |
+|-------|---------------|-------------|
+| **git_agent** | `branch`, `feature_branch`, `dry_run`, `issue_id`, `repo_path` | Git commit output or dry-run summary |
+| **commit_message_reviewer** | Last commit message (via `git log`), `dry_run` | `Commit message valid: ...` or amended message |
+| **changelog_agent** | CHANGELOG file status, task summary, `dry_run` | Updated CHANGELOG or skip message |
+| **pr_labels_suggester** | `task`, `plan` | `Suggested labels: label1, label2, ...` |
+| **publish_agent** | `feature_branch`, `base_branch`, `task`, `implementation`, `plan`, `review_verdict`, `issue_url`, `issue_id`, `github_repo`, `dry_run` | PR URL or skip message |
+
+**Data Flow**: Inputs flow sequentially through the pipeline: `task` → `issue_analysis` → `exploration` → `clarifications` → `plan` → `implementation` → `review_verdict` → `commit/PR`.
+
 ## Crew Members & Responsibilities
 
 | Crew | Agents | Primary Responsibilities | Web Search Integration |

@@ -5,11 +5,12 @@ git_agent:
     Create feature branch from base, stage changes (excluding .code_pipeline),
     and commit with Conventional Commits format. Skip when dry_run is true.
   backstory: >
-    You use Repo Shell Tool. Steps: (1) git checkout {branch}, (2) git checkout
-    -b {feature_branch}, (3) git add -A && git reset -- .code_pipeline, (4) git
-    commit -m "message". Exclude .code_pipeline (pipeline state). If issue_id
-    provided, include "fixes #X" in message. Conventional Commits: <type>[scope]:
-    <description>. Types: feat, fix, docs, style, refactor, test, chore, perf, ci.
+    You use Repo Shell Tool. Steps: (1) git stash -u, (2) git checkout {branch},
+    (3) git checkout -b {feature_branch}, (4) git stash pop, (5) resolve conflicts
+    if any, (6) git add -A && git reset -- .code_pipeline, (7) git commit -m "message".
+    Exclude .code_pipeline (pipeline state). If issue_id provided, include "fixes #X"
+    in message. Conventional Commits: <type>[scope]: <description>.
+    Types: feat, fix, docs, style, refactor, test, chore, perf, ci.
     If dry_run is true, do NOT run git—list feature branch, files to stage,
     proposed message. Never run destructive commands (reset --hard, push
     --force to main). Check git status before commit; avoid .env, secrets,
@@ -68,10 +69,14 @@ publish_agent:
     implementation, plan, review_verdict, issue_url, issue_id. Include suggested
     labels from pr_labels_suggest_task. Skip when dry_run or github_repo empty.
   backstory: >
-    You receive changelog_task and pr_labels_suggest_task output. If dry_run
-    or github_repo empty, output "PR creation skipped (dry_run)" or "PR
+    You receive changelog_task and pr_labels_suggest_task output. First analyze
+    and resolve any conflicts with the base branch using the implementation context.
+    Steps: (1) Check for conflicts with git fetch and merge-base, (2) Analyze conflicts
+    using task, implementation, plan context, (3) Resolve conflicts intelligently,
+    (4) Merge or rebase as appropriate, (5) Run tests if available.
+    If dry_run or github_repo empty, output "PR creation skipped (dry_run)" or "PR
     creation skipped (no github_repo)". Otherwise use Create PR Tool with:
     feature_branch, base_branch, task, implementation, plan, review_verdict,
     issue_url, issue_id, github_repo. When pr_labels_suggest_task provides
     "Suggested labels:" line, extract comma-separated labels and pass as labels
-    param. Return PR URL from tool output.     Tool pushes branch and creates PR; labels applied via gh pr edit. Context is shared.
+    param. Return PR URL from tool output. Tool pushes branch and creates PR; labels applied via gh pr edit. Context is shared.

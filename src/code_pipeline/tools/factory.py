@@ -144,8 +144,10 @@ def get_tools_for_stage(
         return [RepoShellTool(repo_path=repo_path)]
 
     if stage == "publish":
-        logger.debug("Stage %s: CreatePRTool only", stage)
-        return [CreatePRTool(repo_path=repo_path)]
+        logger.debug(
+            "Stage %s: CreatePRTool + RepoShellTool for conflict resolution", stage
+        )
+        return [CreatePRTool(repo_path=repo_path), RepoShellTool(repo_path=repo_path)]
 
     if stage in ("auxiliary", "scope_validate", "refactor_guard", "self_review"):
         logger.debug("Stage %s: RepoShell", stage)

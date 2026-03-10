@@ -14,10 +14,13 @@ commit_task:
       Check status: git status. Commands run with cwd=repo_path.
 
     Create a proper feature branch for this task. Steps:
-    1. git checkout {branch}  (ensure we're on base branch)
-    2. git checkout -b {feature_branch}  (create and switch to feature branch)
-    3. git add -A && git reset -- .code_pipeline
-    4. git commit -m "your message"
+    1. git stash -u  (stash all changes including untracked files)
+    2. git checkout {branch}  (ensure we're on base branch)
+    3. git checkout -b {feature_branch}  (create and switch to feature branch)
+    4. git stash pop  (apply stashed changes to new branch)
+    5. Resolve any conflicts if git stash pop reports conflicts
+    6. git add -A && git reset -- .code_pipeline
+    7. git commit -m "your message"
 
     Exclude .code_pipeline from the commit (pipeline state, not application code).
     If issue_id is provided, include "fixes #X" or similar in the commit message.
@@ -116,27 +119,38 @@ pr_labels_suggest_task:
 
 publish_task:
   description: >
-    After the commit is done, publish the branch and create a PR.
+    After the commit is done, publish the branch and create a PR. First analyze
+    and resolve any conflicts with the base branch using the whole implementation
+    context.
 
     Context: {repo_context}
     Dry run: {dry_run}
     Feature branch: {feature_branch}
     Base branch: {branch}
+    Task: {task}
+    Implementation: {implementation}
+    Plan: {plan}
+    Review_verdict: {review_verdict}
 
-    If dry_run is "true" OR github_repo is empty, do NOT call the Create PR Tool.
-    Output: "PR creation skipped (dry_run)" or "PR creation skipped (no github_repo)".
-
-    If dry_run is "false" AND github_repo is set, you MUST use the Create PR Tool
-    with these exact parameters:
-      - feature_branch: {feature_branch}
-      - base_branch: {branch}
-      - task: {task}
-      - implementation: {implementation}
-      - plan: {plan}
-      - review_verdict: {review_verdict}
-      - issue_url: {issue_url}
-      - issue_id: {issue_id}
-      - github_repo: {github_repo}
+    Steps:
+    1. Check for conflicts: git fetch origin {branch} && git merge-base origin/{branch} HEAD
+    2. If conflicts exist or branch diverged significantly, analyze using the
+       implementation context and resolve intelligently
+    3. Merge or rebase as appropriate to ensure clean integration
+    4. Run tests if test_command is available
+    5. If dry_run is "true" OR github_repo is empty, do NOT call the Create PR Tool.
+       Output: "PR creation skipped (dry_run)" or "PR creation skipped (no github_repo)".
+    6. If dry_run is "false" AND github_repo is set, you MUST use the Create PR Tool
+       with these exact parameters:
+         - feature_branch: {feature_branch}
+         - base_branch: {branch}
+         - task: {task}
+         - implementation: {implementation}
+         - plan: {plan}
+         - review_verdict: {review_verdict}
+         - issue_url: {issue_url}
+         - issue_id: {issue_id}
+         - github_repo: {github_repo}
 
     The tool will push the branch to origin and create the PR with a good description.
     When pr_labels_suggest_task provides a "Suggested labels:" line, extract the
