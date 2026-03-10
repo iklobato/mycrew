@@ -7,7 +7,6 @@ __pycache__
 .cursor
 *.md
 config.yaml
-REMOVED
 .env
 .env.example
 Taskfile.yml
