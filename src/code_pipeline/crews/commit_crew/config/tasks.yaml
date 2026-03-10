@@ -13,7 +13,9 @@ commit_task:
     - **Repo Shell Tool** — Param: command. Run git: git checkout, git add, git commit.
       Check status: git status. Commands run with cwd=repo_path.
 
-    Create a proper feature branch for this task. Steps:
+    Create a proper feature branch for this task. The feature branch name is provided: {feature_branch}
+    
+    Steps:
     1. git stash -u  (stash all changes including untracked files)
     2. git checkout {branch}  (ensure we're on base branch)
     3. git checkout -b {feature_branch}  (create and switch to feature branch)
@@ -34,7 +36,7 @@ commit_task:
 
     Conventions:
       - feat: new feature
-      - fix: bug fix
+      - fix: bug fix  
       - docs: documentation only
       - style: formatting, whitespace, no code change
       - refactor: code change that neither fixes nor adds a feature
@@ -43,8 +45,25 @@ commit_task:
       - perf: performance improvement
       - ci: CI config or scripts
 
-    Examples: "feat(auth): add login form", "fix(api): handle null response",
-    "docs: update README", "refactor(utils): simplify validation".
+    **Branch Naming Examples (already provided in {feature_branch}):**
+    - feat/user-authentication: For adding user auth feature
+    - fix/login-page-crash: For fixing login page issues
+    - docs/update-readme: For documentation updates
+    - refactor/database-layer: For code refactoring
+    - test/auth-unit-tests: For adding tests
+    - chore/update-dependencies: For maintenance tasks
+    - perf/query-optimization: For performance improvements
+    - ci/github-actions: For CI/CD changes
+
+    **Commit Message Examples:**
+    - "feat(auth): add login form with email/password"
+    - "fix(api): handle null response in user endpoint"
+    - "docs: update README with installation instructions"
+    - "refactor(utils): simplify validation logic"
+    - "test(auth): add unit tests for login function"
+    - "chore: update dependencies to latest versions"
+    - "perf(db): optimize user query performance"
+    - "ci: add GitHub Actions workflow for tests"
 
     Avoid committing .env, secrets, or large binaries; check git status first.
   expected_output: >

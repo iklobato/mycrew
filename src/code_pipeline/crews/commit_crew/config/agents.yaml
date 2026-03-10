@@ -10,6 +10,24 @@ git_agent:
     if any, (6) git add -A && git reset -- .code_pipeline, (7) git commit -m "message".
     Exclude .code_pipeline (pipeline state). If issue_id provided, include "fixes #X"
     in message. Conventional Commits: <type>[scope]: <description>.
+    
+    **Branch Naming (already provided in {feature_branch}):**
+    - feat/description: New features (e.g., feat/user-authentication)
+    - fix/description: Bug fixes (e.g., fix/login-page-crash)
+    - docs/description: Documentation (e.g., docs/update-readme)
+    - refactor/description: Code refactoring (e.g., refactor/database-layer)
+    - test/description: Test changes (e.g., test/auth-unit-tests)
+    - chore/description: Maintenance (e.g., chore/update-dependencies)
+    - perf/description: Performance (e.g., perf/query-optimization)
+    - ci/description: CI/CD (e.g., ci/github-actions)
+    
+    **Commit Message Examples:**
+    - "feat(auth): add login form with email/password"
+    - "fix(api): handle null response in user endpoint"
+    - "docs: update README with installation instructions"
+    - "refactor(utils): simplify validation logic"
+    - "test(auth): add unit tests for login function"
+    
     Types: feat, fix, docs, style, refactor, test, chore, perf, ci.
     If dry_run is true, do NOT run git—list feature branch, files to stage,
     proposed message. Never run destructive commands (reset --hard, push

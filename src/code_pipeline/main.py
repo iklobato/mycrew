@@ -147,9 +147,53 @@ def _configure_logging(level: str | int | None = None) -> None:
     log = logging.getLogger("code_pipeline")
     if log.handlers:
         return
+
+    class PipelineFormatter(logging.Formatter):
+        """Custom formatter for pipeline logging with step/crew/agent context."""
+
+        # ANSI color codes
+        COLORS = {
+            "DEBUG": "\033[0;36m",  # Cyan
+            "INFO": "\033[0;32m",  # Green
+            "WARNING": "\033[0;33m",  # Yellow
+            "ERROR": "\033[0;31m",  # Red
+            "CRITICAL": "\033[0;35m",  # Magenta
+            "RESET": "\033[0m",
+        }
+
+        def format(self, record):
+            # Add step/crew/agent context if available
+            step_info = getattr(record, "pipeline_step", "")
+            crew_info = getattr(record, "pipeline_crew", "")
+            agent_info = getattr(record, "pipeline_agent", "")
+
+            # Build the message with context
+            context_parts = []
+            if step_info:
+                context_parts.append(f"[{step_info}]")
+            if crew_info:
+                context_parts.append(f"[{crew_info}]")
+            if agent_info:
+                context_parts.append(f"[{agent_info}]")
+
+            if context_parts:
+                context = " ".join(context_parts) + " "
+                record.msg = f"{context}{record.msg}"
+
+            # Apply colors if terminal supports it
+            if sys.stderr.isatty():
+                levelname = record.levelname
+                if levelname in self.COLORS:
+                    record.levelname = (
+                        f"{self.COLORS[levelname]}{levelname}{self.COLORS['RESET']}"
+                    )
+                    record.msg = f"{self.COLORS.get('INFO', '')}{record.msg}{self.COLORS['RESET']}"
+
+            return super().format(record)
+
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(
-        logging.Formatter("%(asctime)s │ %(levelname)-7s │ %(message)s")
+        PipelineFormatter("%(asctime)s │ %(levelname)-7s │ %(message)s")
     )
     log.addHandler(handler)
     log.propagate = False
@@ -929,7 +973,25 @@ class CodePipelineFlow(Flow[PipelineState]):
             logger.error("└─[ CREW FAILED: %s ]─ %s", crew_name, e)
             raise
 
-        raw = result.raw if hasattr(result, "raw") else str(result)
+        # Handle different types of results to ensure we always get a string
+        if hasattr(result, "raw"):
+            raw_value = result.raw
+            # If raw is a list (e.g., list of chat completion messages), convert to string
+            if isinstance(raw_value, list):
+                # Try to extract text content from messages
+                text_parts = []
+                for item in raw_value:
+                    if hasattr(item, "content") and item.content:
+                        text_parts.append(str(item.content))
+                    elif isinstance(item, dict) and "content" in item:
+                        text_parts.append(str(item["content"]))
+                    else:
+                        text_parts.append(str(item))
+                raw = "\n".join(text_parts) if text_parts else str(raw_value)
+            else:
+                raw = str(raw_value)
+        else:
+            raw = str(result)
 
         if state_attr:
             setattr(self.state, state_attr, raw)
@@ -1328,14 +1390,82 @@ class CodePipelineFlow(Flow[PipelineState]):
         return "do_replan"
 
     def _make_feature_branch_name(self) -> str:
-        """Generate a feature branch name from task and issue_id."""
-        slug = re.sub(r"[^a-z0-9]+", "-", self.state.task.lower()).strip("-")[:50]
+        """Generate a feature branch name from task and issue_id using git conventions.
+
+        Branch naming conventions:
+        - feat/description: New features
+        - fix/description: Bug fixes
+        - docs/description: Documentation changes
+        - style/description: Code style/formatting
+        - refactor/description: Code refactoring
+        - test/description: Test changes
+        - chore/description: Maintenance tasks
+        - perf/description: Performance improvements
+        - ci/description: CI/CD changes
+
+        Examples:
+        - "Add user authentication" → "feat/user-authentication"
+        - "Fix login page crash" → "fix/login-page-crash"
+        - "Update README documentation" → "docs/update-readme"
+        - "Refactor database layer" → "refactor/database-layer"
+        - "Add unit tests for auth" → "test/auth-unit-tests"
+        """
+        # Extract conventional commit type from task
+        task_lower = self.state.task.lower()
+        commit_type = "feat"  # default
+
+        # Map keywords to commit types
+        type_patterns = {
+            "fix": r"\b(fix|bug|error|issue|problem|crash|broken)\b",
+            "docs": r"\b(doc|readme|documentation|comment|changelog)\b",
+            "style": r"\b(style|format|lint|prettier|eslint|black|ruff)\b",
+            "refactor": r"\b(refactor|restructure|reorganize|cleanup|simplify)\b",
+            "test": r"\b(test|spec|coverage|unit|integration|e2e)\b",
+            "chore": r"\b(chore|maintenance|deps|dependencies|update|upgrade|bump)\b",
+            "perf": r"\b(perf|performance|speed|optimize|optimization)\b",
+            "ci": r"\b(ci|cd|pipeline|github|gitlab|jenkins|actions|workflow)\b",
+        }
+
+        for ctype, pattern in type_patterns.items():
+            if re.search(pattern, task_lower):
+                commit_type = ctype
+                break
+
+        # Create slug from task description
+        # Remove common prefixes and clean up
+        clean_task = re.sub(
+            r"^(add|update|implement|create|fix|improve|enhance|refactor|remove|delete)\s+",
+            "",
+            task_lower,
+            flags=re.IGNORECASE,
+        )
+        clean_task = re.sub(
+            r"\s+(feature|functionality|component|module|page|screen|api|endpoint)$",
+            "",
+            clean_task,
+            flags=re.IGNORECASE,
+        )
+
+        # Create URL-friendly slug
+        slug = re.sub(r"[^a-z0-9\s-]", "", clean_task)  # Remove special chars
+        slug = re.sub(r"\s+", "-", slug)  # Replace spaces with hyphens
+        slug = re.sub(r"-+", "-", slug)  # Replace multiple hyphens with single
+        slug = slug.strip("-")[:40]  # Limit length
+
         if not slug:
             slug = "changes"
+
+        # Add issue ID if available
         if self.state.issue_id:
             issue_slug = re.sub(r"[^a-zA-Z0-9-]", "", self.state.issue_id)
-            return f"feature/{issue_slug}-{slug}"
-        return f"feature/{slug}"
+            # Try to extract just the number if it's like "fixes #123" or "issue-123"
+            issue_match = re.search(r"(\d+)", issue_slug)
+            if issue_match:
+                issue_num = issue_match.group(1)
+                return f"{commit_type}/{issue_num}-{slug}"
+            return f"{commit_type}/{issue_slug}-{slug}"
+
+        return f"{commit_type}/{slug}"
 
     @listen("commit")
     def run_commit(self):
