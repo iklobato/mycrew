@@ -53,9 +53,9 @@ class OpenRouterModel(StrEnum):
     GPT_5_NANO = "openrouter/openai/gpt-5-nano"
     KIMI_K25 = "openrouter/moonshotai/kimi-k2.5"
     QWEN3_235B_THINKING = "openrouter/qwen/qwen3-235b-a22b-thinking-2507"
-    QWEN3_CODER = "openrouter/qwen/qwen3-coder:free"
-    QWEN3_NEXT_80B = "openrouter/qwen/qwen3-next-80b-a3b-instruct:free"
-    TRINITY_MINI = "openrouter/arcee-ai/trinity-mini:free"
+    QWEN3_CODER = "openrouter/qwen/qwen3-coder"  # Non-free version
+    QWEN3_NEXT_80B = "openrouter/qwen/qwen3-next-80b-a3b-instruct"  # Non-free version
+    TRINITY_MINI = "openrouter/arcee-ai/trinity-mini"  # Non-free version
 
 
 class PipelineStage(StrEnum):
