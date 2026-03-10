@@ -165,20 +165,31 @@ tools:
   # Web search configuration (SerperDevTool)
   serper:
     enabled: true  # Enable/disable web search (opt-in for cost control)
-    n_results: 5    # Default number of search results
+    n_results: 5    # Default number of search results (1-10)
     timeout: 30     # Search timeout in seconds
+    search_depth: "moderate"  # moderate|comprehensive: controls query specificity
   
-  # Dangerous command patterns to block
+  # Tool performance optimization
+  optimization:
+    max_concurrent_tools: 3  # Maximum concurrent tool executions
+    tool_retry_attempts: 2   # Retry attempts for failed tool calls
+    rate_limit_delay: 1.0    # Delay between tool calls (seconds)
+  
+  # Dangerous command patterns to block (case-insensitive regex)
   dangerous_patterns:
-    - "rm\\s+-rf\\s+/"
-    - "rm\\s+-rf\\s+/\\*"
-    - "mkfs"
-    - "dd\\s+if="
-    - ">\\s*/dev/sd"
-    - ">\\s*/dev/hd"
-    - "chmod\\s+-R\\s+777\\s+/"
-    - "shutdown\\s+-"
-    - "reboot"
+    - "rm\\s+-rf\\s+/"  # Delete root directory
+    - "rm\\s+-rf\\s+/\\*"  # Delete all files in root
+    - "mkfs"  # Format filesystem
+    - "dd\\s+if="  # Disk operations
+    - ">\\s*/dev/(sd|hd|nvme)"  # Write to block devices
+    - "chmod\\s+-R\\s+777\\s+/"  # World-writable permissions
+    - "shutdown\\s+-"  # System shutdown
+    - "reboot"  # System reboot
+    - "halt\\s+-"  # System halt
+    - "poweroff"  # Power off system
+    - "rm\\s+-rf\\s+.*\\.git"  # Delete git repository
+    - ":(){ :|:& };:"  # Fork bomb
+    - "mv\\s+.*\\s+/dev/null"  # Move to null device
 
 # Agent Behavior Tuning
 # ---------------------
