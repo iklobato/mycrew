@@ -1,76 +1,44 @@
-from typing import List
+from crewai import Agent, LLM, Task
+from crewai.project import CrewBase, agent, llm, task
 
-from crewai import Agent, Crew, Process, Task
-from crewai.agents.agent_builder.base_agent import BaseAgent
-from crewai.project import CrewBase, agent, crew, task
+from code_pipeline.crews.base import PipelineCrewBase
 from code_pipeline.llm import get_llm_for_stage
-from code_pipeline.settings import get_pipeline_context
-from code_pipeline.tools.factory import get_tools_for_stage
 
 
 @CrewBase
-class ImplementerCrew:
+class ImplementerCrew(PipelineCrewBase):
     """Implementer crew: writes code, tests, and self-reviews."""
 
-    agents: List[BaseAgent]
-    tasks: List[Task]
-
-    agents_config = "config/agents.yaml"
-    tasks_config = "config/tasks.yaml"
+    @llm
+    def implement_llm(self) -> LLM:
+        return get_llm_for_stage("implement")
 
     @agent
     def implementer(self) -> Agent:
-        ctx = get_pipeline_context()
-        tools = get_tools_for_stage("implement", ctx.repo_path)
-        return Agent(
-            config=self.agents_config["implementer"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("implement", agent_name="implementer"),
-            verbose=False,
-        )
+        return Agent(config=self.agents_config["implementer"])  # type: ignore[index]
 
     @agent
     def docstring_writer(self) -> Agent:
-        ctx = get_pipeline_context()
-        tools = get_tools_for_stage("test_write", ctx.repo_path)
         return Agent(
             config=self.agents_config["docstring_writer"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("auxiliary", agent_name="docstring_writer"),
-            verbose=False,
         )
 
     @agent
     def type_hint_checker(self) -> Agent:
-        ctx = get_pipeline_context()
-        tools = get_tools_for_stage("test_write", ctx.repo_path)
         return Agent(
             config=self.agents_config["type_hint_checker"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("auxiliary", agent_name="type_hint_checker"),
-            verbose=False,
         )
 
     @agent
     def lint_fixer(self) -> Agent:
-        ctx = get_pipeline_context()
-        tools = get_tools_for_stage("implement", ctx.repo_path)
         return Agent(
             config=self.agents_config["lint_fixer"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("auxiliary", agent_name="lint_fixer"),
-            verbose=False,
         )
 
     @agent
     def self_reviewer(self) -> Agent:
-        ctx = get_pipeline_context()
-        tools = get_tools_for_stage("self_review", ctx.repo_path)
         return Agent(
             config=self.agents_config["self_reviewer"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("auxiliary", agent_name="self_reviewer"),
-            verbose=False,
         )
 
     @task
@@ -101,16 +69,4 @@ class ImplementerCrew:
     def self_review_task(self) -> Task:
         return Task(
             config=self.tasks_config["self_review_task"],  # type: ignore[index]
-        )
-
-    @crew
-    def crew(self) -> Crew:
-        return Crew(
-            agents=self.agents,
-            tasks=self.tasks,
-            process=Process.sequential,
-            verbose=False,
-            tracing=False,
-            output_log_file=True,
-            memory=False,
         )

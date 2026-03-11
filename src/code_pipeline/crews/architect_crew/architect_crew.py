@@ -1,105 +1,50 @@
-from typing import List
+from crewai import Agent, LLM, Task
+from crewai.project import CrewBase, agent, llm, task
 
-from crewai import Agent, Crew, Process, Task
-from crewai.agents.agent_builder.base_agent import BaseAgent
-from crewai.project import CrewBase, agent, crew, task
-
+from code_pipeline.crews.base import PipelineCrewBase
 from code_pipeline.llm import get_llm_for_stage
-from code_pipeline.settings import get_pipeline_context
-from code_pipeline.tools.factory import get_tools_for_stage
 
 
 @CrewBase
-class ArchitectCrew:
+class ArchitectCrew(PipelineCrewBase):
     """Architect crew: produces file-level plan, no code."""
 
-    agents: List[BaseAgent]
-    tasks: List[Task]
-
-    agents_config = "config/agents.yaml"
-    tasks_config = "config/tasks.yaml"
+    @llm
+    def plan_llm(self) -> LLM:
+        return get_llm_for_stage("plan")
 
     @agent
     def architect(self) -> Agent:
-        ctx = get_pipeline_context()
-        tools = get_tools_for_stage(
-            "plan",
-            ctx.repo_path,
-            github_repo=ctx.github_repo or None,
-            serper_enabled=ctx.serper_enabled,
-        )
-        return Agent(
-            config=self.agents_config["architect"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("plan", agent_name="architect"),
-            verbose=False,
-        )
+        return Agent(config=self.agents_config["architect"])  # type: ignore[index]
 
     @agent
     def dependency_orderer(self) -> Agent:
-        ctx = get_pipeline_context()
-        repo_path = os.path.abspath(ctx.repo_path or os.getcwd())
-        serper_enabled = ctx.serper_enabled
-        tools = get_tools_for_stage(
-            "plan",
-            repo_path,
-            serper_enabled=serper_enabled,
-        )
         return Agent(
             config=self.agents_config["dependency_orderer"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("auxiliary", agent_name="dependency_orderer"),
-            verbose=False,
         )
 
     @agent
     def refactor_guard(self) -> Agent:
-        ctx = get_pipeline_context()
-        tools = get_tools_for_stage("refactor_guard", ctx.repo_path)
         return Agent(
             config=self.agents_config["refactor_guard"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("auxiliary", agent_name="refactor_guard"),
-            verbose=False,
         )
 
     @agent
     def test_plan_advisor(self) -> Agent:
-        ctx = get_pipeline_context()
-        repo_path = os.path.abspath(ctx.repo_path or os.getcwd())
-        serper_enabled = ctx.serper_enabled
-        tools = get_tools_for_stage(
-            "plan",
-            repo_path,
-            serper_enabled=serper_enabled,
-        )
         return Agent(
             config=self.agents_config["test_plan_advisor"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("auxiliary", agent_name="test_plan_advisor"),
-            verbose=False,
         )
 
     @agent
     def migration_checker(self) -> Agent:
-        ctx = get_pipeline_context()
-        tools = get_tools_for_stage("refactor_guard", ctx.repo_path)
         return Agent(
             config=self.agents_config["migration_checker"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("auxiliary", agent_name="migration_checker"),
-            verbose=False,
         )
 
     @agent
     def rollback_planner(self) -> Agent:
-        ctx = get_pipeline_context()
-        tools = get_tools_for_stage("refactor_guard", ctx.repo_path)
         return Agent(
             config=self.agents_config["rollback_planner"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("auxiliary", agent_name="rollback_planner"),
-            verbose=False,
         )
 
     @task
@@ -136,16 +81,4 @@ class ArchitectCrew:
     def rollback_plan_task(self) -> Task:
         return Task(
             config=self.tasks_config["rollback_plan_task"],  # type: ignore[index]
-        )
-
-    @crew
-    def crew(self) -> Crew:
-        return Crew(
-            agents=self.agents,
-            tasks=self.tasks,
-            process=Process.sequential,
-            verbose=False,
-            tracing=False,
-            output_log_file=True,
-            memory=False,
         )

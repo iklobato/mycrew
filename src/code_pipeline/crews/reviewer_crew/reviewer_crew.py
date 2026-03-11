@@ -2,14 +2,12 @@
 
 from typing import List, Literal
 
-from crewai import Agent, Crew, Process, Task
-from crewai.agents.agent_builder.base_agent import BaseAgent
-from crewai.project import CrewBase, agent, crew, task
+from crewai import Agent, LLM, Task
+from crewai.project import CrewBase, agent, llm, task
 from pydantic import BaseModel, Field
 
+from code_pipeline.crews.base import PipelineCrewBase
 from code_pipeline.llm import get_llm_for_stage
-from code_pipeline.settings import get_pipeline_context
-from code_pipeline.tools.factory import get_tools_for_stage
 
 
 class ReviewVerdict(BaseModel):
@@ -25,103 +23,49 @@ class ReviewVerdict(BaseModel):
 
 
 @CrewBase
-class ReviewerCrew:
+class ReviewerCrew(PipelineCrewBase):
     """Reviewer crew: reviews implementation and returns APPROVED or ISSUES:..."""
 
-    agents: List[BaseAgent]
-    tasks: List[Task]
+    @llm
+    def review_llm(self) -> LLM:
+        return get_llm_for_stage("review")
 
-    agents_config = "config/agents.yaml"
-    tasks_config = "config/tasks.yaml"
+    @llm
+    def security_review_llm(self) -> LLM:
+        return get_llm_for_stage("security")
 
     @agent
     def reviewer(self) -> Agent:
-        ctx = get_pipeline_context()
-        tools = get_tools_for_stage(
-            "review",
-            ctx.repo_path,
-            serper_enabled=ctx.serper_enabled,
-        )
-        return Agent(
-            config=self.agents_config["reviewer"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("review", agent_name="reviewer"),
-            verbose=False,
-        )
+        return Agent(config=self.agents_config["reviewer"])  # type: ignore[index]
 
     @agent
     def security_reviewer(self) -> Agent:
-        ctx = get_pipeline_context()
-        tools = get_tools_for_stage(
-            "security_review",
-            ctx.repo_path,
-            serper_enabled=ctx.serper_enabled,
-        )
         return Agent(
             config=self.agents_config["security_reviewer"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("security", agent_name="security_reviewer"),
-            verbose=False,
         )
 
     @agent
     def performance_reviewer(self) -> Agent:
-        ctx = get_pipeline_context()
-        tools = get_tools_for_stage(
-            "security_review",
-            ctx.repo_path,
-            serper_enabled=ctx.serper_enabled,
-        )
         return Agent(
             config=self.agents_config["performance_reviewer"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("auxiliary", agent_name="performance_reviewer"),
-            verbose=False,
         )
 
     @agent
     def accessibility_checker(self) -> Agent:
-        ctx = get_pipeline_context()
-        tools = get_tools_for_stage(
-            "security_review",
-            ctx.repo_path,
-            serper_enabled=ctx.serper_enabled,
-        )
         return Agent(
             config=self.agents_config["accessibility_checker"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("auxiliary", agent_name="accessibility_checker"),
-            verbose=False,
         )
 
     @agent
     def backward_compat_checker(self) -> Agent:
-        ctx = get_pipeline_context()
-        tools = get_tools_for_stage(
-            "security_review",
-            ctx.repo_path,
-            serper_enabled=ctx.serper_enabled,
-        )
         return Agent(
             config=self.agents_config["backward_compat_checker"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("auxiliary", agent_name="backward_compat_checker"),
-            verbose=False,
         )
 
     @agent
     def convention_checker(self) -> Agent:
-        ctx = get_pipeline_context()
-        tools = get_tools_for_stage(
-            "review",
-            ctx.repo_path,
-            serper_enabled=ctx.serper_enabled,
-        )
         return Agent(
             config=self.agents_config["convention_checker"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("auxiliary", agent_name="convention_checker"),
-            verbose=False,
         )
 
     @task
@@ -159,17 +103,4 @@ class ReviewerCrew:
     def convention_check_task(self) -> Task:
         return Task(
             config=self.tasks_config["convention_check_task"],  # type: ignore[index]
-        )
-
-    @crew
-    def crew(self) -> Crew:
-        """Creates the ReviewerCrew crew."""
-        return Crew(
-            agents=self.agents,
-            tasks=self.tasks,
-            process=Process.sequential,
-            verbose=False,
-            tracing=False,
-            output_log_file=True,
-            memory=False,
         )

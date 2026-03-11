@@ -1,56 +1,34 @@
-from typing import List
+from crewai import Agent, Crew, LLM, Process, Task
+from crewai.project import CrewBase, agent, crew, llm, task
 
-from crewai import Agent, Crew, Process, Task
-from crewai.agents.agent_builder.base_agent import BaseAgent
-from crewai.project import CrewBase, agent, crew, task
+from code_pipeline.crews.base import PipelineCrewBase
 from code_pipeline.llm import get_llm_for_stage
-from code_pipeline.settings import get_pipeline_context
-from code_pipeline.tools.factory import get_tools_for_stage
 
 
 @CrewBase
-class TestValidatorCrew:
+class TestValidatorCrew(PipelineCrewBase):
     """Test Validator crew: writes tests and validates they catch bugs."""
 
-    agents: List[BaseAgent]
-    tasks: List[Task]
-
-    agents_config = "config/agents.yaml"
-    tasks_config = "config/tasks.yaml"
+    @llm
+    def test_validation_llm(self) -> LLM:
+        return get_llm_for_stage("test_validation")
 
     @agent
     def test_implementer(self) -> Agent:
-        ctx = get_pipeline_context()
-        tools = get_tools_for_stage("test_validation", ctx.repo_path)
         return Agent(
             config=self.agents_config["test_implementer"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("test_validation", agent_name="test_implementer"),
-            verbose=False,
         )
 
     @agent
     def test_quality_checker(self) -> Agent:
-        ctx = get_pipeline_context()
-        tools = get_tools_for_stage("test_validation", ctx.repo_path)
         return Agent(
             config=self.agents_config["test_quality_checker"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("test_validation", agent_name="test_quality_checker"),
-            verbose=False,
         )
 
     @agent
     def test_coverage_checker(self) -> Agent:
-        ctx = get_pipeline_context()
-        tools = get_tools_for_stage("test_validation", ctx.repo_path)
         return Agent(
             config=self.agents_config["test_coverage_checker"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage(
-                "test_validation", agent_name="test_coverage_checker"
-            ),
-            verbose=False,
         )
 
     @task
@@ -73,7 +51,7 @@ class TestValidatorCrew:
 
     @crew
     def crew(self) -> Crew:
-        """Creates the TestValidatorCrew"""
+        """Creates the TestValidatorCrew."""
         return Crew(
             agents=self.agents,  # type: ignore[arg-type]
             tasks=self.tasks,  # type: ignore[arg-type]
