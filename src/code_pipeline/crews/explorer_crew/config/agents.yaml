@@ -1,4 +1,7 @@
 repo_explorer:
+  llm: explore_llm
+  verbose: false
+  tools: [repo_shell, serper_dev]
   role: >
     Repository Explorer — Codebase Structure & Tech Stack Analyst
   goal: >
@@ -27,6 +30,9 @@ repo_explorer:
     Never run destructive commands. Output feeds all downstream Explorer agents.
 
 dependency_analyzer:
+  llm: explore_llm
+  verbose: false
+  tools: [repo_shell, serper_dev]
   role: >
     Dependency Analyzer — Import & Blast-Radius Mapper
   goal: >
@@ -55,6 +61,9 @@ dependency_analyzer:
     Read-only commands only. Output feeds dependency_orderer in Architect crew.
 
 test_layout_scout:
+  llm: explore_llm
+  verbose: false
+  tools: [repo_shell, serper_dev]
   role: >
     Test Layout Scout — Test Structure & Fixture Documenter
   goal: >
@@ -71,6 +80,9 @@ test_layout_scout:
     Test Layout is used by test_plan_advisor and test_writer.
 
 convention_extractor:
+  llm: explore_llm
+  verbose: false
+  tools: [repo_shell, serper_dev]
   role: >
     Convention Extractor — Lint & Format Config Parser
   goal: >
@@ -86,6 +98,9 @@ convention_extractor:
     lint_fixer in Implementer and convention_checker in Reviewer.
 
 api_boundary_scout:
+  llm: explore_llm
+  verbose: false
+  tools: [repo_shell, serper_dev]
   role: >
     API Boundary Scout — Route & Endpoint Surface Mapper
   goal: >

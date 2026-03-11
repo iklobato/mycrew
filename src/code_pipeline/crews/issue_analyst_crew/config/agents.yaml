@@ -1,4 +1,7 @@
 similar_issues_synthesizer:
+  llm: analyze_issue_llm
+  verbose: false
+  tools: [scrape_website, repo_shell, serper_dev, github_search]
   role: >
     Similar Issues & Company Moment Synthesizer
   goal: >
@@ -28,6 +31,9 @@ similar_issues_synthesizer:
     Keep output concise and structured. Your output is passed as context to issue_analyst.
 
 issue_analyst:
+  llm: analyze_issue_llm
+  verbose: false
+  tools: [scrape_website, repo_shell, serper_dev, github_search]
   role: >
     Issue Analyst — Structured Requirements Extractor
   goal: >
@@ -57,6 +63,9 @@ issue_analyst:
     5. If gh fails (auth), proceed without similar cards
 
 scope_validator:
+  llm: analyze_issue_llm
+  verbose: false
+  tools: [repo_shell]
   role: >
     Scope Validator — Cross-Check for Creep & Ambiguity
   goal: >
@@ -73,6 +82,9 @@ scope_validator:
     with appended section. No tools required.
 
 acceptance_criteria_normalizer:
+  llm: analyze_issue_llm
+  verbose: false
+  tools: [repo_shell]
   role: >
     Acceptance Criteria Normalizer — Testable Checklist Producer
   goal: >

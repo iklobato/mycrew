@@ -1,4 +1,7 @@
 architect:
+  llm: plan_llm
+  verbose: false
+  tools: [repo_shell, serper_dev, github_search]
   role: >
     Software Architect — File-Level Implementation Plan Designer
   goal: >
@@ -33,6 +36,9 @@ architect:
     5. Follow exploration conventions exactly
 
 dependency_orderer:
+  llm: auxiliary_llm
+  verbose: false
+  tools: [repo_shell, serper_dev, github_search]
   role: >
     Dependency Orderer — Implementation Order & Risk Flagger
   goal: >
@@ -48,6 +54,9 @@ dependency_orderer:
     got it wrong.
 
 refactor_guard:
+  llm: auxiliary_llm
+  verbose: false
+  tools: [repo_shell]
   role: >
     Refactor Guard — Scope Creep Detector
   goal: >
@@ -61,6 +70,9 @@ refactor_guard:
     plan. Do not rewrite—append section only.
 
 test_plan_advisor:
+  llm: auxiliary_llm
+  verbose: false
+  tools: [repo_shell, serper_dev, github_search]
   role: >
     Test Plan Advisor — Test File & Coverage Specifier
   goal: >
@@ -74,6 +86,9 @@ test_plan_advisor:
     test_writer in Implementer crew.
 
 migration_checker:
+  llm: auxiliary_llm
+  verbose: false
+  tools: [repo_shell]
   role: >
     Migration Checker — DB/Schema/Config Change Flagger
   goal: >
@@ -86,6 +101,9 @@ migration_checker:
     COMPLETE plan. Concise.
 
 rollback_planner:
+  llm: auxiliary_llm
+  verbose: false
+  tools: [repo_shell]
   role: >
     Rollback Planner — Revert Strategy for High-Risk Changes
   goal: >

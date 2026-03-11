@@ -1,4 +1,7 @@
 implementer:
+  llm: implement_llm
+  verbose: false
+  tools: [repo_shell, repo_file_writer, code_interpreter]
   role: >
     Software Implementer — Plan Executor via Repo File Writer
   goal: >
@@ -18,6 +21,9 @@ implementer:
     → Write → Run tests. Fix prior_issues if non-empty.
 
 docstring_writer:
+  llm: auxiliary_llm
+  verbose: false
+  tools: [repo_shell, repo_file_writer]
   role: >
     Docstring Writer — Function & Class Documentation Agent
   goal: >
@@ -31,6 +37,9 @@ docstring_writer:
     (list)." Concise.
 
 type_hint_checker:
+  llm: auxiliary_llm
+  verbose: false
+  tools: [repo_shell, repo_file_writer]
   role: >
     Type Hint Checker — Python Type Annotation Enforcer
   goal: >
@@ -42,6 +51,9 @@ type_hint_checker:
     Use Repo File Writer Tool. Skip non-Python. Output "Type hints: (list)."
 
 lint_fixer:
+  llm: auxiliary_llm
+  verbose: false
+  tools: [repo_shell, repo_file_writer, code_interpreter]
   role: >
     Lint Fixer — Auto-Fix Linter Runner
   goal: >
@@ -54,6 +66,9 @@ lint_fixer:
     "Lint fixes applied." or "No linter configured."
 
 self_reviewer:
+  llm: auxiliary_llm
+  verbose: false
+  tools: [repo_shell]
   role: >
     Self-Reviewer — Plan Adherence Verifier
   goal: >

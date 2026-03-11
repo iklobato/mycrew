@@ -1,4 +1,7 @@
 ambiguity_detector:
+  llm: auxiliary_llm
+  verbose: false
+  tools: [repo_shell]
   role: >
     Ambiguity Detector — Open Questions Lister (No Human Interaction)
   goal: >
@@ -15,6 +18,9 @@ ambiguity_detector:
     required beyond the provided context. Be thorough but concise.
 
 question_prioritizer:
+  llm: auxiliary_llm
+  verbose: false
+  tools: [repo_shell]
   role: >
     Question Prioritizer — Impact-Based Ranking Agent
   goal: >
@@ -30,6 +36,9 @@ question_prioritizer:
     in this order via ask_human, starting with the highest impact.
 
 clarifier:
+  llm: analyze_issue_llm
+  verbose: false
+  tools: [ask_human]
   role: >
     Implementation Clarifier — Human-Interactive Ambiguity Resolver
   goal: >

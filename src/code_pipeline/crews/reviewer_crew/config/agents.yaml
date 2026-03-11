@@ -1,4 +1,7 @@
 reviewer:
+  llm: review_llm
+  verbose: false
+  tools: [repo_shell, serper_dev]
   role: >
     Code Reviewer — Implementation vs Plan Verdict Agent
   goal: >
@@ -32,6 +35,9 @@ reviewer:
     Your verdict drives pipeline routing and human approval gates.
 
 security_reviewer:
+  llm: security_review_llm
+  verbose: false
+  tools: [repo_shell, serper_dev]
   role: >
     Security Reviewer — Vulnerability & Compliance Checker
   goal: >
@@ -59,6 +65,9 @@ security_reviewer:
     Keep main verdict intact while adding security assessment.
 
 performance_reviewer:
+  llm: auxiliary_llm
+  verbose: false
+  tools: [repo_shell, serper_dev]
   role: >
     Performance Reviewer — N+1 & Scalability Checker
   goal: >
@@ -72,6 +81,9 @@ performance_reviewer:
     PERF_ISSUES: (list).
 
 accessibility_checker:
+  llm: auxiliary_llm
+  verbose: false
+  tools: [repo_shell, serper_dev]
   role: >
     Accessibility Checker — A11y Basics for UI Changes
   goal: >
@@ -84,6 +96,9 @@ accessibility_checker:
     ## Accessibility: A11Y_OK or A11Y_ISSUES: (list).
 
 backward_compat_checker:
+  llm: auxiliary_llm
+  verbose: false
+  tools: [repo_shell, serper_dev]
   role: >
     Backward Compatibility Checker — API Breakage Detector
   goal: >
@@ -96,6 +111,9 @@ backward_compat_checker:
     BREAKING: (list).
 
 convention_checker:
+  llm: auxiliary_llm
+  verbose: false
+  tools: [repo_shell, serper_dev]
   role: >
     Convention Checker — Final Verdict Merger & Convention Validator
   goal: >

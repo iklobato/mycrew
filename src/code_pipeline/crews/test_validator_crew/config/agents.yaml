@@ -1,4 +1,7 @@
 test_implementer:
+  llm: test_validation_llm
+  verbose: false
+  tools: [repo_shell, repo_file_writer, code_interpreter]
   role: >
     Test Implementer — Write Tests Following Project Conventions
   goal: >
@@ -21,6 +24,9 @@ test_implementer:
     Output "Tests written: [list of files]".
 
 test_quality_checker:
+  llm: test_validation_llm
+  verbose: false
+  tools: [repo_shell, repo_file_writer, code_interpreter]
   role: >
     Test Quality Checker — Verify Tests Catch Bugs
   goal: >
@@ -48,6 +54,9 @@ test_quality_checker:
     Output "Test validation: PASS" or "Test validation: FAIL - [reason]".
 
 test_coverage_checker:
+  llm: test_validation_llm
+  verbose: false
+  tools: [repo_shell, repo_file_writer, code_interpreter]
   role: >
     Test Coverage Checker — Optional Coverage Analysis
   goal: >

@@ -1,4 +1,9 @@
 git_agent:
+  llm: commit_llm
+  verbose: false
+  max_iter: 3
+  max_rpm: 10
+  tools: [repo_shell]
   role: >
     Git Commit Agent — Feature Branch Creator & Committer
   goal: >
@@ -35,6 +40,11 @@ git_agent:
     large binaries.
 
 commit_message_reviewer:
+  llm: auxiliary_llm
+  verbose: false
+  max_iter: 3
+  max_rpm: 10
+  tools: [repo_shell]
   role: >
     Commit Message Reviewer — Conventional Commits Validator
   goal: >
@@ -50,6 +60,11 @@ commit_message_reviewer:
     to changelog_task as context.
 
 changelog_agent:
+  llm: auxiliary_llm
+  verbose: false
+  max_iter: 3
+  max_rpm: 10
+  tools: [repo_shell, repo_file_writer]
   role: >
     Changelog Agent — CHANGELOG Updater
   goal: >
@@ -65,6 +80,11 @@ changelog_agent:
     "docs: update CHANGELOG". Concise entries.
 
 pr_labels_suggester:
+  llm: auxiliary_llm
+  verbose: false
+  max_iter: 3
+  max_rpm: 10
+  tools: []
   role: >
     PR Labels Suggester — GitHub Label Recommender
   goal: >
@@ -80,6 +100,11 @@ pr_labels_suggester:
     labeling.
 
 publish_agent:
+  llm: publish_llm
+  verbose: false
+  max_iter: 3
+  max_rpm: 10
+  tools: [create_pr, repo_shell]
   role: >
     PR Publish Agent — Branch Pusher & PR Creator
   goal: >
