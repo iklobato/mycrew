@@ -22,44 +22,30 @@ app = FastAPI(title="Code Pipeline Webhook", version="1.0")
 
 
 class TriggerRequest(BaseModel):
-    """Bare minimum request model for manual triggers."""
+    """Request model for manual triggers. issue_url is the only work input."""
 
-    task: str  # Only required field
-    repo_path: Optional[str] = "."
+    issue_url: str  # Required: GitHub issue or PR URL
     branch: Optional[str] = "main"
     dry_run: Optional[bool] = False
     test_command: Optional[str] = ""
-    issue_id: Optional[str] = ""
-    github_repo: Optional[str] = ""
 
 
 @app.post("/webhook/trigger")
 def trigger_pipeline(request: TriggerRequest):
     """Trigger pipeline - synchronous, blocking, simple."""
     try:
-        logger.info("Manual trigger: %s", request.task[:100])
-
-        # Run pipeline directly (blocking)
-        repo_path = request.repo_path if request.repo_path else "."
-        branch = request.branch if request.branch else "main"
-        dry_run = request.dry_run if request.dry_run is not None else False
-        test_command = request.test_command if request.test_command else ""
-        issue_id = request.issue_id if request.issue_id else ""
-        github_repo = request.github_repo if request.github_repo else ""
+        logger.info("Manual trigger: %s", request.issue_url[:80])
 
         result = kickoff(
-            repo_path=repo_path,
-            task=request.task,
-            branch=branch,
-            dry_run=dry_run,
-            test_command=test_command,
-            issue_id=issue_id,
-            github_repo=github_repo,
+            issue_url=request.issue_url,
+            branch=request.branch or "main",
+            dry_run=request.dry_run if request.dry_run is not None else False,
+            test_command=request.test_command or "",
         )
 
         return {
             "status": "success",
-            "task": request.task,
+            "issue_url": request.issue_url,
             "result": str(result)[:500],  # Truncate if too long
         }
 
@@ -120,43 +106,23 @@ def _extract_issue_params(payload: dict, repo_full_name: str) -> dict:
     if not issue:
         raise HTTPException(status_code=400, detail="Missing issue in payload")
 
-    task = issue.get("title", "").strip()
-    if not task:
-        raise HTTPException(status_code=400, detail="Issue title is empty")
-
-    issue_number = issue.get("number", "")
-    issue_url = issue.get("html_url", "")
-    issue_body = issue.get("body", "")
+    issue_url = issue.get("html_url", "").strip()
+    if not issue_url:
+        raise HTTPException(status_code=400, detail="Issue has no html_url")
 
     dry_run_env = os.getenv("DEFAULT_DRY_RUN", "false")
-    if dry_run_env.lower() == "true":
-        dry_run = True
-    else:
-        dry_run = False
-
+    dry_run = dry_run_env.lower() == "true"
     branch = os.getenv("DEFAULT_BRANCH", "main")
 
     params = {
-        "task": task,
-        "repo_path": ".",
-        "issue_id": f"#{issue_number}",
-        "github_repo": repo_full_name,
         "issue_url": issue_url,
         "dry_run": dry_run,
         "branch": branch,
     }
 
-    if issue_body:
-        if len(issue_body) > 2000:
-            truncated_body = issue_body[:2000] + "..."
-        else:
-            truncated_body = issue_body
-        params["metadata"] = {"github_issue_body": truncated_body}
-
     logger.info(
-        "Extracted from issue: task=%s, issue=%s, repo=%s",
-        task[:80],
-        params["issue_id"],
+        "Extracted from issue: issue_url=%s, repo=%s",
+        issue_url[:80],
         repo_full_name,
     )
 
@@ -164,7 +130,7 @@ def _extract_issue_params(payload: dict, repo_full_name: str) -> dict:
 
 
 def _extract_pr_comment_params(payload: dict, repo_full_name: str) -> dict:
-    """Extract parameters from PR comment payload."""
+    """Extract parameters from PR comment payload. Uses PR URL as issue_url."""
     comment = payload.get("comment", {})
     pull_request = payload.get("pull_request", {})
 
@@ -173,62 +139,26 @@ def _extract_pr_comment_params(payload: dict, repo_full_name: str) -> dict:
             status_code=400, detail="Missing comment or pull_request in payload"
         )
 
-    comment_body = comment.get("body", "").strip()
-    if not comment_body:
+    if not comment.get("body", "").strip():
         raise HTTPException(status_code=400, detail="Comment body is empty")
 
-    pr_title = pull_request.get("title", "").strip()
-    pr_number = pull_request.get("number", "")
-    comment_url = comment.get("html_url", "")
-    comment_author = comment.get("user", {}).get("login", "")
-    pr_body = pull_request.get("body", "")
-
-    if pr_title:
-        task = f"Address PR comment on '{pr_title}': {comment_body[:100]}"
-    else:
-        task = f"Address PR comment: {comment_body[:150]}"
+    issue_url = pull_request.get("html_url", "").strip()
+    if not issue_url:
+        raise HTTPException(status_code=400, detail="Pull request has no html_url")
 
     dry_run_env = os.getenv("DEFAULT_DRY_RUN", "false")
-    if dry_run_env.lower() == "true":
-        dry_run = True
-    else:
-        dry_run = False
-
+    dry_run = dry_run_env.lower() == "true"
     branch = os.getenv("DEFAULT_BRANCH", "main")
 
     params = {
-        "task": task,
-        "repo_path": ".",
-        "issue_id": f"PR#{pr_number}",
-        "github_repo": repo_full_name,
-        "issue_url": comment_url,
+        "issue_url": issue_url,
         "dry_run": dry_run,
         "branch": branch,
     }
 
-    metadata = {}
-
-    if len(comment_body) > 2000:
-        metadata["github_comment_body"] = comment_body[:2000] + "..."
-    else:
-        metadata["github_comment_body"] = comment_body
-
-    metadata["github_pr_title"] = pr_title
-    metadata["github_pr_number"] = pr_number
-    metadata["github_comment_author"] = comment_author
-
-    if pr_body:
-        if len(pr_body) > 2000:
-            metadata["github_pr_body"] = pr_body[:2000] + "..."
-        else:
-            metadata["github_pr_body"] = pr_body
-
-    params["metadata"] = metadata
-
     logger.info(
-        "Extracted from PR comment: task=%s, PR=%s, repo=%s",
-        task[:80],
-        params["issue_id"],
+        "Extracted from PR comment: issue_url=%s, repo=%s",
+        issue_url[:80],
         repo_full_name,
     )
 
@@ -306,7 +236,7 @@ def _handle_issue_event(payload: dict) -> dict:
                 "event": "issue_assigned",
                 "issue": f"#{issue_number}",
                 "assignee": assignee_login,
-                "task": pipeline_params["task"][:100],
+                "issue_url": pipeline_params["issue_url"][:100],
                 "pipeline_result": str(result)[:200],
             }
         case _:
@@ -344,7 +274,7 @@ def _handle_pr_comment_event(payload: dict) -> dict:
                 "pr": f"#{pr_number}",
                 "comment_id": comment_id,
                 "comment_author": comment_author,
-                "task": pipeline_params["task"][:100],
+                "issue_url": pipeline_params["issue_url"][:100],
                 "pipeline_result": str(result)[:200],
             }
         case _:

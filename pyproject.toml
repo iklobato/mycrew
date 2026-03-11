@@ -11,6 +11,13 @@ dependencies = [
     "uvicorn[standard]>=0.24.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "httpx>=0.25.0",
+    "requests>=2.28.0",
+]
+
 [project.scripts]
 kickoff = "code_pipeline.main:kickoff"
 run_crew = "code_pipeline.main:kickoff"
@@ -24,6 +31,14 @@ build-backend = "hatchling.build"
 
 [tool.crewai]
 type = "flow"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/code_pipeline/main.py" = ["E402"]
 
 [tool.uv]
 # onnxruntime 1.24+ dropped macOS x86_64 wheels; 1.19.2 has universal2 (Intel + ARM)

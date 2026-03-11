@@ -1,10 +1,7 @@
 """GitHub API Search Tool using GitHub REST API instead of gh CLI."""
 
-import json
 import logging
-import os
 from typing import Any
-from urllib.parse import quote
 
 import requests
 from crewai.tools import BaseTool

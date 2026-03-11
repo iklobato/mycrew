@@ -56,7 +56,7 @@ def ask_human(question: str) -> str:
     never pass a bare question without options. Use this tool when the task is
     ambiguous. Call once per question. Order options from best to least preferred.
     """
-    print(f" CLARIFICATION NEEDED")
+    print(" CLARIFICATION NEEDED")
     print(f"{'─' * 64}")
     _print_with_highlighted_code(question)
     print(f"{'─' * 64}")
