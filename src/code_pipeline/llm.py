@@ -426,22 +426,31 @@ def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
             # Configure retry strategy based on model type
             retry_config = _get_retry_config_for_model(model_str)
 
-            llm = LLM(
-                model=model_str,
-                num_retries=retry_config["num_retries"],
-                time_between_retries=retry_config["time_between_retries"],
-                timeout=120,
-                max_tokens=8192,
-                stream=False,  # Avoid empty responses from streaming with some OpenRouter models
+            # Configure LLM for OpenRouter
+            llm_config = {
+                "model": model_str,
+                "num_retries": retry_config["num_retries"],
+                "time_between_retries": retry_config["time_between_retries"],
+                "timeout": 120,
+                "max_tokens": 8192,
+                "stream": False,  # Avoid empty responses from streaming with some OpenRouter models
                 # LiteLLM: ensure last message is user (fixes Anthropic assistant prefill error)
-                additional_params={
+                "additional_params": {
                     "user_continue_message": {
                         "role": "user",
                         "content": "Please continue.",
                     },
                     "ensure_alternating_roles": True,
                 },
-            )
+            }
+
+            # Add API key and base URL if available
+            if api_key:
+                llm_config["api_key"] = api_key
+                # OpenRouter requires specific base URL
+                llm_config["base_url"] = "https://openrouter.ai/api/v1"
+
+            llm = LLM(**llm_config)
             logger.info(
                 "└─[ LLM SUCCESS ]─ Selected: %s (attempt %d/%d)",
                 model_str,
