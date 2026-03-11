@@ -14,4 +14,16 @@ RUN uv sync --frozen --no-dev --no-install-project \
     && uv sync --frozen --no-dev
 
 WORKDIR /workspace
-ENTRYPOINT ["uv", "run", "--project", "/app", "kickoff"]
+
+# Environment variables for webhook
+ENV GITHUB_WEBHOOK_SECRET=""
+ENV DEFAULT_DRY_RUN="false"
+ENV DEFAULT_BRANCH="main"
+ENV PORT="8080"
+ENV HOST="0.0.0.0"
+
+# Expose webhook port
+EXPOSE 8080
+
+# Run the webhook API
+ENTRYPOINT ["uv", "run", "--project", "/app", "webhook"]

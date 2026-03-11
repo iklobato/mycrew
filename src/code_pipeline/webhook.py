@@ -257,7 +257,12 @@ def main():
     logger.info("Default dry_run: %s", os.getenv("DEFAULT_DRY_RUN", "false"))
 
     # Run server
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    uvicorn.run(
+        app,
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", "8000")),
+        log_level="info",
+    )
 
 
 if __name__ == "__main__":
