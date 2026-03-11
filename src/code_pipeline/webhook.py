@@ -74,26 +74,18 @@ def trigger_pipeline(request: TriggerRequest):
 
 
 def verify_github_signature(payload_body: bytes, signature_header: str) -> None:
-    """Verify GitHub webhook signature using HMAC SHA-256."""
+    """Verify GitHub webhook signature."""
     secret = os.getenv("GITHUB_WEBHOOK_SECRET")
-
     if not secret:
-        logger.debug("No GITHUB_WEBHOOK_SECRET set, skipping signature verification")
         return
 
-    if not signature_header:
-        raise HTTPException(status_code=403, detail="Missing signature header")
+    if not signature_header or not signature_header.startswith("sha256="):
+        raise HTTPException(status_code=403, detail="Invalid signature")
 
-    if not signature_header.startswith("sha256="):
-        raise HTTPException(status_code=403, detail="Invalid signature format")
-
-    hash_object = hmac.new(
-        secret.encode("utf-8"), msg=payload_body, digestmod=hashlib.sha256
-    )
+    hash_object = hmac.new(secret.encode(), msg=payload_body, digestmod=hashlib.sha256)
     expected_signature = "sha256=" + hash_object.hexdigest()
 
     if not hmac.compare_digest(expected_signature, signature_header):
-        logger.error("Error: Request signature does not match expected signature")
         raise HTTPException(status_code=403, detail="Invalid signature")
 
 
