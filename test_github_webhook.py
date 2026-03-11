@@ -12,8 +12,6 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 from code_pipeline.webhook import (
     verify_github_signature,
     extract_pipeline_params_from_github,
-    IssueAssignedHandler,
-    PRCommentCreatedHandler,
 )
 
 
@@ -165,74 +163,6 @@ def test_invalid_payloads():
     return all_good
 
 
-def test_event_handler_abstraction():
-    """Test the GitHub event handler abstraction."""
-    print("\nTesting event handler abstraction...")
-
-    try:
-        # Test IssueAssignedHandler
-        issue_payload = {
-            "issue": {
-                "number": 123,
-                "title": "Fix login bug",
-                "html_url": "https://github.com/owner/repo/issues/123",
-                "body": "Login fails on mobile",
-            },
-            "repository": {"full_name": "owner/repo"},
-        }
-
-        issue_handler = IssueAssignedHandler(issue_payload, "owner/repo")
-        issue_params = issue_handler.get_pipeline_params()
-
-        assert issue_params["task"] == "Fix login bug"
-        assert issue_params["issue_id"] == "#123"
-        assert issue_params["github_repo"] == "owner/repo"
-        print("  ✓ IssueAssignedHandler works correctly")
-
-        # Test PRCommentCreatedHandler
-        pr_comment_payload = {
-            "comment": {
-                "id": 456,
-                "html_url": "https://github.com/owner/repo/pull/42#issuecomment-456",
-                "body": "Add error handling",
-                "user": {"login": "reviewer"},
-            },
-            "pull_request": {
-                "number": 42,
-                "title": "Auth middleware",
-                "body": "Adds authentication",
-                "html_url": "https://github.com/owner/repo/pull/42",
-            },
-            "repository": {"full_name": "owner/repo"},
-        }
-
-        pr_handler = PRCommentCreatedHandler(pr_comment_payload, "owner/repo")
-        pr_params = pr_handler.get_pipeline_params()
-
-        assert (
-            "Address PR comment on 'Auth middleware': Add error handling"
-            in pr_params["task"]
-        )
-        assert pr_params["issue_id"] == "PR#42"
-        assert pr_params["github_repo"] == "owner/repo"
-        print("  ✓ PRCommentCreatedHandler works correctly")
-
-        # Test validation
-        try:
-            invalid_handler = IssueAssignedHandler({}, "owner/repo")
-            invalid_handler.validate()
-            print("  ✗ Should fail validation with empty payload")
-            return False
-        except Exception:
-            print("  ✓ Validation fails correctly for invalid payload")
-
-        return True
-
-    except Exception as e:
-        print(f"  ✗ Event handler abstraction test failed: {e}")
-        return False
-
-
 def test_pr_comment_extraction():
     """Test extracting pipeline parameters from PR comment payload."""
     print("\nTesting PR comment payload extraction...")
@@ -381,7 +311,6 @@ def main():
         ("Signature Verification", test_signature_verification),
         ("Payload Extraction", test_payload_extraction),
         ("Invalid Payloads", test_invalid_payloads),
-        ("Event Handler Abstraction", test_event_handler_abstraction),
         ("PR Comment Extraction", test_pr_comment_extraction),
         ("Manual Trigger Model", test_manual_trigger_model),
     ]
