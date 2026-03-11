@@ -161,6 +161,21 @@ def get_tools_for_stage(
         logger.debug("Stage %s: RepoShell + RepoFileWriter", stage)
         return tools
 
+    if stage == "test_validation":
+        tools = [
+            RepoShellTool(repo_path=repo_path),
+            RepoFileWriterTool(repo_path=repo_path),
+        ]
+        ci = get_code_interpreter_tool()
+        if ci:
+            tools.append(ci)
+        logger.debug(
+            "Stage %s: RepoShell + RepoFileWriter + CodeInterpreter=%s",
+            stage,
+            ci is not None,
+        )
+        return tools
+
     if stage == "changelog":
         tools = [
             RepoShellTool(repo_path=repo_path),

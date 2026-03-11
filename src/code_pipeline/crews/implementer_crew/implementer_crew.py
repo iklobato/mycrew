@@ -30,17 +30,6 @@ class ImplementerCrew:
         )
 
     @agent
-    def test_writer(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        tools = get_tools_for_stage("test_write", repo_path)
-        return Agent(
-            config=self.agents_config["test_writer"],  # type: ignore[index]
-            tools=tools,
-            llm=get_llm_for_stage("auxiliary", agent_name="test_writer"),
-            verbose=False,
-        )
-
-    @agent
     def docstring_writer(self) -> Agent:
         repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
         tools = get_tools_for_stage("test_write", repo_path)
@@ -100,12 +89,6 @@ class ImplementerCrew:
     def type_hint_task(self) -> Task:
         return Task(
             config=self.tasks_config["type_hint_task"],  # type: ignore[index]
-        )
-
-    @task
-    def test_write_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["test_write_task"],  # type: ignore[index]
         )
 
     @task

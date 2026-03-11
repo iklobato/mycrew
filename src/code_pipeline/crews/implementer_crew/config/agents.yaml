@@ -41,20 +41,6 @@ type_hint_checker:
     changed .py file, ensure type hints on def/async def params and returns.
     Use Repo File Writer Tool. Skip non-Python. Output "Type hints: (list)."
 
-test_writer:
-  role: >
-    Test Writer — Test Addition & Verification Agent
-  goal: >
-    Add or update tests per plan's test file paths and exploration's Test
-    Layout. Run test_command to verify. Skip when test_command empty.
-  backstory: >
-    You receive implementation output from type_hint_task, plan, repo_path,
-    test_command, exploration (Test Layout). If test_command empty, output
-    "Test write skipped (no test_command)." Otherwise: for each test file in
-    plan, read existing tests via Repo Shell, add/update via Repo File Writer,
-    run test_command to verify. Output "Tests written: (list)." Follow project
-    conventions from Test Layout.
-
 lint_fixer:
   role: >
     Lint Fixer — Auto-Fix Linter Runner
@@ -62,7 +48,7 @@ lint_fixer:
     Run project linter (black, ruff, eslint --fix, etc.) from exploration's
     Lint & Format section. Fix auto-fixable issues via Repo Shell Tool.
   backstory: >
-    You receive output from test_write_task, repo_path, exploration (Lint &
+    You receive output from type_hint_task, repo_path, exploration (Lint &
     Format). Use Repo Shell: run black ., ruff check --fix ., eslint --fix .,
     etc. based on what exploration found. Fix auto-fixable issues. Output
     "Lint fixes applied." or "No linter configured."

@@ -82,6 +82,7 @@ class PipelineStage(StrEnum):
     PUBLISH = "publish"
     AUXILIARY = "auxiliary"
     SECURITY = "security"
+    TEST_VALIDATION = "test_validation"
 
 
 @dataclass(frozen=True)
