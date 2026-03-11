@@ -75,6 +75,9 @@ from code_pipeline.crews.explorer_crew.explorer_crew import ExplorerCrew
 from code_pipeline.crews.implementer_crew.implementer_crew import ImplementerCrew
 from code_pipeline.crews.issue_analyst_crew.issue_analyst_crew import IssueAnalystCrew
 from code_pipeline.crews.reviewer_crew.reviewer_crew import ReviewerCrew, ReviewVerdict
+from code_pipeline.crews.test_validator_crew.test_validator_crew import (
+    TestValidatorCrew,
+)
 from code_pipeline.utils import build_repo_context, enrich_repo_context, log_exceptions
 
 _event_context_config.set(
@@ -890,6 +893,8 @@ class PipelineState(BaseModel):
     quality_gate_output: str = ""
     verification_passed: bool = False
     verification_output: str = ""
+    test_validation: str = ""
+    test_validation_passed: bool = False
 
 
 @persist(
@@ -1211,11 +1216,67 @@ class CodePipelineFlow(Flow[PipelineState]):
         )
 
     @listen(implement)
+    def validate_tests(self):
+        """Run TestValidatorCrew to write and validate tests."""
+        if not self.state.test_command:
+            logger.info("Test validation skipped (no test_command)")
+            return "quality_gate"
+
+        _log_with_context(
+            logger, "INFO", "Flow step: validate_tests", step="validate_tests"
+        )
+        repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
+        os.environ["REPO_PATH"] = repo_path
+
+        return self._run_crew(
+            TestValidatorCrew,
+            {
+                "task": self.state.task,
+                "plan": self.state.plan,
+                "implementation": self.state.implementation,
+                "exploration": self.state.exploration,
+                "repo_path": self.state.repo_path,
+                "test_command": self.state.test_command,
+            },
+            "test_validation",
+        )
+
+    @listen(validate_tests)
     def quality_gate(self):
         """Run quality check (tests) if test_command is set; fires after initial implement."""
         return self._run_quality_gate()
 
     @listen(implement_retry)
+    def validate_tests_retry(self):
+        """Run TestValidatorCrew on retry."""
+        if not self.state.test_command:
+            logger.info("Test validation skipped (no test_command)")
+            return "quality_gate_retry"
+
+        _log_with_context(
+            logger,
+            "INFO",
+            "Flow step: validate_tests_retry",
+            step="validate_tests_retry",
+        )
+        repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
+        os.environ["REPO_PATH"] = repo_path
+
+        return self._run_crew(
+            TestValidatorCrew,
+            {
+                "task": self.state.task,
+                "plan": self.state.plan,
+                "implementation": self.state.implementation,
+                "exploration": self.state.exploration,
+                "repo_path": self.state.repo_path,
+                "test_command": self.state.test_command,
+                "prior_issues": self.state.prior_issues,
+            },
+            "test_validation",
+        )
+
+    @listen(validate_tests_retry)
     def quality_gate_retry(self):
         """Run quality check after retry; fires after implement_retry."""
         return self._run_quality_gate()
@@ -1600,7 +1661,12 @@ def kickoff(
         flow_inputs.get("test_command", ""),
     )
     if not flow_inputs.get("task"):
-        raise ValueError("task is required (use --task / -t)")
+        # In container mode, if no task is provided, exit gracefully
+        # This prevents the container from crashing when kickoff is called without args
+        logger.info("No task provided - exiting gracefully (container mode)")
+        return (
+            "No task provided. Use --task or configure webhook for GitHub integration."
+        )
     logger.info(
         "Pipeline kickoff: task=%s, repo_path=%s",
         flow_inputs.get("task", "")[:80],
