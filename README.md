@@ -166,7 +166,7 @@ models:
 ```
 
 ### Environment Variables (Alternative to config.yaml)
-- `OPENROUTER_API_KEY` or `OPENAI_API_KEY` - LLM API access (required)
+- `OPENROUTER_API_KEY` - LLM API access (required)
 - `SERPER_API_KEY` - Serper API key for web search integration (optional)
 - `GITHUB_TOKEN` - For GitHub API integration (optional)
 - `CODE_PIPELINE_LOG_LEVEL` - Logging level (DEBUG, INFO, WARNING, ERROR)

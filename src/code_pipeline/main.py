@@ -728,8 +728,6 @@ def _load_config(path: str) -> dict:
         api_keys = data["api_keys"]
         if "openrouter_api_key" in api_keys and api_keys["openrouter_api_key"]:
             os.environ["OPENROUTER_API_KEY"] = api_keys["openrouter_api_key"]
-        if "openai_api_key" in api_keys and api_keys["openai_api_key"]:
-            os.environ["OPENAI_API_KEY"] = api_keys["openai_api_key"]
         if "github_token" in api_keys and api_keys["github_token"]:
             os.environ["GITHUB_TOKEN"] = api_keys["github_token"]
         if "serper_api_key" in api_keys and api_keys["serper_api_key"]:

@@ -41,13 +41,10 @@ pipeline:
 # API Keys and Authentication
 # ---------------------------
 # Note: For security, these can also be set as environment variables:
-#   OPENROUTER_API_KEY, OPENAI_API_KEY, GITHUB_TOKEN, SERPER_API_KEY
+#   OPENROUTER_API_KEY, GITHUB_TOKEN, SERPER_API_KEY
 api_keys:
   # OpenRouter API key (required for model access)
   openrouter_api_key: "YOUR_OPENROUTER_API_KEY_HERE"
-  
-  # OpenAI API key (alternative to OpenRouter)
-  openai_api_key: ""
   
   # GitHub Personal Access Token (for GitHub API access)
   github_token: "YOUR_GITHUB_TOKEN_HERE"

@@ -404,9 +404,11 @@ def _get_agent_model_config(stage: PipelineStage, agent_name: str) -> StageModel
 
 def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
     """Try models in order, return the first that works with smart retry strategy."""
-    api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    if api_key:
-        os.environ["OPENROUTER_API_KEY"] = api_key
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        raise ValueError("OPENROUTER_API_KEY environment variable is required")
+
+    os.environ["OPENROUTER_API_KEY"] = api_key
 
     logger.info(
         "┌─[ LLM SELECTION ]─ Trying %d model(s): %s",
