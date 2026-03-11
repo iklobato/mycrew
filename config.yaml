@@ -131,10 +131,9 @@ models:
   
   # Auxiliary stage: General-purpose tasks, needs to be cheap
   auxiliary:
-    primary: "openrouter/mistralai/mistral-small-24b-instruct-2507"
+    primary: "openrouter/deepseek/deepseek-chat"
     fallbacks:
       - "openrouter/google/gemini-2.0-flash-exp"
-      - "openrouter/deepseek/deepseek-chat"
   
   # Security stage: Needs security reasoning + vulnerability analysis
   security:
@@ -164,16 +163,3 @@ agents:
   
   # Enable output log files
   output_log_file: true
-models:
-  auxiliary:
-    primary: "openrouter/deepseek/deepseek-chat"
-    fallbacks: ["openrouter/google/gemini-2.0-flash-exp"]
-  plan:
-    primary: "openrouter/google/gemini-2.0-flash-exp"
-    fallbacks: ["openrouter/deepseek/deepseek-chat", "openrouter/meta-llama/llama-3.3-70b-instruct"]
-  commit:
-    primary: "openrouter/google/gemini-2.0-flash-exp"
-    fallbacks: ["openrouter/deepseek/deepseek-chat"]
-  publish:
-    primary: "openrouter/google/gemini-2.0-flash-exp"
-    fallbacks: ["openrouter/deepseek/deepseek-chat"]
