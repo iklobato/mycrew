@@ -16,7 +16,7 @@ def client():
 
 @patch("code_pipeline.webhook.kickoff")
 def test_webhook_trigger_success(mock_kickoff, client):
-    """POST /webhook/trigger with issue_url returns success when kickoff succeeds."""
+    """POST /webhook/trigger returns 202 and queues pipeline in background."""
     mock_kickoff.return_value = "Pipeline completed"
     payload = {
         "issue_url": "https://github.com/test/example/issues/123",
@@ -25,11 +25,11 @@ def test_webhook_trigger_success(mock_kickoff, client):
         "test_command": "python -c 'print(\"Test passed\")'",
     }
     response = client.post("/webhook/trigger", json=payload)
-    assert response.status_code == 200
+    assert response.status_code == 202
     data = response.json()
-    assert data["status"] == "success"
+    assert data["status"] == "accepted"
     assert data["issue_url"] == payload["issue_url"]
-    assert "Pipeline completed" in data["result"]
+    assert data["message"] == "Pipeline queued"
     mock_kickoff.assert_called_once_with(
         issue_url=payload["issue_url"],
         branch="main",
@@ -40,14 +40,14 @@ def test_webhook_trigger_success(mock_kickoff, client):
 
 @patch("code_pipeline.webhook.kickoff")
 def test_webhook_trigger_minimal_payload(mock_kickoff, client):
-    """POST /webhook/trigger with minimal payload (issue_url only)."""
+    """POST /webhook/trigger with minimal payload (issue_url only) returns 202."""
     mock_kickoff.return_value = "Done"
     response = client.post(
         "/webhook/trigger",
         json={"issue_url": "https://github.com/owner/repo/issues/42"},
     )
-    assert response.status_code == 200
-    assert response.json()["status"] == "success"
+    assert response.status_code == 202
+    assert response.json()["status"] == "accepted"
 
 
 def test_webhook_trigger_missing_issue_url_returns_422(client):
@@ -57,14 +57,51 @@ def test_webhook_trigger_missing_issue_url_returns_422(client):
 
 
 @patch("code_pipeline.webhook.kickoff")
-def test_webhook_trigger_kickoff_failure_returns_500(mock_kickoff, client):
-    """POST /webhook/trigger returns 500 when kickoff raises."""
+def test_webhook_trigger_kickoff_failure_still_returns_202(mock_kickoff, client):
+    """POST /webhook/trigger returns 202 even when kickoff fails in background."""
     mock_kickoff.side_effect = RuntimeError("Pipeline failed")
     response = client.post(
         "/webhook/trigger",
         json={"issue_url": "https://github.com/owner/repo/issues/1"},
     )
-    assert response.status_code == 500
+    assert response.status_code == 202
+    assert response.json()["status"] == "accepted"
+
+
+@patch("code_pipeline.settings.get_settings")
+@patch("code_pipeline.webhook.kickoff")
+def test_webhook_github_issues_assigned(mock_kickoff, mock_settings, client):
+    """POST /webhook with GitHub issues/assigned returns 202 and queues pipeline."""
+    mock_settings.return_value.github_webhook_secret = ""
+    mock_settings.return_value.default_branch = "main"
+    mock_settings.return_value.default_dry_run = False
+    mock_kickoff.return_value = "Pipeline completed"
+    payload = {
+        "action": "assigned",
+        "issue": {
+            "number": 123,
+            "html_url": "https://github.com/owner/repo/issues/123",
+            "title": "Fix bug",
+        },
+        "repository": {"full_name": "owner/repo"},
+        "assignee": {"login": "dev"},
+    }
+    response = client.post(
+        "/webhook",
+        json=payload,
+        headers={"X-GitHub-Event": "issues", "X-Hub-Signature-256": ""},
+    )
+    assert response.status_code == 202
+    data = response.json()
+    assert data["status"] == "accepted"
+    assert "issues/123" in data["issue_url"]
+    assert data["message"] == "Pipeline queued"
+
+
+def test_webhook_unknown_provider_returns_400(client):
+    """POST /webhook without provider header returns 400."""
+    response = client.post("/webhook", json={})
+    assert response.status_code == 400
 
 
 @pytest.mark.integration
@@ -84,7 +121,7 @@ def test_webhook_trigger_live():
             json=payload,
             timeout=10,
         )
-        assert response.status_code == 200
-        assert response.json().get("status") == "success"
+        assert response.status_code == 202
+        assert response.json().get("status") == "accepted"
     except requests.exceptions.ConnectionError:
         pytest.skip("Webhook server not running at localhost:8000")

@@ -4,10 +4,10 @@
 
 ## Features
 
-- **Two endpoints**: Manual trigger + GitHub webhook
-- **GitHub integration**: Processes `issues` events with `assigned` action
+- **Two endpoints**: Manual trigger + single webhook (provider detected from headers)
+- **GitHub integration**: Processes `issues`/`assigned` and `pull_request_review_comment`/`created`
 - **Signature verification**: HMAC SHA-256 validation for security
-- **Simple & synchronous**: No async complexity, no callbacks, no status tracking
+- **Background execution**: Returns 202 Accepted immediately; pipeline runs in background (avoids webhook timeouts)
 - **Minimal dependencies**: FastAPI + uvicorn only
 
 ## Installation
@@ -34,41 +34,38 @@ PORT=8080 uv run webhook
 ### 1. Manual Trigger
 **POST** `/webhook/trigger`
 
-Trigger pipeline manually with custom parameters.
+Trigger pipeline manually. Returns **202 Accepted** immediately; pipeline runs in background.
 
 ```bash
 curl -X POST http://localhost:8000/webhook/trigger \
   -H "Content-Type: application/json" \
   -d '{
-    "task": "Fix login bug",
-    "repo_path": ".",
+    "issue_url": "https://github.com/owner/repo/issues/123",
     "branch": "main",
     "dry_run": true,
-    "test_command": "pytest",
-    "issue_id": "#123",
-    "github_repo": "owner/repo"
+    "test_command": "pytest"
   }'
 ```
 
-**Required field**: `task`  
-**Optional fields**: `repo_path`, `branch`, `dry_run`, `test_command`, `issue_id`, `github_repo`
+**Required field**: `issue_url` (GitHub issue or PR URL)  
+**Optional fields**: `branch`, `dry_run`, `test_command`
 
-### 2. GitHub Webhook
-**POST** `/github/webhook`
+### 2. Webhook (GitHub)
+**POST** `/webhook`
 
-Process GitHub webhook events. Only handles `issues` events with `assigned` action.
+Single webhook endpoint. Provider detected from headers (`X-GitHub-Event` for GitHub). Returns **202 Accepted** immediately; pipeline runs in background.
 
 **GitHub Webhook Configuration:**
-- **Payload URL**: `https://your-server/github/webhook`
+- **Payload URL**: `https://your-server/webhook`
 - **Content type**: `application/json`
 - **Secret**: Set `GITHUB_WEBHOOK_SECRET` environment variable
 - **Events**: Select "Issues" → "Let me select individual events" → Check "Assigned"
 
 **What it does:**
-1. Verifies HMAC SHA-256 signature (if secret configured)
-2. Checks event type is `issues` and action is `assigned`
-3. Extracts: issue title → task, issue number → issue_id, repo full_name → github_repo
-4. Triggers pipeline with extracted parameters
+1. Detects GitHub from `X-GitHub-Event` header
+2. Verifies HMAC SHA-256 signature (if secret configured)
+3. Extracts `issue_url` from payload (config-driven: issues/assigned, pull_request_review_comment/created)
+4. Queues pipeline in background and returns 202 Accepted immediately
 
 ## Environment Variables
 
@@ -84,16 +81,14 @@ Process GitHub webhook events. Only handles `issues` events with `assigned` acti
 
 ### Supported Events
 - ✅ `issues` → `assigned` (issue assigned to someone)
-- ❌ Other issue actions (`opened`, `closed`, `labeled`, etc.)
-- ❌ Other GitHub events (`push`, `pull_request`, etc.)
+- ✅ `pull_request_review_comment` → `created` (comment on PR)
+- ❌ Other issue/PR actions
+- ❌ Other GitHub events (`push`, etc.)
 
 ### Payload Mapping
-GitHub payload → Pipeline parameters:
-- `issue.title` → `task`
-- `issue.number` → `issue_id` (formatted as `#123`)
-- `repository.full_name` → `github_repo`
-- `issue.html_url` → `issue_url`
-- `issue.body` → Included in metadata (truncated to 2000 chars)
+GitHub payload → Pipeline parameters (path from `GitHubWebhookEvent` enum config):
+- `issue.html_url` or `pull_request.html_url` → `issue_url`
+- `branch`, `dry_run` from settings
 
 ### Security
 - **Signature verification**: Uses `X-Hub-Signature-256` header
@@ -105,9 +100,9 @@ GitHub payload → Pipeline parameters:
 
 1. **Issue created** on GitHub: "Fix login page crash"
 2. **Issue assigned** to developer
-3. **GitHub sends webhook** to `/github/webhook`
-4. **Webhook extracts**: task="Fix login page crash", issue_id="#456", github_repo="owner/repo"
-5. **Pipeline triggers** with these parameters
+3. **GitHub sends webhook** to `/webhook`
+4. **Webhook queues** pipeline and returns 202
+5. **Pipeline runs** in background with extracted parameters
 6. **AI agents** analyze, plan, implement, review
 7. **Result**: Code changes committed to branch
 
@@ -118,7 +113,7 @@ GitHub payload → Pipeline parameters:
 # Test manual endpoint
 curl -X POST http://localhost:8000/webhook/trigger \
   -H "Content-Type: application/json" \
-  -d '{"task": "Test task"}'
+  -d '{"issue_url": "https://github.com/owner/repo/issues/123"}'
 
 # Test health check
 curl http://localhost:8000/health
@@ -134,7 +129,7 @@ GITHUB_WEBHOOK_SECRET=test_secret uv run webhook
 # In another terminal
 ngrok http 8000
 
-# Configure GitHub webhook to: https://your-ngrok-url.ngrok.io/github/webhook
+# Configure GitHub webhook to: https://your-ngrok-url.ngrok.io/webhook
 ```
 
 Or use [httpie](https://httpie.io/) to simulate:
@@ -156,7 +151,7 @@ echo '{
 }' > test_payload.json
 
 # Send with headers
-http POST http://localhost:8000/github/webhook \
+http POST http://localhost:8000/webhook \
   X-GitHub-Event:issues \
   X-Hub-Signature-256:sha256=$(echo -n "$(cat test_payload.json)" | openssl dgst -sha256 -hmac "test_secret" | cut -d' ' -f2) \
   < test_payload.json
@@ -166,26 +161,25 @@ http POST http://localhost:8000/github/webhook \
 
 | Status | Meaning |
 |--------|---------|
-| `200` | Success or ignored (non-issue events) |
-| `400` | Bad request (missing/invalid fields) |
-| `401` | Invalid signature |
-| `404` | Not found (health check only) |
-| `500` | Internal server error |
+| `200` | Ignored (unsupported event/action) |
+| `202` | Accepted — pipeline queued, runs in background |
+| `400` | Bad request (missing/invalid fields, unknown provider) |
+| `403` | Invalid signature |
+| `500` | Internal server error (validation, etc.) |
 
 ## Architecture
 
-**Simple & Synchronous:**
-- No async complexity
-- No background jobs
-- No status tracking
-- No callbacks
-- No database
+**Simple & Background:**
+- FastAPI BackgroundTasks (no extra dependencies)
+- Pipeline runs in thread pool after response sent
+- No status tracking, callbacks, or database
+- Failures logged (not returned to client)
 
-**Just:**
+**Flow:**
 1. Receive HTTP request
 2. Validate & extract parameters
-3. Run pipeline (blocks until complete)
-4. Return response
+3. Queue pipeline in background, return 202 immediately
+4. Pipeline runs after response sent; errors logged
 
 ## Comparison with Previous Version
 
@@ -201,18 +195,20 @@ http POST http://localhost:8000/github/webhook \
 
 ## Extending
 
-To add support for more GitHub events:
+To add support for more GitHub events, add a new member to `GitHubWebhookEvent` in `webhook.py`:
 
-1. Add new condition in `/github/webhook` endpoint:
 ```python
-if action == "opened":
-    # Handle issue opened
-elif action == "labeled":
-    # Handle issue labeled
+class GitHubWebhookEvent(Enum):
+    ...
+    ISSUES_OPENED = _EventConfig(
+        path=("issue", "html_url"),
+        validations=[],
+        event="issues",
+        action="opened",
+    )
 ```
 
-2. Create extraction function for that event type
-3. Update documentation
+To add another provider (e.g. GitLab), add an `elif headers.get("x-gitlab-event")` block and a `_handle_gitlab` function.
 
 ## Troubleshooting
 
@@ -232,6 +228,5 @@ elif action == "labeled":
 - Check pipeline dependencies/config
 
 **Slow responses:**
-- Pipeline runs synchronously (blocks)
-- GitHub expects response within 10 seconds
-- Consider timeouts for long-running pipelines
+- Pipeline runs in background; HTTP response returns 202 immediately
+- GitHub expects response within ~10 seconds; this design avoids timeouts

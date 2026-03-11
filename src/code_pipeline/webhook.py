@@ -4,9 +4,12 @@
 import hashlib
 import hmac
 import logging
-from typing import Optional
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException, Header, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from code_pipeline.main import kickoff
@@ -16,8 +19,59 @@ app = FastAPI(title="Code Pipeline Webhook", version="1.0")
 
 
 # ============================================================================
-# SIMPLE MANUAL TRIGGER ENDPOINT
+# ENUMS
 # ============================================================================
+
+
+@dataclass(frozen=True)
+class _EventConfig:
+    """Config for extracting params from a GitHub webhook event."""
+
+    path: tuple[str, ...]
+    validations: list[tuple[str, str, str]]
+    event: str
+    action: str
+
+
+class GitHubWebhookEvent(Enum):
+    """Supported GitHub webhook events. Each member holds extraction config."""
+
+    ISSUES_ASSIGNED = _EventConfig(
+        path=("issue", "html_url"),
+        validations=[],
+        event="issues",
+        action="assigned",
+    )
+    PR_REVIEW_COMMENT_CREATED = _EventConfig(
+        path=("pull_request", "html_url"),
+        validations=[("comment", "body", "Comment body is empty")],
+        event="pull_request_review_comment",
+        action="created",
+    )
+
+    @classmethod
+    def from_event_action(cls, event: str, action: str) -> "GitHubWebhookEvent | None":
+        """Return enum member for event/action pair, or None if unsupported."""
+        for member in cls:
+            cfg = member.value
+            if cfg.event == event and cfg.action == action:
+                return member
+        return None
+
+
+# ============================================================================
+# MODELS
+# ============================================================================
+
+
+class PipelineParams(BaseModel):
+    """Pipeline inputs. Used by both manual trigger and webhook extraction."""
+
+    model_config = {"frozen": True}
+    issue_url: str
+    branch: str = "main"
+    dry_run: bool = False
+    test_command: str = ""
 
 
 class TriggerRequest(BaseModel):
@@ -29,33 +83,39 @@ class TriggerRequest(BaseModel):
     test_command: Optional[str] = ""
 
 
-@app.post("/webhook/trigger")
-def trigger_pipeline(request: TriggerRequest):
-    """Trigger pipeline - synchronous, blocking, simple."""
+# ============================================================================
+# GITHUB WEBHOOK
+# ============================================================================
+
+
+def _default_params() -> dict[str, Any]:
+    """Default pipeline params from settings."""
+    from code_pipeline.settings import get_settings
+
+    stg = get_settings()
+    return {
+        "branch": stg.default_branch,
+        "dry_run": stg.default_dry_run,
+        "test_command": "",
+    }
+
+
+def _get_nested(obj: dict[str, Any], path: tuple[str, ...]) -> Any:
+    """Get nested value from dict by path. Returns None if any key missing."""
+    current: Any = obj
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            return None
+        current = current[key]
+    return current
+
+
+def _run_kickoff_background(**params: Any) -> None:
+    """Run kickoff in background. Logs and swallows exceptions (CS-45: must log)."""
     try:
-        logger.info("Manual trigger: %s", request.issue_url[:80])
-
-        result = kickoff(
-            issue_url=request.issue_url,
-            branch=request.branch or "main",
-            dry_run=request.dry_run if request.dry_run is not None else False,
-            test_command=request.test_command or "",
-        )
-
-        return {
-            "status": "success",
-            "issue_url": request.issue_url,
-            "result": str(result)[:500],  # Truncate if too long
-        }
-
+        kickoff(**params)
     except Exception as e:
-        logger.error("Pipeline failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ============================================================================
-# GITHUB WEBHOOK ENDPOINT
-# ============================================================================
+        logger.error("Background kickoff failed: %s", e, exc_info=True)
 
 
 def verify_github_signature(payload_body: bytes, signature_header: str) -> None:
@@ -76,250 +136,123 @@ def verify_github_signature(payload_body: bytes, signature_header: str) -> None:
         raise HTTPException(status_code=403, detail="Invalid signature")
 
 
-def extract_pipeline_params_from_github(payload: dict, event_type: str) -> dict:
-    """Extract pipeline parameters from GitHub webhook payload."""
-    repository = payload.get("repository", {})
-
-    if not repository:
-        raise HTTPException(
-            status_code=400, detail="Missing required GitHub payload fields"
-        )
-
-    repo_full_name = repository.get("full_name", "")
-    if not repo_full_name:
-        raise HTTPException(status_code=400, detail="Repository full_name is empty")
-
-    match event_type:
-        case "issues":
-            return _extract_issue_params(payload, repo_full_name)
-        case "pull_request_review_comment":
-            return _extract_pr_comment_params(payload, repo_full_name)
-        case _:
-            raise HTTPException(
-                status_code=400, detail=f"Unsupported event type: {event_type}"
-            )
+def _extract_github_params(
+    payload: dict[str, Any], event_type: str, action: str
+) -> PipelineParams | None:
+    """Extract pipeline params from GitHub webhook payload. Returns None if event/action not supported."""
+    webhook_event = GitHubWebhookEvent.from_event_action(event_type, action)
+    if webhook_event is None:
+        return None
+    cfg = webhook_event.value
+    issue_url = _get_nested(payload, cfg.path)
+    if not issue_url or not str(issue_url).strip():
+        raise HTTPException(status_code=400, detail="Missing or empty issue URL")
+    for vpath, vfield, vmsg in cfg.validations:
+        val = _get_nested(payload, (vpath, vfield))
+        if not (val and str(val).strip()):
+            raise HTTPException(status_code=400, detail=vmsg)
+    return PipelineParams(issue_url=str(issue_url).strip(), **_default_params())
 
 
-def _extract_issue_params(payload: dict, repo_full_name: str) -> dict:
-    """Extract parameters from issue assignment payload."""
-    from code_pipeline.settings import get_settings
-
-    issue = payload.get("issue", {})
-
-    if not issue:
-        raise HTTPException(status_code=400, detail="Missing issue in payload")
-
-    issue_url = issue.get("html_url", "").strip()
-    if not issue_url:
-        raise HTTPException(status_code=400, detail="Issue has no html_url")
-
-    stg = get_settings()
-    dry_run = stg.default_dry_run
-    branch = stg.default_branch
-
-    params = {
-        "issue_url": issue_url,
-        "dry_run": dry_run,
-        "branch": branch,
-    }
-
-    logger.info(
-        "Extracted from issue: issue_url=%s, repo=%s",
-        issue_url[:80],
-        repo_full_name,
-    )
-
-    return params
-
-
-def _extract_pr_comment_params(payload: dict, repo_full_name: str) -> dict:
-    """Extract parameters from PR comment payload. Uses PR URL as issue_url."""
-    from code_pipeline.settings import get_settings
-
-    comment = payload.get("comment", {})
-    pull_request = payload.get("pull_request", {})
-
-    if not comment or not pull_request:
-        raise HTTPException(
-            status_code=400, detail="Missing comment or pull_request in payload"
-        )
-
-    if not comment.get("body", "").strip():
-        raise HTTPException(status_code=400, detail="Comment body is empty")
-
-    issue_url = pull_request.get("html_url", "").strip()
-    if not issue_url:
-        raise HTTPException(status_code=400, detail="Pull request has no html_url")
-
-    stg = get_settings()
-    dry_run = stg.default_dry_run
-    branch = stg.default_branch
-
-    params = {
-        "issue_url": issue_url,
-        "dry_run": dry_run,
-        "branch": branch,
-    }
-
-    logger.info(
-        "Extracted from PR comment: issue_url=%s, repo=%s",
-        issue_url[:80],
-        repo_full_name,
-    )
-
-    return params
-
-
-@app.post("/github/webhook")
-async def github_webhook(
-    request: Request,
-    x_github_event: Optional[str] = Header(None, alias="X-GitHub-Event"),
-    x_hub_signature_256: Optional[str] = Header(None, alias="X-Hub-Signature-256"),
-    x_github_delivery: Optional[str] = Header(None, alias="X-GitHub-Delivery"),
-):
-    """Handle GitHub webhook events."""
-    body_bytes = await request.body()
-
-    try:
-        if x_hub_signature_256:
-            verify_github_signature(body_bytes, x_hub_signature_256)
-
-        payload = await request.json()
-
-        if x_github_delivery:
-            delivery_id = x_github_delivery[:8]
-        else:
-            delivery_id = "unknown"
-
-        logger.info(
-            "GitHub webhook: event=%s, delivery=%s",
-            x_github_event,
-            delivery_id,
-        )
-
-        match x_github_event:
-            case "issues":
-                return _handle_issue_event(payload)
-            case "pull_request_review_comment":
-                return _handle_pr_comment_event(payload)
-            case _:
-                return {
-                    "status": "ignored",
-                    "reason": f"Event '{x_github_event}' not supported",
-                }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("GitHub webhook processing failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-def _handle_issue_event(payload: dict) -> dict:
-    """Handle issue assignment events."""
+def _handle_github(
+    body: bytes,
+    headers: dict[str, str],
+    payload: dict[str, Any],
+    background_tasks: BackgroundTasks,
+) -> JSONResponse:
+    """Handle GitHub webhook: verify, extract, queue kickoff, return 202."""
+    verify_github_signature(body, headers.get("x-hub-signature-256", ""))
+    event = headers.get("x-github-event", "")
     action = payload.get("action", "")
-
-    match action:
-        case "assigned":
-            assignee = payload.get("assignee", {})
-            assignee_login = assignee.get("login", "unknown")
-            issue = payload.get("issue", {})
-            issue_number = issue.get("number", "unknown")
-
-            logger.info(
-                "Issue #%s assigned to %s: %s",
-                issue_number,
-                assignee_login,
-                issue.get("title", "no title")[:100],
-            )
-
-            pipeline_params = extract_pipeline_params_from_github(payload, "issues")
-            result = kickoff(**pipeline_params)
-
-            return {
-                "status": "success",
-                "event": "issue_assigned",
-                "issue": f"#{issue_number}",
-                "assignee": assignee_login,
-                "issue_url": pipeline_params["issue_url"][:100],
-                "pipeline_result": str(result)[:200],
-            }
-        case _:
-            return {"status": "ignored", "reason": f"Action '{action}' not supported"}
-
-
-def _handle_pr_comment_event(payload: dict) -> dict:
-    """Handle PR comment creation events."""
-    action = payload.get("action", "")
-
-    match action:
-        case "created":
-            comment = payload.get("comment", {})
-            pull_request = payload.get("pull_request", {})
-            comment_id = comment.get("id", "unknown")
-            pr_number = pull_request.get("number", "unknown")
-            comment_author = comment.get("user", {}).get("login", "unknown")
-
-            logger.info(
-                "PR #%s comment #%s by %s: %s",
-                pr_number,
-                comment_id,
-                comment_author,
-                comment.get("body", "no body")[:100],
-            )
-
-            pipeline_params = extract_pipeline_params_from_github(
-                payload, "pull_request_review_comment"
-            )
-            result = kickoff(**pipeline_params)
-
-            return {
-                "status": "success",
-                "event": "pr_comment_created",
-                "pr": f"#{pr_number}",
-                "comment_id": comment_id,
-                "comment_author": comment_author,
-                "issue_url": pipeline_params["issue_url"][:100],
-                "pipeline_result": str(result)[:200],
-            }
-        case _:
-            return {"status": "ignored", "reason": f"Action '{action}' not supported"}
+    params = _extract_github_params(payload, event, action)
+    if params is None:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "ignored",
+                "reason": f"Event {event}/{action} not supported",
+            },
+        )
+    background_tasks.add_task(_run_kickoff_background, **params.model_dump())
+    return JSONResponse(
+        status_code=202,
+        content={
+            "status": "accepted",
+            "issue_url": params.issue_url[:100],
+            "message": "Pipeline queued",
+        },
+    )
 
 
 # ============================================================================
-# HEALTH CHECK & ROOT ENDPOINTS
+# ROUTES
 # ============================================================================
+
+
+@app.post("/webhook/trigger", response_model=None)
+def trigger_pipeline(
+    request: TriggerRequest, background_tasks: BackgroundTasks
+) -> JSONResponse:
+    """Trigger pipeline - queued in background, returns 202 immediately."""
+    logger.info("Manual trigger: %s", request.issue_url[:80])
+    params = PipelineParams(
+        issue_url=request.issue_url,
+        branch=request.branch or "main",
+        dry_run=request.dry_run if request.dry_run is not None else False,
+        test_command=request.test_command or "",
+    )
+    background_tasks.add_task(_run_kickoff_background, **params.model_dump())
+    return JSONResponse(
+        status_code=202,
+        content={
+            "status": "accepted",
+            "issue_url": request.issue_url,
+            "message": "Pipeline queued",
+        },
+    )
+
+
+@app.post("/webhook", response_model=None)
+async def webhook(request: Request, background_tasks: BackgroundTasks) -> JSONResponse:
+    """Single webhook endpoint. Provider detected from headers."""
+    body = await request.body()
+    payload = await request.json()
+
+    headers = {k.lower(): v for k, v in request.headers.items()}
+
+    if headers.get("x-github-event"):
+        return _handle_github(body, headers, payload, background_tasks)
+
+    raise HTTPException(status_code=400, detail="Unknown webhook provider")
 
 
 @app.get("/")
-def root():
+def root() -> dict[str, str]:
     """Simple root endpoint."""
     return {"status": "ok"}
 
 
 @app.get("/health")
-def health_check():
+def health_check() -> dict[str, str]:
     """Simple health check endpoint."""
     return {"status": "healthy"}
 
 
 # ============================================================================
-# MAIN ENTRY POINT
+# MAIN
 # ============================================================================
 
 
-def main():
+def main() -> None:
     """Run the simple webhook server."""
     import uvicorn
 
     from code_pipeline.settings import get_settings
 
-    # Configure logging
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
-
     stg = get_settings()
     logger.info("Starting webhook server")
     logger.info(
@@ -328,13 +261,7 @@ def main():
     )
     logger.info("Default branch: %s", stg.default_branch)
     logger.info("Default dry_run: %s", stg.default_dry_run)
-
-    uvicorn.run(
-        app,
-        host=stg.host,
-        port=stg.port,
-        log_level="info",
-    )
+    uvicorn.run(app, host=stg.host, port=stg.port, log_level="info")
 
 
 if __name__ == "__main__":
