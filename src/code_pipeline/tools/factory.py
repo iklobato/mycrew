@@ -5,6 +5,7 @@ import os
 
 from crewai.tools import BaseTool
 
+from code_pipeline.settings import get_settings
 from code_pipeline.tools.create_pr_tool import CreatePRTool
 from code_pipeline.tools.repo_file_writer_tool import RepoFileWriterTool
 from code_pipeline.tools.repo_shell_tool import RepoShellTool
@@ -183,7 +184,7 @@ def get_github_search_tool(github_repo: str | None) -> BaseTool | None:
     """Return GithubSearchTool if GITHUB_TOKEN and github_repo are set."""
     if not github_repo or not github_repo.strip():
         return None
-    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    token = get_settings().github_token.strip()
     if not token:
         return None
     from crewai_tools import GithubSearchTool
@@ -227,7 +228,7 @@ def get_serper_tool(enabled: bool = True, n_results: int = 5) -> BaseTool | None
         logger.debug("SerperDevTool disabled by configuration")
         return None
 
-    api_key = os.environ.get("SERPER_API_KEY", "").strip()
+    api_key = get_settings().serper_api_key.strip()
     if not api_key:
         logger.warning("SerperDevTool disabled: SERPER_API_KEY not set")
         return None

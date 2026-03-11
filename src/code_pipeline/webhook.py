@@ -4,7 +4,6 @@
 import hashlib
 import hmac
 import logging
-import os
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Header, Request
@@ -61,7 +60,9 @@ def trigger_pipeline(request: TriggerRequest):
 
 def verify_github_signature(payload_body: bytes, signature_header: str) -> None:
     """Verify GitHub webhook signature."""
-    secret = os.getenv("GITHUB_WEBHOOK_SECRET")
+    from code_pipeline.settings import get_settings
+
+    secret = get_settings().github_webhook_secret
     if not secret:
         return
 
@@ -101,6 +102,8 @@ def extract_pipeline_params_from_github(payload: dict, event_type: str) -> dict:
 
 def _extract_issue_params(payload: dict, repo_full_name: str) -> dict:
     """Extract parameters from issue assignment payload."""
+    from code_pipeline.settings import get_settings
+
     issue = payload.get("issue", {})
 
     if not issue:
@@ -110,9 +113,9 @@ def _extract_issue_params(payload: dict, repo_full_name: str) -> dict:
     if not issue_url:
         raise HTTPException(status_code=400, detail="Issue has no html_url")
 
-    dry_run_env = os.getenv("DEFAULT_DRY_RUN", "false")
-    dry_run = dry_run_env.lower() == "true"
-    branch = os.getenv("DEFAULT_BRANCH", "main")
+    stg = get_settings()
+    dry_run = stg.default_dry_run
+    branch = stg.default_branch
 
     params = {
         "issue_url": issue_url,
@@ -131,6 +134,8 @@ def _extract_issue_params(payload: dict, repo_full_name: str) -> dict:
 
 def _extract_pr_comment_params(payload: dict, repo_full_name: str) -> dict:
     """Extract parameters from PR comment payload. Uses PR URL as issue_url."""
+    from code_pipeline.settings import get_settings
+
     comment = payload.get("comment", {})
     pull_request = payload.get("pull_request", {})
 
@@ -146,9 +151,9 @@ def _extract_pr_comment_params(payload: dict, repo_full_name: str) -> dict:
     if not issue_url:
         raise HTTPException(status_code=400, detail="Pull request has no html_url")
 
-    dry_run_env = os.getenv("DEFAULT_DRY_RUN", "false")
-    dry_run = dry_run_env.lower() == "true"
-    branch = os.getenv("DEFAULT_BRANCH", "main")
+    stg = get_settings()
+    dry_run = stg.default_dry_run
+    branch = stg.default_branch
 
     params = {
         "issue_url": issue_url,
@@ -307,28 +312,27 @@ def main():
     """Run the simple webhook server."""
     import uvicorn
 
+    from code_pipeline.settings import get_settings
+
     # Configure logging
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    # Log configuration
-    has_secret = bool(os.getenv("GITHUB_WEBHOOK_SECRET"))
+    stg = get_settings()
     logger.info("Starting webhook server")
-    if has_secret:
-        secret_status = "configured"
-    else:
-        secret_status = "not configured"
-    logger.info("GitHub webhook secret: %s", secret_status)
-    logger.info("Default branch: %s", os.getenv("DEFAULT_BRANCH", "main"))
-    logger.info("Default dry_run: %s", os.getenv("DEFAULT_DRY_RUN", "false"))
+    logger.info(
+        "GitHub webhook secret: %s",
+        "configured" if stg.github_webhook_secret else "not configured",
+    )
+    logger.info("Default branch: %s", stg.default_branch)
+    logger.info("Default dry_run: %s", stg.default_dry_run)
 
-    # Run server
     uvicorn.run(
         app,
-        host=os.getenv("HOST", "0.0.0.0"),
-        port=int(os.getenv("PORT", "8000")),
+        host=stg.host,
+        port=stg.port,
         log_level="info",
     )
 

@@ -10,6 +10,7 @@ from typing import Any
 
 from crewai import LLM
 
+from code_pipeline.settings import get_settings
 from code_pipeline.utils import log_exceptions
 
 logger = logging.getLogger(__name__)
@@ -402,7 +403,7 @@ def _get_agent_model_config(stage: PipelineStage, agent_name: str) -> StageModel
 
 def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
     """Try models in order, return the first that works with smart retry strategy."""
-    api_key = os.environ.get("OPENROUTER_API_KEY")
+    api_key = get_settings().openrouter_api_key
     if not api_key:
         raise ValueError("OPENROUTER_API_KEY environment variable is required")
 

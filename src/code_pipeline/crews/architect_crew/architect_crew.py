@@ -1,4 +1,3 @@
-import os
 from typing import List
 
 from crewai import Agent, Crew, Process, Task
@@ -6,6 +5,7 @@ from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.project import CrewBase, agent, crew, task
 
 from code_pipeline.llm import get_llm_for_stage
+from code_pipeline.settings import get_pipeline_context
 from code_pipeline.tools.factory import get_tools_for_stage
 
 
@@ -21,14 +21,12 @@ class ArchitectCrew:
 
     @agent
     def architect(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        github_repo = (os.environ.get("GITHUB_REPO", "") or "").strip() or None
-        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        ctx = get_pipeline_context()
         tools = get_tools_for_stage(
             "plan",
-            repo_path,
-            github_repo=github_repo,
-            serper_enabled=serper_enabled,
+            ctx.repo_path,
+            github_repo=ctx.github_repo or None,
+            serper_enabled=ctx.serper_enabled,
         )
         return Agent(
             config=self.agents_config["architect"],  # type: ignore[index]
@@ -39,8 +37,9 @@ class ArchitectCrew:
 
     @agent
     def dependency_orderer(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        ctx = get_pipeline_context()
+        repo_path = os.path.abspath(ctx.repo_path or os.getcwd())
+        serper_enabled = ctx.serper_enabled
         tools = get_tools_for_stage(
             "plan",
             repo_path,
@@ -55,8 +54,8 @@ class ArchitectCrew:
 
     @agent
     def refactor_guard(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        tools = get_tools_for_stage("refactor_guard", repo_path)
+        ctx = get_pipeline_context()
+        tools = get_tools_for_stage("refactor_guard", ctx.repo_path)
         return Agent(
             config=self.agents_config["refactor_guard"],  # type: ignore[index]
             tools=tools,
@@ -66,8 +65,9 @@ class ArchitectCrew:
 
     @agent
     def test_plan_advisor(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        ctx = get_pipeline_context()
+        repo_path = os.path.abspath(ctx.repo_path or os.getcwd())
+        serper_enabled = ctx.serper_enabled
         tools = get_tools_for_stage(
             "plan",
             repo_path,
@@ -82,8 +82,8 @@ class ArchitectCrew:
 
     @agent
     def migration_checker(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        tools = get_tools_for_stage("refactor_guard", repo_path)
+        ctx = get_pipeline_context()
+        tools = get_tools_for_stage("refactor_guard", ctx.repo_path)
         return Agent(
             config=self.agents_config["migration_checker"],  # type: ignore[index]
             tools=tools,
@@ -93,8 +93,8 @@ class ArchitectCrew:
 
     @agent
     def rollback_planner(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        tools = get_tools_for_stage("refactor_guard", repo_path)
+        ctx = get_pipeline_context()
+        tools = get_tools_for_stage("refactor_guard", ctx.repo_path)
         return Agent(
             config=self.agents_config["rollback_planner"],  # type: ignore[index]
             tools=tools,

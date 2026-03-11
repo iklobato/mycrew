@@ -1,5 +1,6 @@
 """Unit tests for code_pipeline.main."""
 
+import os
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -158,6 +159,31 @@ tools:
     try:
         out = _load_config(path)
         assert out.get("serper_enabled") is True
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+
+def test_load_config_api_keys_expands_env_vars(monkeypatch):
+    """api_keys ${VAR} references are expanded from os.environ."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test-123")
+    monkeypatch.setenv("GITHUB_TOKEN", "gh_test_token")
+    monkeypatch.delenv("SERPER_API_KEY", raising=False)
+
+    with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+        f.write("""
+pipeline: {}
+api_keys:
+  openrouter_api_key: "${OPENROUTER_API_KEY}"
+  github_token: "${GITHUB_TOKEN}"
+  serper_api_key: "${SERPER_API_KEY}"
+""")
+        f.flush()
+        path = f.name
+    try:
+        _load_config(path)
+        assert os.environ.get("OPENROUTER_API_KEY") == "sk-test-123"
+        assert os.environ.get("GITHUB_TOKEN") == "gh_test_token"
+        assert os.environ.get("SERPER_API_KEY", "") == ""
     finally:
         Path(path).unlink(missing_ok=True)
 

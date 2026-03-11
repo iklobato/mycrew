@@ -1,10 +1,10 @@
-import os
 from typing import List
 
 from crewai import Agent, Crew, Process, Task
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.project import CrewBase, agent, crew, task
 from code_pipeline.llm import get_llm_for_stage
+from code_pipeline.settings import get_pipeline_context
 from code_pipeline.tools.factory import get_tools_for_stage
 
 
@@ -20,8 +20,8 @@ class ImplementerCrew:
 
     @agent
     def implementer(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        tools = get_tools_for_stage("implement", repo_path)
+        ctx = get_pipeline_context()
+        tools = get_tools_for_stage("implement", ctx.repo_path)
         return Agent(
             config=self.agents_config["implementer"],  # type: ignore[index]
             tools=tools,
@@ -31,8 +31,8 @@ class ImplementerCrew:
 
     @agent
     def docstring_writer(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        tools = get_tools_for_stage("test_write", repo_path)
+        ctx = get_pipeline_context()
+        tools = get_tools_for_stage("test_write", ctx.repo_path)
         return Agent(
             config=self.agents_config["docstring_writer"],  # type: ignore[index]
             tools=tools,
@@ -42,8 +42,8 @@ class ImplementerCrew:
 
     @agent
     def type_hint_checker(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        tools = get_tools_for_stage("test_write", repo_path)
+        ctx = get_pipeline_context()
+        tools = get_tools_for_stage("test_write", ctx.repo_path)
         return Agent(
             config=self.agents_config["type_hint_checker"],  # type: ignore[index]
             tools=tools,
@@ -53,8 +53,8 @@ class ImplementerCrew:
 
     @agent
     def lint_fixer(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        tools = get_tools_for_stage("implement", repo_path)
+        ctx = get_pipeline_context()
+        tools = get_tools_for_stage("implement", ctx.repo_path)
         return Agent(
             config=self.agents_config["lint_fixer"],  # type: ignore[index]
             tools=tools,
@@ -64,8 +64,8 @@ class ImplementerCrew:
 
     @agent
     def self_reviewer(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        tools = get_tools_for_stage("self_review", repo_path)
+        ctx = get_pipeline_context()
+        tools = get_tools_for_stage("self_review", ctx.repo_path)
         return Agent(
             config=self.agents_config["self_reviewer"],  # type: ignore[index]
             tools=tools,

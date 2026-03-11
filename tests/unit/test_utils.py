@@ -32,17 +32,19 @@ def test_resolve_issue_url_invalid_format_raises():
         resolve_issue_url("not-a-url")
 
 
-def test_resolve_issue_url_no_token_raises(monkeypatch):
+def test_resolve_issue_url_no_token_raises():
     """Missing GITHUB_TOKEN raises ValueError."""
-    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-    with pytest.raises(ValueError, match="GITHUB_TOKEN is required"):
-        resolve_issue_url("https://github.com/owner/repo/issues/123")
+    with patch("code_pipeline.utils.get_settings") as mock_get:
+        mock_get.return_value.github_token = ""
+        with pytest.raises(ValueError, match="GITHUB_TOKEN is required"):
+            resolve_issue_url("https://github.com/owner/repo/issues/123")
 
 
+@patch("code_pipeline.utils.get_settings")
 @patch("httpx.Client")
-def test_resolve_issue_url_parses_issues_url(mock_client_class, monkeypatch):
+def test_resolve_issue_url_parses_issues_url(mock_client_class, mock_get_settings):
     """Valid issues URL returns correct github_repo, issue_id, task."""
-    monkeypatch.setenv("GITHUB_TOKEN", "token")
+    mock_get_settings.return_value.github_token = "token"
     mock_client = MagicMock()
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"title": "Fix login bug"}
@@ -60,10 +62,11 @@ def test_resolve_issue_url_parses_issues_url(mock_client_class, monkeypatch):
     assert result["repo_path"] == "."
 
 
+@patch("code_pipeline.utils.get_settings")
 @patch("httpx.Client")
-def test_resolve_issue_url_parses_pull_url(mock_client_class, monkeypatch):
+def test_resolve_issue_url_parses_pull_url(mock_client_class, mock_get_settings):
     """Valid PR URL returns issue_id as PR#N."""
-    monkeypatch.setenv("GITHUB_TOKEN", "token")
+    mock_get_settings.return_value.github_token = "token"
     mock_client = MagicMock()
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"title": "Add feature"}
@@ -79,10 +82,11 @@ def test_resolve_issue_url_parses_pull_url(mock_client_class, monkeypatch):
     assert result["task"] == "Add feature"
 
 
+@patch("code_pipeline.utils.get_settings")
 @patch("httpx.Client")
-def test_resolve_issue_url_api_failure_raises(mock_client_class, monkeypatch):
+def test_resolve_issue_url_api_failure_raises(mock_client_class, mock_get_settings):
     """API 404/401 raises ValueError."""
-    monkeypatch.setenv("GITHUB_TOKEN", "token")
+    mock_get_settings.return_value.github_token = "token"
     mock_client = MagicMock()
     mock_resp = MagicMock()
     mock_resp.raise_for_status.side_effect = Exception("404 Not Found")
@@ -94,10 +98,11 @@ def test_resolve_issue_url_api_failure_raises(mock_client_class, monkeypatch):
         resolve_issue_url("https://github.com/owner/repo/issues/999")
 
 
+@patch("code_pipeline.utils.get_settings")
 @patch("httpx.Client")
-def test_resolve_issue_url_empty_title_raises(mock_client_class, monkeypatch):
+def test_resolve_issue_url_empty_title_raises(mock_client_class, mock_get_settings):
     """GitHub issue with no title raises ValueError."""
-    monkeypatch.setenv("GITHUB_TOKEN", "token")
+    mock_get_settings.return_value.github_token = "token"
     mock_client = MagicMock()
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"title": ""}

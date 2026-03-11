@@ -3,44 +3,15 @@
 review retry loop and quality gates."""
 
 import argparse
-import hashlib
 import json
 import logging
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 
-# Load .env file if it exists (before any other imports)
-env_path = Path.cwd() / ".env"
-if env_path.exists():
-    try:
-        # Simple .env file parsing
-        with open(env_path, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    key, value = line.split("=", 1)
-                    key = key.strip()
-                    value = value.strip()
-                    # Remove quotes if present
-                    if (value.startswith('"') and value.endswith('"')) or (
-                        value.startswith("'") and value.endswith("'")
-                    ):
-                        value = value[1:-1]
-                    # Only set if not already in environment
-                    if key and value and key not in os.environ:
-                        os.environ[key] = value
-                        logging.getLogger(__name__).debug(
-                            f"Loaded from .env: {key}={value[:10]}..."
-                            if len(value) > 10
-                            else f"Loaded from .env: {key}={value}"
-                        )
-    except Exception as e:
-        logging.getLogger(__name__).warning(f"Failed to load .env file: {e}")
+# Load settings before any CrewAI imports (pydantic-settings loads .env)
+from code_pipeline.settings import get_settings
 
-# Disable CrewAI telemetry by default to avoid SSL certificate errors
-# This must be set BEFORE any CrewAI imports
-os.environ["CREWAI_TRACING_ENABLED"] = "false"
+get_settings().apply_crewai_telemetry()  # noqa: E402
 
 import yaml
 import re
@@ -78,6 +49,13 @@ from code_pipeline.crews.reviewer_crew.reviewer_crew import ReviewerCrew, Review
 from code_pipeline.crews.test_validator_crew.test_validator_crew import (
     TestValidatorCrew,
 )
+from code_pipeline.checkpoint import CheckpointStore
+from code_pipeline.settings import (
+    get_settings,
+    init_settings_from_config,
+    PipelineContext,
+    set_pipeline_context,
+)
 from code_pipeline.utils import (
     build_repo_context,
     enrich_repo_context,
@@ -96,50 +74,6 @@ logger = logging.getLogger(__name__)
 
 # Set by handle_abort when pipeline aborts after max retries; checked by _execute_flow
 _pipeline_aborted = False
-
-
-def _task_hash(task: str) -> str:
-    """Stable hash for checkpoint key."""
-    return hashlib.sha256((task or "").encode()).hexdigest()[:16]
-
-
-def _get_checkpoint_path(repo_path: str) -> Path:
-    """Path to checkpoint registry in repo."""
-    return Path(repo_path) / ".code_pipeline" / "checkpoint.json"
-
-
-def _load_checkpoint(repo_path: str, task: str) -> str | None:
-    """Load flow_id for (repo_path, task). Returns None if not found."""
-    path = _get_checkpoint_path(repo_path)
-    if not path.exists():
-        return None
-    try:
-        data = json.loads(path.read_text())
-        key = f"{os.path.abspath(repo_path)}|{_task_hash(task)}"
-        entry = data.get(key)
-        if entry and isinstance(entry, dict):
-            return entry.get("flow_id")
-    except (json.JSONDecodeError, OSError) as e:
-        logger.warning("Checkpoint load failed: %s", e)
-    return None
-
-
-def _save_checkpoint(repo_path: str, task: str, flow_id: str) -> None:
-    """Save flow_id for (repo_path, task)."""
-    path = _get_checkpoint_path(repo_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    key = f"{os.path.abspath(repo_path)}|{_task_hash(task)}"
-    data = {}
-    if path.exists():
-        try:
-            data = json.loads(path.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass
-    data[key] = {
-        "flow_id": flow_id,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
-    path.write_text(json.dumps(data, indent=2))
 
 
 # Retry config for rate limits (429) and empty LLM responses
@@ -208,7 +142,7 @@ def _configure_logging(level: str | int | None = None) -> None:
     if level is not None:
         log.setLevel(level)
     else:
-        env_level = os.environ.get("CODE_PIPELINE_LOG_LEVEL", "INFO").upper()
+        env_level = get_settings().code_pipeline_log_level.upper()
         log.setLevel(getattr(logging, env_level, logging.INFO))
 
 
@@ -677,9 +611,6 @@ def _load_config(path: str) -> dict:
         serper_config = tools_data.get("serper", {})
         if serper_config and "enabled" in serper_config:
             out["serper_enabled"] = serper_config.get("enabled", False)
-            os.environ["SERPER_ENABLED"] = str(
-                serper_config.get("enabled", False)
-            ).lower()
     else:
         # Old flat structure
         for k, v in data.items():
@@ -690,9 +621,6 @@ def _load_config(path: str) -> dict:
         # Extract serper configuration from old flat structure
         if "serper_enabled" in data:
             out["serper_enabled"] = data.get("serper_enabled", False)
-            os.environ["SERPER_ENABLED"] = str(
-                data.get("serper_enabled", False)
-            ).lower()
 
     # Extract model configuration if present
     if "models" in data:
@@ -705,26 +633,9 @@ def _load_config(path: str) -> dict:
         except ImportError:
             logger.warning("Failed to import update_model_config from llm.py")
 
-    # Extract API keys if present
-    if "api_keys" in data:
-        api_keys = data["api_keys"]
-        if "openrouter_api_key" in api_keys and api_keys["openrouter_api_key"]:
-            os.environ["OPENROUTER_API_KEY"] = api_keys["openrouter_api_key"]
-        if "github_token" in api_keys and api_keys["github_token"]:
-            os.environ["GITHUB_TOKEN"] = api_keys["github_token"]
-        if "serper_api_key" in api_keys and api_keys["serper_api_key"]:
-            os.environ["SERPER_API_KEY"] = api_keys["serper_api_key"]
-
-    # Extract logging configuration if present
-    if "logging" in data:
-        logging_config = data["logging"]
-        if "level" in logging_config and logging_config["level"]:
-            os.environ["CODE_PIPELINE_LOG_LEVEL"] = logging_config["level"].upper()
-        if "crewai_telemetry" in logging_config:
-            # Only enable telemetry if explicitly set to true in config
-            if logging_config["crewai_telemetry"]:
-                os.environ["CREWAI_TRACING_ENABLED"] = "true"
-            # If false or not specified, keep it disabled (default)
+    # Update Settings from config (api_keys, logging, crewai_telemetry)
+    init_settings_from_config(data)
+    get_settings().apply_crewai_telemetry()
 
     return out
 
@@ -881,6 +792,19 @@ class CodePipelineFlow(Flow[PipelineState]):
         """Run a crew and optionally store result in state. Returns raw output."""
         crew_name = crew_class.__name__
 
+        # Set pipeline context for crews to read (repo_path, github_repo, etc.)
+        repo_path = os.path.abspath(
+            inputs.get("repo_path", "") or getattr(self.state, "repo_path", "") or os.getcwd()
+        )
+        set_pipeline_context(
+            PipelineContext(
+                repo_path=repo_path,
+                github_repo=inputs.get("github_repo", "") or getattr(self.state, "github_repo", "") or "",
+                issue_url=inputs.get("issue_url", "") or getattr(self.state, "issue_url", "") or "",
+                serper_enabled=getattr(self.state, "serper_enabled", False),
+            )
+        )
+
         # Build repo context if not provided
         if "repo_context" not in inputs:
             inputs = dict(inputs)
@@ -1012,12 +936,7 @@ class CodePipelineFlow(Flow[PipelineState]):
             logger, "INFO", "Flow step: analyze_issue (start)", step="analyze_issue"
         )
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
-        os.environ["REPO_PATH"] = repo_path
-        os.environ["GITHUB_REPO"] = self.state.github_repo or ""
-        os.environ["ISSUE_URL"] = self.state.issue_url or ""
-        os.environ["SERPER_ENABLED"] = str(
-            getattr(self.state, "serper_enabled", False)
-        ).lower()
+        self.state.repo_path = repo_path
         return self._run_crew(
             IssueAnalystCrew,
             {
@@ -1039,10 +958,6 @@ class CodePipelineFlow(Flow[PipelineState]):
             return self.state.exploration
         _log_with_context(logger, "INFO", "Flow step: explore", step="explore")
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
-        os.environ["REPO_PATH"] = repo_path
-        os.environ["SERPER_ENABLED"] = str(
-            getattr(self.state, "serper_enabled", False)
-        ).lower()
         self.state.repo_path = repo_path
         _log_crew_context(
             "ExplorerCrew",
@@ -1134,7 +1049,6 @@ class CodePipelineFlow(Flow[PipelineState]):
             step="implement",
         )
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
-        os.environ["REPO_PATH"] = repo_path
         return self._run_crew(
             ImplementerCrew,
             {
@@ -1161,7 +1075,6 @@ class CodePipelineFlow(Flow[PipelineState]):
             logger, "INFO", "Flow step: validate_tests", step="validate_tests"
         )
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
-        os.environ["REPO_PATH"] = repo_path
 
         return self._run_crew(
             TestValidatorCrew,
@@ -1195,7 +1108,6 @@ class CodePipelineFlow(Flow[PipelineState]):
             step="validate_tests_retry",
         )
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
-        os.environ["REPO_PATH"] = repo_path
 
         return self._run_crew(
             TestValidatorCrew,
@@ -1288,7 +1200,6 @@ class CodePipelineFlow(Flow[PipelineState]):
             return self.state.review_verdict
         _log_with_context(logger, "INFO", "Flow step: review", step="review")
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
-        os.environ["REPO_PATH"] = repo_path
         _log_crew_context(
             "ReviewerCrew",
             {
@@ -1503,7 +1414,6 @@ class CodePipelineFlow(Flow[PipelineState]):
         """Run CommitCrew; creates feature branch, commits, then pushes and creates PR."""
         feature_branch = self._make_feature_branch_name()
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
-        os.environ["REPO_PATH"] = repo_path
         logger.info(
             "Flow step: commit (dry_run=%s, feature_branch=%s)",
             self.state.dry_run,
@@ -1603,16 +1513,17 @@ def _execute_flow(inputs: dict):
     flow = CodePipelineFlow()
     kickoff_inputs = dict(inputs)
 
-    if not from_scratch and task:
-        checkpoint_id = _load_checkpoint(repo_path, task)
+    store = CheckpointStore(repo_path) if task else None
+    if not from_scratch and store:
+        checkpoint_id = store.load(task)
         if checkpoint_id:
             kickoff_inputs["id"] = checkpoint_id
             logger.info("Resuming from checkpoint (flow_id=%s)", checkpoint_id[:8])
 
     result = flow.kickoff(inputs=kickoff_inputs)
 
-    if task:
-        _save_checkpoint(repo_path, task, flow.flow_id)
+    if store:
+        store.save(task, flow.flow_id)
 
     if _pipeline_aborted:
         sys.exit(1)
@@ -1652,9 +1563,7 @@ def _execute_flow_with_trigger(trigger_payload: dict):
 def _main():
     """Entry point for CLI. Decorator logs any exception before re-raising."""
     args = _parse_args()
-    if getattr(args, "verbose", False):
-        os.environ["CODE_PIPELINE_LOG_LEVEL"] = "DEBUG"
-    _configure_logging()
+    _configure_logging(level=logging.DEBUG if getattr(args, "verbose", False) else None)
     kickoff(
         issue_url=args.issue_url,
         branch=args.branch,

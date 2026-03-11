@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
@@ -14,38 +15,42 @@ from code_pipeline.webhook import (
 )
 
 
-def test_signature_verification_valid_passes(monkeypatch):
+def test_signature_verification_valid_passes():
     """Valid signature passes verification."""
     secret = "mysecret"
     payload = b'{"test": "data"}'
     hash_obj = hmac.new(secret.encode("utf-8"), msg=payload, digestmod=hashlib.sha256)
     valid_signature = "sha256=" + hash_obj.hexdigest()
-    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", secret)
-    verify_github_signature(payload, valid_signature)
+    with patch("code_pipeline.settings.get_settings") as mock_get:
+        mock_get.return_value.github_webhook_secret = secret
+        verify_github_signature(payload, valid_signature)
 
 
-def test_signature_verification_invalid_fails(monkeypatch):
+def test_signature_verification_invalid_fails():
     """Invalid signature raises."""
     secret = "mysecret"
     payload = b'{"test": "data"}'
-    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", secret)
-    with pytest.raises(HTTPException, match="Invalid signature"):
-        verify_github_signature(payload, "sha256=invalid")
+    with patch("code_pipeline.settings.get_settings") as mock_get:
+        mock_get.return_value.github_webhook_secret = secret
+        with pytest.raises(HTTPException, match="Invalid signature"):
+            verify_github_signature(payload, "sha256=invalid")
 
 
-def test_signature_verification_missing_when_secret_set(monkeypatch):
+def test_signature_verification_missing_when_secret_set():
     """Missing signature fails when secret is configured."""
     secret = "mysecret"
     payload = b'{"test": "data"}'
-    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", secret)
-    with pytest.raises(HTTPException):
-        verify_github_signature(payload, "")
+    with patch("code_pipeline.settings.get_settings") as mock_get:
+        mock_get.return_value.github_webhook_secret = secret
+        with pytest.raises(HTTPException):
+            verify_github_signature(payload, "")
 
 
-def test_signature_verification_no_secret_passes(monkeypatch):
+def test_signature_verification_no_secret_passes():
     """No verification when secret not configured."""
-    monkeypatch.delenv("GITHUB_WEBHOOK_SECRET", raising=False)
-    verify_github_signature(b'{"test": "data"}', "")
+    with patch("code_pipeline.settings.get_settings") as mock_get:
+        mock_get.return_value.github_webhook_secret = ""
+        verify_github_signature(b'{"test": "data"}', "")
 
 
 def test_payload_extraction_issues():

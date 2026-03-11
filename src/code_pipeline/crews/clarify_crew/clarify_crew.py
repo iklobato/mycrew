@@ -1,6 +1,5 @@
 """Clarify crew: detects ambiguities, prioritizes, asks human before planning."""
 
-import os
 from typing import List
 
 from crewai import Agent, Crew, Process, Task
@@ -8,6 +7,7 @@ from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.project import CrewBase, agent, crew, task
 
 from code_pipeline.llm import get_llm_for_stage
+from code_pipeline.settings import get_pipeline_context
 from code_pipeline.tools.factory import get_tools_for_stage
 from code_pipeline.tools.human_tool import ask_human
 
@@ -24,8 +24,8 @@ class ClarifyCrew:
 
     @agent
     def ambiguity_detector(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        tools = get_tools_for_stage("scope_validate", repo_path)
+        ctx = get_pipeline_context()
+        tools = get_tools_for_stage("scope_validate", ctx.repo_path)
         return Agent(
             config=self.agents_config["ambiguity_detector"],  # type: ignore[index]
             tools=tools,
@@ -35,8 +35,8 @@ class ClarifyCrew:
 
     @agent
     def question_prioritizer(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        tools = get_tools_for_stage("scope_validate", repo_path)
+        ctx = get_pipeline_context()
+        tools = get_tools_for_stage("scope_validate", ctx.repo_path)
         return Agent(
             config=self.agents_config["question_prioritizer"],  # type: ignore[index]
             tools=tools,

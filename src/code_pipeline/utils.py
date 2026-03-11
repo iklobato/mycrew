@@ -7,6 +7,8 @@ import re
 import subprocess
 from typing import Callable, TypeVar
 
+from code_pipeline.settings import get_settings
+
 F = TypeVar("F", bound=Callable[..., object])
 
 
@@ -43,7 +45,7 @@ def resolve_issue_url(issue_url: str) -> dict[str, str]:
     issue_id = f"PR#{number}" if is_pull else f"#{number}"
 
     # Fetch title from GitHub API
-    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    token = get_settings().github_token.strip()
     if not token:
         raise ValueError(
             "GITHUB_TOKEN is required when using issue_url. "

@@ -57,12 +57,15 @@ def test_get_tools_for_stage_unknown_returns_empty():
 # ---------------------------------------------------------------------------
 
 
-def test_get_github_search_tool_returns_none_without_token(monkeypatch):
+def test_get_github_search_tool_returns_none_without_token():
     """get_github_search_tool returns None when GITHUB_TOKEN is empty."""
-    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    from unittest.mock import patch
+
     from code_pipeline.tools.factory import get_github_search_tool
 
-    assert get_github_search_tool("owner/repo") is None
+    with patch("code_pipeline.tools.factory.get_settings") as mock_get:
+        mock_get.return_value.github_token = ""
+        assert get_github_search_tool("owner/repo") is None
 
 
 def test_get_github_search_tool_returns_none_with_empty_repo(github_token):
@@ -85,12 +88,15 @@ def test_get_serper_tool_disabled_returns_none():
     assert get_serper_tool(enabled=False) is None
 
 
-def test_get_serper_tool_no_api_key_returns_none(monkeypatch):
+def test_get_serper_tool_no_api_key_returns_none():
     """get_serper_tool returns None when SERPER_API_KEY is not set."""
-    monkeypatch.delenv("SERPER_API_KEY", raising=False)
+    from unittest.mock import patch
+
     from code_pipeline.tools.factory import get_serper_tool
 
-    assert get_serper_tool(enabled=True) is None
+    with patch("code_pipeline.tools.factory.get_settings") as mock_get:
+        mock_get.return_value.serper_api_key = ""
+        assert get_serper_tool(enabled=True) is None
 
 
 # ---------------------------------------------------------------------------

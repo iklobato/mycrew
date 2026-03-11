@@ -1,4 +1,3 @@
-import os
 from typing import List
 
 from crewai import Agent, Crew, Process, Task
@@ -6,6 +5,7 @@ from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.project import CrewBase, agent, crew, task
 
 from code_pipeline.llm import get_llm_for_stage
+from code_pipeline.settings import get_pipeline_context
 from code_pipeline.tools.factory import get_tools_for_stage
 
 
@@ -21,12 +21,11 @@ class ExplorerCrew:
 
     @agent
     def repo_explorer(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        ctx = get_pipeline_context()
         tools = get_tools_for_stage(
             "explore",
-            repo_path,
-            serper_enabled=serper_enabled,
+            ctx.repo_path,
+            serper_enabled=ctx.serper_enabled,
         )
         return Agent(
             config=self.agents_config["repo_explorer"],  # type: ignore[index]
@@ -37,12 +36,11 @@ class ExplorerCrew:
 
     @agent
     def dependency_analyzer(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        ctx = get_pipeline_context()
         tools = get_tools_for_stage(
             "explore",
-            repo_path,
-            serper_enabled=serper_enabled,
+            ctx.repo_path,
+            serper_enabled=ctx.serper_enabled,
         )
         return Agent(
             config=self.agents_config["dependency_analyzer"],  # type: ignore[index]
@@ -53,12 +51,11 @@ class ExplorerCrew:
 
     @agent
     def test_layout_scout(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        ctx = get_pipeline_context()
         tools = get_tools_for_stage(
             "explore",
-            repo_path,
-            serper_enabled=serper_enabled,
+            ctx.repo_path,
+            serper_enabled=ctx.serper_enabled,
         )
         return Agent(
             config=self.agents_config["test_layout_scout"],  # type: ignore[index]
@@ -69,12 +66,11 @@ class ExplorerCrew:
 
     @agent
     def convention_extractor(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        ctx = get_pipeline_context()
         tools = get_tools_for_stage(
             "explore",
-            repo_path,
-            serper_enabled=serper_enabled,
+            ctx.repo_path,
+            serper_enabled=ctx.serper_enabled,
         )
         return Agent(
             config=self.agents_config["convention_extractor"],  # type: ignore[index]
@@ -85,12 +81,11 @@ class ExplorerCrew:
 
     @agent
     def api_boundary_scout(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        ctx = get_pipeline_context()
         tools = get_tools_for_stage(
             "explore",
-            repo_path,
-            serper_enabled=serper_enabled,
+            ctx.repo_path,
+            serper_enabled=ctx.serper_enabled,
         )
         return Agent(
             config=self.agents_config["api_boundary_scout"],  # type: ignore[index]

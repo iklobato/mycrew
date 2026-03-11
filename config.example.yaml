@@ -22,17 +22,14 @@ pipeline:
 
 # API Keys and Authentication
 # ---------------------------
-# Note: For security, these can also be set as environment variables:
-#   OPENROUTER_API_KEY, GITHUB_TOKEN, SERPER_API_KEY
+# Tokens are read from environment variables. Set them before running:
+#   export OPENROUTER_API_KEY=...
+#   export GITHUB_TOKEN=...
+#   export SERPER_API_KEY=...
 api_keys:
-  # OpenRouter API key (required for model access)
-  openrouter_api_key: "YOUR_OPENROUTER_API_KEY_HERE"
-  
-  # GitHub Personal Access Token (for GitHub API access)
-  github_token: "YOUR_GITHUB_TOKEN_HERE"
-  
-  # Serper API key for web search (optional - enables SerperDevTool)
-  serper_api_key: "YOUR_SERPER_API_KEY_HERE"
+  openrouter_api_key: "${OPENROUTER_API_KEY}"
+  github_token: "${GITHUB_TOKEN}"
+  serper_api_key: "${SERPER_API_KEY}"
 
 # Logging Configuration
 # ---------------------

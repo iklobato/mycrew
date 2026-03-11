@@ -1,10 +1,10 @@
-import os
 from typing import List
 
 from crewai import Agent, Crew, Process, Task
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.project import CrewBase, agent, crew, task
 from code_pipeline.llm import get_llm_for_stage
+from code_pipeline.settings import get_pipeline_context
 from code_pipeline.tools.factory import get_tools_for_stage
 
 
@@ -20,8 +20,8 @@ class TestValidatorCrew:
 
     @agent
     def test_implementer(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        tools = get_tools_for_stage("test_validation", repo_path)
+        ctx = get_pipeline_context()
+        tools = get_tools_for_stage("test_validation", ctx.repo_path)
         return Agent(
             config=self.agents_config["test_implementer"],  # type: ignore[index]
             tools=tools,
@@ -31,8 +31,8 @@ class TestValidatorCrew:
 
     @agent
     def test_quality_checker(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        tools = get_tools_for_stage("test_validation", repo_path)
+        ctx = get_pipeline_context()
+        tools = get_tools_for_stage("test_validation", ctx.repo_path)
         return Agent(
             config=self.agents_config["test_quality_checker"],  # type: ignore[index]
             tools=tools,
@@ -42,8 +42,8 @@ class TestValidatorCrew:
 
     @agent
     def test_coverage_checker(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        tools = get_tools_for_stage("test_validation", repo_path)
+        ctx = get_pipeline_context()
+        tools = get_tools_for_stage("test_validation", ctx.repo_path)
         return Agent(
             config=self.agents_config["test_coverage_checker"],  # type: ignore[index]
             tools=tools,

@@ -1,6 +1,5 @@
 """Reviewer crew: reviews implementation against plan and task."""
 
-import os
 from typing import List, Literal
 
 from crewai import Agent, Crew, Process, Task
@@ -9,6 +8,7 @@ from crewai.project import CrewBase, agent, crew, task
 from pydantic import BaseModel, Field
 
 from code_pipeline.llm import get_llm_for_stage
+from code_pipeline.settings import get_pipeline_context
 from code_pipeline.tools.factory import get_tools_for_stage
 
 
@@ -36,12 +36,11 @@ class ReviewerCrew:
 
     @agent
     def reviewer(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        ctx = get_pipeline_context()
         tools = get_tools_for_stage(
             "review",
-            repo_path,
-            serper_enabled=serper_enabled,
+            ctx.repo_path,
+            serper_enabled=ctx.serper_enabled,
         )
         return Agent(
             config=self.agents_config["reviewer"],  # type: ignore[index]
@@ -52,12 +51,11 @@ class ReviewerCrew:
 
     @agent
     def security_reviewer(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        ctx = get_pipeline_context()
         tools = get_tools_for_stage(
             "security_review",
-            repo_path,
-            serper_enabled=serper_enabled,
+            ctx.repo_path,
+            serper_enabled=ctx.serper_enabled,
         )
         return Agent(
             config=self.agents_config["security_reviewer"],  # type: ignore[index]
@@ -68,12 +66,11 @@ class ReviewerCrew:
 
     @agent
     def performance_reviewer(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        ctx = get_pipeline_context()
         tools = get_tools_for_stage(
             "security_review",
-            repo_path,
-            serper_enabled=serper_enabled,
+            ctx.repo_path,
+            serper_enabled=ctx.serper_enabled,
         )
         return Agent(
             config=self.agents_config["performance_reviewer"],  # type: ignore[index]
@@ -84,12 +81,11 @@ class ReviewerCrew:
 
     @agent
     def accessibility_checker(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        ctx = get_pipeline_context()
         tools = get_tools_for_stage(
             "security_review",
-            repo_path,
-            serper_enabled=serper_enabled,
+            ctx.repo_path,
+            serper_enabled=ctx.serper_enabled,
         )
         return Agent(
             config=self.agents_config["accessibility_checker"],  # type: ignore[index]
@@ -100,12 +96,11 @@ class ReviewerCrew:
 
     @agent
     def backward_compat_checker(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        ctx = get_pipeline_context()
         tools = get_tools_for_stage(
             "security_review",
-            repo_path,
-            serper_enabled=serper_enabled,
+            ctx.repo_path,
+            serper_enabled=ctx.serper_enabled,
         )
         return Agent(
             config=self.agents_config["backward_compat_checker"],  # type: ignore[index]
@@ -116,12 +111,11 @@ class ReviewerCrew:
 
     @agent
     def convention_checker(self) -> Agent:
-        repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
+        ctx = get_pipeline_context()
         tools = get_tools_for_stage(
             "review",
-            repo_path,
-            serper_enabled=serper_enabled,
+            ctx.repo_path,
+            serper_enabled=ctx.serper_enabled,
         )
         return Agent(
             config=self.agents_config["convention_checker"],  # type: ignore[index]
