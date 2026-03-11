@@ -1,0 +1,18 @@
+# Docker Compose configuration for Webhook API
+
+version: '3.8'
+
+services:
+  webhook:
+    build:
+      context: .
+      dockerfile: Dockerfile.webhook
+    ports:
+      - "8000:8000"
+    environment:
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET:-}
+      - DEFAULT_DRY_RUN=${DEFAULT_DRY_RUN:-false}
+      - DEFAULT_BRANCH=${DEFAULT_BRANCH:-main}
+    volumes:
+      - ./workspace:/workspace  # Mount workspace for pipeline to work on
+    restart: unless-stopped

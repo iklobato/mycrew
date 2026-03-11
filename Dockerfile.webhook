@@ -1,0 +1,26 @@
+# Simple Dockerfile for Code Pipeline Webhook API
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copy project files
+COPY pyproject.toml uv.lock ./
+COPY src/ ./src/
+
+# Install uv and dependencies
+RUN pip install uv && \
+    uv sync --frozen
+
+# Environment variables (can be overridden)
+ENV GITHUB_WEBHOOK_SECRET=""
+ENV DEFAULT_DRY_RUN="false"
+ENV DEFAULT_BRANCH="main"
+ENV PORT="8000"
+ENV HOST="0.0.0.0"
+
+# Expose port
+EXPOSE 8000
+
+# Run the webhook API
+CMD ["uv", "run", "webhook"]

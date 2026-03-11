@@ -7,6 +7,10 @@ requires-python = ">=3.10,<3.13"
 dependencies = [
     "crewai[litellm,tools]==1.9.3",
     "pyyaml>=6.0",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "sqlalchemy>=2.0.0,<3.0.0",
+    "psycopg2-binary>=2.9.0,<3.0.0",
 ]
 
 [project.scripts]
@@ -14,6 +18,7 @@ kickoff = "code_pipeline.main:kickoff"
 run_crew = "code_pipeline.main:kickoff"
 plot = "code_pipeline.main:plot"
 run_with_trigger = "code_pipeline.main:run_with_trigger"
+webhook = "code_pipeline.webhook:main"
 
 [build-system]
 requires = ["hatchling"]
