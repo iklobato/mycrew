@@ -23,10 +23,13 @@ class ArchitectCrew:
     def architect(self) -> Agent:
         repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
         github_repo = (os.environ.get("GITHUB_REPO", "") or "").strip() or None
-        docs_url = (os.environ.get("DOCS_URL", "") or "").strip() or None
         serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
-        serper_n_results = int(os.environ.get("SERPER_N_RESULTS", "5"))
-        tools = get_tools_for_stage("plan", repo_path, github_repo=github_repo, docs_url=docs_url, serper_enabled=serper_enabled, serper_n_results=serper_n_results)
+        tools = get_tools_for_stage(
+            "plan",
+            repo_path,
+            github_repo=github_repo,
+            serper_enabled=serper_enabled,
+        )
         return Agent(
             config=self.agents_config["architect"],  # type: ignore[index]
             tools=tools,
@@ -38,8 +41,11 @@ class ArchitectCrew:
     def dependency_orderer(self) -> Agent:
         repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
         serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
-        serper_n_results = int(os.environ.get("SERPER_N_RESULTS", "5"))
-        tools = get_tools_for_stage("plan", repo_path, serper_enabled=serper_enabled, serper_n_results=serper_n_results)
+        tools = get_tools_for_stage(
+            "plan",
+            repo_path,
+            serper_enabled=serper_enabled,
+        )
         return Agent(
             config=self.agents_config["dependency_orderer"],  # type: ignore[index]
             tools=tools,
@@ -50,8 +56,6 @@ class ArchitectCrew:
     @agent
     def refactor_guard(self) -> Agent:
         repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
-        serper_n_results = int(os.environ.get("SERPER_N_RESULTS", "5"))
         tools = get_tools_for_stage("refactor_guard", repo_path)
         return Agent(
             config=self.agents_config["refactor_guard"],  # type: ignore[index]
@@ -64,8 +68,11 @@ class ArchitectCrew:
     def test_plan_advisor(self) -> Agent:
         repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
         serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
-        serper_n_results = int(os.environ.get("SERPER_N_RESULTS", "5"))
-        tools = get_tools_for_stage("plan", repo_path, serper_enabled=serper_enabled, serper_n_results=serper_n_results)
+        tools = get_tools_for_stage(
+            "plan",
+            repo_path,
+            serper_enabled=serper_enabled,
+        )
         return Agent(
             config=self.agents_config["test_plan_advisor"],  # type: ignore[index]
             tools=tools,
@@ -76,8 +83,6 @@ class ArchitectCrew:
     @agent
     def migration_checker(self) -> Agent:
         repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
-        serper_n_results = int(os.environ.get("SERPER_N_RESULTS", "5"))
         tools = get_tools_for_stage("refactor_guard", repo_path)
         return Agent(
             config=self.agents_config["migration_checker"],  # type: ignore[index]
@@ -89,8 +94,6 @@ class ArchitectCrew:
     @agent
     def rollback_planner(self) -> Agent:
         repo_path = os.path.abspath(os.environ.get("REPO_PATH", os.getcwd()))
-        serper_enabled = os.environ.get("SERPER_ENABLED", "false").lower() == "true"
-        serper_n_results = int(os.environ.get("SERPER_N_RESULTS", "5"))
         tools = get_tools_for_stage("refactor_guard", repo_path)
         return Agent(
             config=self.agents_config["rollback_planner"],  # type: ignore[index]

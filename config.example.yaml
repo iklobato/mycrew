@@ -5,11 +5,8 @@
 # Core Pipeline Configuration
 # ---------------------------
 pipeline:
-  # Task description or issue to work on
-  task: "Add a feature or fix based on the issue"
-  
-  # Repository path (defaults to current directory)
-  repo_path: "."
+  # GitHub issue or PR URL (required) - task, repo, issue_id are derived from it
+  issue_url: ""
   
   # Base branch for feature branches
   branch: main
@@ -17,26 +14,11 @@ pipeline:
   # Start from scratch ignoring previous checkpoints
   from_scratch: false
   
-  # Maximum retry attempts for failed implementations
-  max_retries: 3
-  
   # Dry run mode (no commits, no pushes)
   dry_run: false
   
   # Test command to run (e.g., "pytest", "npm test", "go test ./...")
   test_command: ""
-  
-  # GitHub issue/PR identifier
-  issue_id: ""
-  
-  # GitHub repository in owner/repo format
-  github_repo: ""
-  
-  # Issue URL for web scraping
-  issue_url: ""
-  
-  # Documentation URL for code documentation search
-  docs_url: ""
 
 # API Keys and Authentication
 # ---------------------------
@@ -148,9 +130,6 @@ tools:
   # Web search configuration (SerperDevTool)
   serper:
     enabled: false  # Enable/disable web search (opt-in for cost control)
-    n_results: 5    # Default number of search results (1-10)
-    timeout: 30     # Search timeout in seconds
-    search_depth: "moderate"  # moderate|comprehensive: controls query specificity
 
 # Agent Behavior Tuning
 # ---------------------

@@ -10,11 +10,81 @@ from typing import Callable, TypeVar
 F = TypeVar("F", bound=Callable[..., object])
 
 
+def resolve_issue_url(issue_url: str) -> dict[str, str]:
+    """
+    Parse a GitHub issue/PR URL and fetch its content via the GitHub API.
+    Returns task, github_repo, issue_id, repo_path. GITHUB_TOKEN required.
+    """
+    url = (issue_url or "").strip()
+    if not url:
+        raise ValueError("issue_url is required and cannot be empty")
+
+    # Parse: https://github.com/owner/repo/issues/123 or /pull/456
+    m = re.search(
+        r"https?://(?:www\.)?github\.com/([^/]+)/([^/]+)/(issues|pull)/(\d+)",
+        url,
+        re.IGNORECASE,
+    )
+    if not m:
+        raise ValueError(
+            f"Invalid GitHub issue URL: {url}. "
+            "Expected format: https://github.com/owner/repo/issues/123 or /pull/456"
+        )
+
+    owner, repo_name, kind, number = (
+        m.group(1),
+        m.group(2),
+        m.group(3).lower(),
+        m.group(4),
+    )
+    is_pull = kind == "pull"
+
+    github_repo = f"{owner}/{repo_name}"
+    issue_id = f"PR#{number}" if is_pull else f"#{number}"
+
+    # Fetch title from GitHub API
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    if not token:
+        raise ValueError(
+            "GITHUB_TOKEN is required when using issue_url. "
+            "Set it in environment or config api_keys.github_token."
+        )
+
+    try:
+        import httpx
+
+        api_url = f"https://api.github.com/repos/{owner}/{repo_name}/issues/{number}"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        with httpx.Client(timeout=30) as client:
+            resp = client.get(api_url, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        raise ValueError(
+            f"Failed to fetch issue from GitHub API: {e}. "
+            "Check GITHUB_TOKEN and issue URL."
+        ) from e
+
+    task = (data.get("title") or "").strip()
+    if not task:
+        raise ValueError("GitHub issue has no title")
+
+    return {
+        "task": task,
+        "github_repo": github_repo,
+        "issue_id": issue_id,
+        "issue_url": url,
+        "repo_path": ".",
+    }
+
+
 def build_repo_context(
     repo_path: str = "",
     github_repo: str = "",
     issue_url: str = "",
-    docs_url: str = "",
     test_command: str = "",
 ) -> str:
     """
@@ -33,9 +103,6 @@ def build_repo_context(
     iu = (issue_url or "").strip()
     if iu:
         lines.append(f"- Issue URL: {iu}")
-    doc = (docs_url or "").strip()
-    if doc:
-        lines.append(f"- Docs: {doc}")
     tc = (test_command or "").strip()
     if tc:
         lines.append(f"- Test command: {tc}")

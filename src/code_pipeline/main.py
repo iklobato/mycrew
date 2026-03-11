@@ -78,7 +78,12 @@ from code_pipeline.crews.reviewer_crew.reviewer_crew import ReviewerCrew, Review
 from code_pipeline.crews.test_validator_crew.test_validator_crew import (
     TestValidatorCrew,
 )
-from code_pipeline.utils import build_repo_context, enrich_repo_context, log_exceptions
+from code_pipeline.utils import (
+    build_repo_context,
+    enrich_repo_context,
+    log_exceptions,
+    resolve_issue_url,
+)
 
 _event_context_config.set(
     EventContextConfig(
@@ -597,38 +602,34 @@ def _kickoff_with_retry(crew, inputs: dict, crew_name: str = "Crew"):
 
 @dataclass
 class PipelineArgs:
-    """Single source of truth for pipeline arguments from CLI or programmatic call."""
+    """Single source of truth for pipeline arguments. issue_url is the sole work input."""
 
-    repo_path: str = ""
-    task: str = ""
+    issue_url: str = ""
     branch: str = "main"
     from_scratch: bool = False
     max_retries: int = 3
     dry_run: bool = False
     test_command: str = ""
-    issue_id: str = ""
-    github_repo: str = ""
-    issue_url: str = ""
-    docs_url: str = ""
     serper_enabled: bool = False
-    serper_n_results: int = 5
 
     def to_flow_inputs(self) -> dict:
-        """Convert to flow inputs dict with repo_path normalized."""
+        """Convert to flow inputs. Resolves issue_url via GitHub API to derive task, repo, etc."""
+        if not (self.issue_url or "").strip():
+            raise ValueError("issue_url is required")
+        resolved = resolve_issue_url(self.issue_url)
+        repo_path = os.path.abspath(resolved.get("repo_path", ".") or os.getcwd())
         return {
-            "repo_path": os.path.abspath(self.repo_path or os.getcwd()),
-            "task": self.task,
+            "repo_path": repo_path,
+            "task": resolved["task"],
             "branch": self.branch,
             "from_scratch": self.from_scratch,
             "dry_run": self.dry_run,
             "max_retries": self.max_retries,
             "test_command": self.test_command,
-            "issue_id": self.issue_id,
-            "github_repo": self.github_repo,
-            "issue_url": self.issue_url,
-            "docs_url": self.docs_url,
+            "issue_id": resolved["issue_id"],
+            "github_repo": resolved["github_repo"],
+            "issue_url": resolved["issue_url"],
             "serper_enabled": self.serper_enabled,
-            "serper_n_results": self.serper_n_results,
         }
 
     def replace(self, **overrides) -> "PipelineArgs":
@@ -654,19 +655,12 @@ def _load_config(path: str) -> dict:
 
     # Map config keys (snake_case) to PipelineArgs fields
     key_map = {
-        "task": "task",
-        "repo_path": "repo_path",
+        "issue_url": "issue_url",
         "branch": "branch",
         "from_scratch": "from_scratch",
-        "max_retries": "max_retries",
         "dry_run": "dry_run",
         "test_command": "test_command",
-        "issue_id": "issue_id",
-        "github_repo": "github_repo",
-        "issue_url": "issue_url",
-        "docs_url": "docs_url",
         "serper_enabled": "serper_enabled",
-        "serper_n_results": "serper_n_results",
     }
 
     # First check if we have the new nested structure
@@ -681,20 +675,11 @@ def _load_config(path: str) -> dict:
         # Extract serper configuration from tools section
         tools_data = data.get("tools", {})
         serper_config = tools_data.get("serper", {})
-        if serper_config:
-            if "enabled" in serper_config:
-                out["serper_enabled"] = serper_config.get("enabled", False)
-            if "n_results" in serper_config:
-                out["serper_n_results"] = serper_config.get("n_results", 5)
-
-        # Also set environment variables for serper configuration
-        if serper_config:
-            if "enabled" in serper_config:
-                os.environ["SERPER_ENABLED"] = str(
-                    serper_config.get("enabled", False)
-                ).lower()
-            if "n_results" in serper_config:
-                os.environ["SERPER_N_RESULTS"] = str(serper_config.get("n_results", 5))
+        if serper_config and "enabled" in serper_config:
+            out["serper_enabled"] = serper_config.get("enabled", False)
+            os.environ["SERPER_ENABLED"] = str(
+                serper_config.get("enabled", False)
+            ).lower()
     else:
         # Old flat structure
         for k, v in data.items():
@@ -708,9 +693,6 @@ def _load_config(path: str) -> dict:
             os.environ["SERPER_ENABLED"] = str(
                 data.get("serper_enabled", False)
             ).lower()
-        if "serper_n_results" in data:
-            out["serper_n_results"] = data.get("serper_n_results", 5)
-            os.environ["SERPER_N_RESULTS"] = str(data.get("serper_n_results", 5))
 
     # Extract model configuration if present
     if "models" in data:
@@ -753,36 +735,18 @@ def _parse_args() -> PipelineArgs:
         description="Code pipeline: explore -> plan -> implement -> review -> commit"
     )
     parser.add_argument("-c", "--config", help="Path to YAML config file (all params)")
-    parser.add_argument("-r", "--repo-path", default=None, help="Repository path")
     parser.add_argument(
-        "-t", "--task", default=None, help="Task description (required)"
+        "--issue-url", default=None, help="GitHub issue or PR URL (required)"
     )
     parser.add_argument("-b", "--branch", default=None, help="Git branch")
-    parser.add_argument("-n", "--retries", type=int, default=None, help="Max retries")
     parser.add_argument("--dry-run", action="store_true", help="Skip git commit")
     parser.add_argument(
         "--test-command", default=None, help="Test command (e.g. pytest)"
-    )
-    parser.add_argument("--issue-id", default=None, help="Issue ID for commit")
-    parser.add_argument(
-        "--github-repo", default=None, help="GitHub repo for GithubSearchTool"
-    )
-    parser.add_argument(
-        "--issue-url", default=None, help="Issue URL for ScrapeWebsiteTool"
-    )
-    parser.add_argument(
-        "--docs-url", default=None, help="Docs URL for CodeDocsSearchTool"
     )
     parser.add_argument(
         "--serper-enabled",
         action="store_true",
         help="Enable web search via SerperDevTool (requires SERPER_API_KEY)",
-    )
-    parser.add_argument(
-        "--serper-n-results",
-        type=int,
-        default=None,
-        help="Number of search results to return (default: 5)",
     )
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="Enable DEBUG logging"
@@ -806,38 +770,21 @@ def _parse_args() -> PipelineArgs:
                 if isinstance(v, str):
                     config_data[key] = v.lower() in ("true", "1", "yes")
 
-    # Defaults when no config
     defaults = {
-        "repo_path": os.getcwd(),
-        "task": "",
+        "issue_url": "",
         "branch": "main",
         "from_scratch": False,
-        "max_retries": 3,
         "dry_run": False,
         "test_command": "",
-        "issue_id": "",
-        "github_repo": "",
-        "issue_url": "",
-        "docs_url": "",
         "serper_enabled": False,
-        "serper_n_results": 5,
     }
-    # Merge: config first, then defaults, then CLI overrides
     base = {**defaults, **config_data}
     cli_overrides = {
-        "repo_path": ns.repo_path,
-        "task": ns.task,
         "branch": ns.branch,
-        "max_retries": ns.retries,
         "test_command": ns.test_command,
-        "issue_id": ns.issue_id,
-        "github_repo": ns.github_repo,
         "issue_url": ns.issue_url,
-        "docs_url": ns.docs_url,
         "serper_enabled": ns.serper_enabled,
-        "serper_n_results": ns.serper_n_results,
     }
-    # store_true: only override when user explicitly passed the flag (don't overwrite config with False)
     if getattr(ns, "from_scratch", False):
         cli_overrides["from_scratch"] = True
     if getattr(ns, "dry_run", False):
@@ -847,27 +794,23 @@ def _parse_args() -> PipelineArgs:
             base[k] = v
 
     return PipelineArgs(
-        repo_path=base["repo_path"],
-        task=base["task"] or "",
+        issue_url=base["issue_url"] or "",
         branch=base["branch"],
         from_scratch=base["from_scratch"],
-        max_retries=base["max_retries"],
+        max_retries=3,
         dry_run=base["dry_run"],
         test_command=base["test_command"] or "",
-        issue_id=base["issue_id"] or "",
-        github_repo=base["github_repo"] or "",
-        issue_url=base["issue_url"] or "",
-        docs_url=base["docs_url"] or "",
+        serper_enabled=base.get("serper_enabled", False),
     )
 
 
 class PipelineState(BaseModel):
-    """State for the code pipeline flow."""
+    """State for the code pipeline flow. task, repo_path, etc. come from issue_url resolution."""
 
     id: str = ""
     from_scratch: bool = False
     repo_path: str = ""
-    repo_context: str = ""  # Shared context (Repository, GitHub, etc.) for agents
+    repo_context: str = ""
     task: str = ""
     branch: str = "main"
     dry_run: bool = False
@@ -876,7 +819,7 @@ class PipelineState(BaseModel):
     issue_id: str = ""
     github_repo: str = ""
     issue_url: str = ""
-    docs_url: str = ""
+    serper_enabled: bool = False
     issue_analysis: str = ""
     exploration: str = ""
     plan: str = ""
@@ -945,7 +888,6 @@ class CodePipelineFlow(Flow[PipelineState]):
                 inputs.get("repo_path", "") or self.state.repo_path,
                 inputs.get("github_repo", "") or self.state.github_repo,
                 inputs.get("issue_url", "") or self.state.issue_url,
-                inputs.get("docs_url", "") or self.state.docs_url,
                 inputs.get("test_command", "") or self.state.test_command,
             )
 
@@ -1073,11 +1015,9 @@ class CodePipelineFlow(Flow[PipelineState]):
         os.environ["REPO_PATH"] = repo_path
         os.environ["GITHUB_REPO"] = self.state.github_repo or ""
         os.environ["ISSUE_URL"] = self.state.issue_url or ""
-        os.environ["DOCS_URL"] = self.state.docs_url or ""
         os.environ["SERPER_ENABLED"] = str(
             getattr(self.state, "serper_enabled", False)
         ).lower()
-        os.environ["SERPER_N_RESULTS"] = str(getattr(self.state, "serper_n_results", 5))
         return self._run_crew(
             IssueAnalystCrew,
             {
@@ -1085,7 +1025,6 @@ class CodePipelineFlow(Flow[PipelineState]):
                 "issue_url": self.state.issue_url,
                 "github_repo": self.state.github_repo,
                 "repo_path": self.state.repo_path,
-                "docs_url": self.state.docs_url,
                 "test_command": self.state.test_command,
                 "branch": self.state.branch,
             },
@@ -1104,7 +1043,6 @@ class CodePipelineFlow(Flow[PipelineState]):
         os.environ["SERPER_ENABLED"] = str(
             getattr(self.state, "serper_enabled", False)
         ).lower()
-        os.environ["SERPER_N_RESULTS"] = str(getattr(self.state, "serper_n_results", 5))
         self.state.repo_path = repo_path
         _log_crew_context(
             "ExplorerCrew",
@@ -1168,7 +1106,6 @@ class CodePipelineFlow(Flow[PipelineState]):
                 "prior_issues": self.state.prior_issues,
                 "clarifications": self.state.clarifications,
                 "github_repo": self.state.github_repo,
-                "docs_url": self.state.docs_url,
                 "repo_path": self.state.repo_path,
                 "test_command": self.state.test_command,
             },
@@ -1369,13 +1306,11 @@ class CodePipelineFlow(Flow[PipelineState]):
             "implementation": self.state.implementation,
             "repo_path": self.state.repo_path,
             "issue_analysis": self.state.issue_analysis,
-            "docs_url": self.state.docs_url,
             "repo_context": getattr(self.state, "repo_context", "")
             or build_repo_context(
                 self.state.repo_path,
-                "",
-                "",
-                self.state.docs_url,
+                self.state.github_repo or "",
+                self.state.issue_url or "",
                 self.state.test_command,
             ),
         }
@@ -1607,37 +1542,27 @@ class CodePipelineFlow(Flow[PipelineState]):
 
 
 def kickoff(
-    repo_path: str | None = None,
-    task: str | None = None,
+    issue_url: str | None = None,
     branch: str | None = None,
     from_scratch: bool | None = None,
     max_retries: int | None = None,
     dry_run: bool | None = None,
     test_command: str | None = None,
-    issue_id: str | None = None,
-    github_repo: str | None = None,
-    issue_url: str | None = None,
-    docs_url: str | None = None,
     inputs: dict | None = None,
 ):
-    """Run the code pipeline flow. Uses argparse when invoked from CLI."""
+    """Run the code pipeline flow. issue_url is required (GitHub issue or PR URL)."""
     _configure_logging()
     overrides = {
-        "repo_path": repo_path,
-        "task": task,
+        "issue_url": issue_url,
         "branch": branch,
         "from_scratch": from_scratch,
         "max_retries": max_retries,
         "dry_run": dry_run,
         "test_command": test_command,
-        "issue_id": issue_id,
-        "github_repo": github_repo,
-        "issue_url": issue_url,
-        "docs_url": docs_url,
     }
     args = _parse_args().replace(**overrides)
     flow_inputs = (inputs or {}) | args.to_flow_inputs()
-    # Auto-detect repo_path, github_repo, issue_url when running inside the repo
+    # Enrich repo_path when it's "." (resolve to git root)
     enriched = enrich_repo_context(
         flow_inputs.get("repo_path", ""),
         flow_inputs.get("github_repo", ""),
@@ -1655,16 +1580,8 @@ def kickoff(
         flow_inputs.get("repo_path", ""),
         flow_inputs.get("github_repo", ""),
         flow_inputs.get("issue_url", ""),
-        flow_inputs.get("docs_url", ""),
         flow_inputs.get("test_command", ""),
     )
-    if not flow_inputs.get("task"):
-        # In container mode, if no task is provided, exit gracefully
-        # This prevents the container from crashing when kickoff is called without args
-        logger.info("No task provided - exiting gracefully (container mode)")
-        return (
-            "No task provided. Use --task or configure webhook for GitHub integration."
-        )
     logger.info(
         "Pipeline kickoff: task=%s, repo_path=%s",
         flow_inputs.get("task", "")[:80],
@@ -1739,17 +1656,12 @@ def _main():
         os.environ["CODE_PIPELINE_LOG_LEVEL"] = "DEBUG"
     _configure_logging()
     kickoff(
-        repo_path=args.repo_path,
-        task=args.task,
+        issue_url=args.issue_url,
         branch=args.branch,
         from_scratch=args.from_scratch,
         max_retries=args.max_retries,
         dry_run=args.dry_run,
         test_command=getattr(args, "test_command", ""),
-        issue_id=getattr(args, "issue_id", ""),
-        github_repo=getattr(args, "github_repo", ""),
-        issue_url=getattr(args, "issue_url", ""),
-        docs_url=getattr(args, "docs_url", ""),
     )
 
 
