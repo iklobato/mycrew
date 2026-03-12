@@ -17,10 +17,10 @@ async def trigger_pipeline(
 
     if payload is None:
         payload = {
-            "issue_url": "https://github.com/example/example-repo/issues/999",
+            "issue_url": "https://github.com/precisetargetlabs/monarch/issues/836",
             "branch": "main",
             "dry_run": True,
-            "test_command": "python -m pytest tests/ -xvs",
+            "test_command": "pytest",
         }
 
     print("Triggering pipeline...")
