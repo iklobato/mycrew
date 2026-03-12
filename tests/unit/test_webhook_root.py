@@ -1,16 +1,8 @@
-"""Unit tests for webhook root and health endpoints."""
+"""Unit tests for webhook health endpoint."""
 
 from fastapi.testclient import TestClient
 
 from code_pipeline.webhook import app
-
-
-def test_root_returns_ok():
-    """GET / returns status ok."""
-    client = TestClient(app)
-    response = client.get("/")
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
 
 
 def test_health_returns_healthy():

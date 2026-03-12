@@ -6,11 +6,8 @@ from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
-from pydantic import ValidationError
 
 from code_pipeline.webhook import (
-    GitHubWebhookEvent,
-    TriggerRequest,
     _extract_github_params,
     _get_nested,
     _run_kickoff_background,
@@ -70,26 +67,22 @@ def test_payload_extraction_issues():
                 "body": "The login page crashes.",
                 "labels": [{"name": "bug"}],
             },
-            "repository": {
-                "full_name": "owner/repo",
-                "name": "repo",
-                "owner": {"login": "owner"},
-            },
+            "repository": {"full_name": "owner/repo"},
             "assignee": {"login": "developer1"},
             "sender": {"login": "project-manager"},
         }
         params = _extract_github_params(sample_payload, "issues", "assigned")
         assert params is not None
-        assert params.issue_url == "https://github.com/owner/repo/issues/123"
-        assert params.dry_run is False
-        assert params.branch == "main"
+        assert params["issue_url"] == "https://github.com/owner/repo/issues/123"
+        assert params["dry_run"] is False
+        assert params["branch"] == "main"
 
 
 @pytest.mark.parametrize(
     ("name", "payload"),
     [
         ("missing_issue", {"repository": {"full_name": "owner/repo"}}),
-        ("missing_repository", {"issue": {"title": "Test", "number": 1}}),
+        ("missing_html_url", {"issue": {"title": "Test", "number": 1}}),
         (
             "empty_html_url",
             {
@@ -97,16 +90,18 @@ def test_payload_extraction_issues():
                 "repository": {"full_name": "owner/repo"},
             },
         ),
-        (
-            "missing_repo_full_name",
-            {"issue": {"title": "Test", "number": 1}, "repository": {}},
-        ),
     ],
 )
 def test_invalid_payloads_raise(name, payload):
     """Invalid payloads raise HTTPException."""
     with pytest.raises(HTTPException):
         _extract_github_params(payload, "issues", "assigned")
+
+
+def test_extract_github_params_unsupported_event_returns_none():
+    """Unsupported event/action returns None."""
+    assert _extract_github_params({}, "push", "opened") is None
+    assert _extract_github_params({"issue": {"html_url": "x"}}, "issues", "opened") is None
 
 
 def test_pr_comment_extraction():
@@ -118,69 +113,24 @@ def test_pr_comment_extraction():
             "action": "created",
             "comment": {
                 "id": 123456789,
-                "html_url": "https://github.com/owner/repo/pull/42#issuecomment-123456789",
                 "body": "This function needs better error handling.",
                 "user": {"login": "code-reviewer"},
             },
             "pull_request": {
                 "number": 42,
                 "title": "Add user authentication middleware",
-                "body": "JWT middleware.",
                 "html_url": "https://github.com/owner/repo/pull/42",
             },
-            "repository": {
-                "full_name": "owner/repo",
-                "name": "repo",
-                "owner": {"login": "owner"},
-            },
+            "repository": {"full_name": "owner/repo"},
             "sender": {"login": "code-reviewer"},
         }
         params = _extract_github_params(
             sample_payload, "pull_request_review_comment", "created"
         )
         assert params is not None
-        assert params.issue_url == "https://github.com/owner/repo/pull/42"
-        assert params.dry_run is False
-        assert params.branch == "main"
-
-
-def test_trigger_request_valid_defaults():
-    """TriggerRequest with issue_url and defaults."""
-    req = TriggerRequest(issue_url="https://github.com/owner/repo/issues/123")
-    assert req.issue_url == "https://github.com/owner/repo/issues/123"
-    assert req.branch == "main"
-    assert req.dry_run is False
-
-
-def test_trigger_request_valid_all_fields():
-    """TriggerRequest with all fields."""
-    req = TriggerRequest(
-        issue_url="https://github.com/owner/repo/pull/456",
-        branch="develop",
-        dry_run=True,
-        test_command="pytest",
-    )
-    assert req.issue_url == "https://github.com/owner/repo/pull/456"
-    assert req.branch == "develop"
-    assert req.dry_run is True
-    assert req.test_command == "pytest"
-
-
-def test_github_webhook_event_from_event_action_valid():
-    """from_event_action returns enum for known event/action."""
-    assert GitHubWebhookEvent.from_event_action("issues", "assigned") == (
-        GitHubWebhookEvent.ISSUES_ASSIGNED
-    )
-    assert (
-        GitHubWebhookEvent.from_event_action("pull_request_review_comment", "created")
-        == GitHubWebhookEvent.PR_REVIEW_COMMENT_CREATED
-    )
-
-
-def test_github_webhook_event_from_event_action_unknown_returns_none():
-    """from_event_action returns None for unknown event or action."""
-    assert GitHubWebhookEvent.from_event_action("push", "opened") is None
-    assert GitHubWebhookEvent.from_event_action("issues", "opened") is None
+        assert params["issue_url"] == "https://github.com/owner/repo/pull/42"
+        assert params["dry_run"] is False
+        assert params["branch"] == "main"
 
 
 def test_get_nested_missing_key_returns_none():
@@ -204,8 +154,6 @@ def test_get_nested_not_dict_returns_none():
 
 def test_run_kickoff_background_calls_kickoff():
     """_run_kickoff_background calls kickoff with params."""
-    from unittest.mock import patch
-
     with patch("code_pipeline.webhook.kickoff") as mock_kickoff:
         _run_kickoff_background(
             issue_url="https://github.com/o/r/issues/1",
@@ -221,16 +169,8 @@ def test_run_kickoff_background_calls_kickoff():
 
 def test_run_kickoff_background_logs_on_exception():
     """_run_kickoff_background logs and swallows exception."""
-    from unittest.mock import patch
-
     with patch("code_pipeline.webhook.kickoff", side_effect=RuntimeError("oops")):
         with patch("code_pipeline.webhook.logger") as mock_logger:
             _run_kickoff_background(issue_url="https://x")
             mock_logger.error.assert_called_once()
             assert "oops" in str(mock_logger.error.call_args)
-
-
-def test_trigger_request_missing_issue_url_raises():
-    """TriggerRequest requires issue_url."""
-    with pytest.raises(ValidationError):
-        TriggerRequest()

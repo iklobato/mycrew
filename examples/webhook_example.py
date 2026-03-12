@@ -30,18 +30,18 @@ async def trigger_pipeline(
         async with httpx.AsyncClient(timeout=30.0) as client:
             # Trigger the pipeline
             response = await client.post(
-                f"{base_url}/webhook/trigger",
+                f"{base_url}/webhook",
                 json=payload,
                 headers={"Content-Type": "application/json"},
             )
 
-            if response.status_code == 200:
+            if response.status_code == 202:
                 data = response.json()
-                if data.get("status") == "success":
+                if data.get("status") == "accepted":
                     print(f"\n✅ Pipeline triggered successfully!")
-                    print(f"Result: {str(data.get('result', ''))[:300]}...")
+                    print(f"Issue: {data.get('issue_url', '')}")
                 else:
-                    print(f"\n❌ Pipeline failed: {data}")
+                    print(f"\n❌ Unexpected response: {data}")
             else:
                 print(f"\n❌ Failed to trigger pipeline: {response.status_code}")
                 print(f"Response: {response.text}")
@@ -75,23 +75,9 @@ async def check_health(base_url: str = "http://localhost:8000") -> bool:
 
 async def get_api_info(base_url: str = "http://localhost:8000") -> None:
     """Get API information."""
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(base_url)
-            if response.status_code == 200:
-                data = response.json()
-                print("API Information:")
-                print(f"Name: {data['name']}")
-                print(f"Version: {data['version']}")
-                print("\nAvailable Endpoints:")
-                for endpoint in data["endpoints"]:
-                    print(
-                        f"  {endpoint['method']} {endpoint['path']} - {endpoint['description']}"
-                    )
-            else:
-                print(f"Failed to get API info: {response.status_code}")
-    except Exception as e:
-        print(f"Error getting API info: {e}")
+    print("API Endpoints:")
+    print("  POST /webhook  - Trigger pipeline (manual or GitHub webhook)")
+    print("  GET  /health  - Health check")
 
 
 async def main():

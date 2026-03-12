@@ -16,7 +16,7 @@ def client():
 
 @patch("code_pipeline.webhook.kickoff")
 def test_webhook_trigger_success(mock_kickoff, client):
-    """POST /webhook/trigger returns 202 and queues pipeline in background."""
+    """POST /webhook (manual, no X-GitHub-Event) returns 202 and queues pipeline."""
     mock_kickoff.return_value = "Pipeline completed"
     payload = {
         "issue_url": "https://github.com/test/example/issues/123",
@@ -24,7 +24,7 @@ def test_webhook_trigger_success(mock_kickoff, client):
         "dry_run": True,
         "test_command": "python -c 'print(\"Test passed\")'",
     }
-    response = client.post("/webhook/trigger", json=payload)
+    response = client.post("/webhook", json=payload)
     assert response.status_code == 202
     data = response.json()
     assert data["status"] == "accepted"
@@ -40,28 +40,28 @@ def test_webhook_trigger_success(mock_kickoff, client):
 
 @patch("code_pipeline.webhook.kickoff")
 def test_webhook_trigger_minimal_payload(mock_kickoff, client):
-    """POST /webhook/trigger with minimal payload (issue_url only) returns 202."""
+    """POST /webhook with minimal payload (issue_url only) returns 202."""
     mock_kickoff.return_value = "Done"
     response = client.post(
-        "/webhook/trigger",
+        "/webhook",
         json={"issue_url": "https://github.com/owner/repo/issues/42"},
     )
     assert response.status_code == 202
     assert response.json()["status"] == "accepted"
 
 
-def test_webhook_trigger_missing_issue_url_returns_422(client):
-    """POST /webhook/trigger without issue_url returns validation error."""
-    response = client.post("/webhook/trigger", json={})
-    assert response.status_code == 422
+def test_webhook_manual_missing_issue_url_returns_400(client):
+    """POST /webhook without issue_url (manual flow) returns 400."""
+    response = client.post("/webhook", json={})
+    assert response.status_code == 400
 
 
 @patch("code_pipeline.webhook.kickoff")
 def test_webhook_trigger_kickoff_failure_still_returns_202(mock_kickoff, client):
-    """POST /webhook/trigger returns 202 even when kickoff fails in background."""
+    """POST /webhook returns 202 even when kickoff fails in background."""
     mock_kickoff.side_effect = RuntimeError("Pipeline failed")
     response = client.post(
-        "/webhook/trigger",
+        "/webhook",
         json={"issue_url": "https://github.com/owner/repo/issues/1"},
     )
     assert response.status_code == 202
@@ -98,12 +98,6 @@ def test_webhook_github_issues_assigned(mock_kickoff, mock_settings, client):
     assert data["message"] == "Pipeline queued"
 
 
-def test_webhook_unknown_provider_returns_400(client):
-    """POST /webhook without provider header returns 400."""
-    response = client.post("/webhook", json={})
-    assert response.status_code == 400
-
-
 @pytest.mark.integration
 def test_webhook_trigger_live():
     """Live integration test requiring running server. Skip by default."""
@@ -117,7 +111,7 @@ def test_webhook_trigger_live():
     }
     try:
         response = requests.post(
-            "http://localhost:8000/webhook/trigger",
+            "http://localhost:8000/webhook",
             json=payload,
             timeout=10,
         )

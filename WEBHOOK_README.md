@@ -4,7 +4,7 @@
 
 ## Features
 
-- **Two endpoints**: Manual trigger + single webhook (provider detected from headers)
+- **Single endpoint**: POST `/webhook` for both manual trigger and GitHub webhook (provider detected from headers)
 - **GitHub integration**: Processes `issues`/`assigned` and `pull_request_review_comment`/`created`
 - **Signature verification**: HMAC SHA-256 validation for security
 - **Background execution**: Returns 202 Accepted immediately; pipeline runs in background (avoids webhook timeouts)
@@ -31,13 +31,16 @@ PORT=8080 uv run webhook
 
 ## Endpoints
 
-### 1. Manual Trigger
-**POST** `/webhook/trigger`
+### POST `/webhook`
 
-Trigger pipeline manually. Returns **202 Accepted** immediately; pipeline runs in background.
+Single endpoint for both manual triggers and GitHub webhooks.
+
+**Routing:** If `X-GitHub-Event` header is present → GitHub webhook flow. Otherwise → manual trigger (expects `issue_url` in JSON body).
+
+#### Manual trigger
 
 ```bash
-curl -X POST http://localhost:8000/webhook/trigger \
+curl -X POST http://localhost:8000/webhook \
   -H "Content-Type: application/json" \
   -d '{
     "issue_url": "https://github.com/owner/repo/issues/123",
@@ -47,15 +50,12 @@ curl -X POST http://localhost:8000/webhook/trigger \
   }'
 ```
 
-**Required field**: `issue_url` (GitHub issue or PR URL)  
-**Optional fields**: `branch`, `dry_run`, `test_command`
+**Required:** `issue_url` (GitHub issue or PR URL)  
+**Optional:** `branch`, `dry_run`, `test_command`
 
-### 2. Webhook (GitHub)
-**POST** `/webhook`
+#### GitHub webhook
 
-Single webhook endpoint. Provider detected from headers (`X-GitHub-Event` for GitHub). Returns **202 Accepted** immediately; pipeline runs in background.
-
-**GitHub Webhook Configuration:**
+Provider detected from `X-GitHub-Event` header. **GitHub Webhook Configuration:**
 - **Payload URL**: `https://your-server/webhook`
 - **Content type**: `application/json`
 - **Secret**: Set `GITHUB_WEBHOOK_SECRET` environment variable
@@ -86,7 +86,7 @@ Single webhook endpoint. Provider detected from headers (`X-GitHub-Event` for Gi
 - ❌ Other GitHub events (`push`, etc.)
 
 ### Payload Mapping
-GitHub payload → Pipeline parameters (path from `GitHubWebhookEvent` enum config):
+GitHub payload → Pipeline parameters (`_GITHUB_PATHS` in `webhook.py`):
 - `issue.html_url` or `pull_request.html_url` → `issue_url`
 - `branch`, `dry_run` from settings
 
@@ -110,8 +110,8 @@ GitHub payload → Pipeline parameters (path from `GitHubWebhookEvent` enum conf
 
 ### Manual Testing
 ```bash
-# Test manual endpoint
-curl -X POST http://localhost:8000/webhook/trigger \
+# Test manual trigger (no X-GitHub-Event header)
+curl -X POST http://localhost:8000/webhook \
   -H "Content-Type: application/json" \
   -d '{"issue_url": "https://github.com/owner/repo/issues/123"}'
 
@@ -163,7 +163,7 @@ http POST http://localhost:8000/webhook \
 |--------|---------|
 | `200` | Ignored (unsupported event/action) |
 | `202` | Accepted — pipeline queued, runs in background |
-| `400` | Bad request (missing/invalid fields, unknown provider) |
+| `400` | Bad request (missing issue_url, invalid GitHub payload) |
 | `403` | Invalid signature |
 | `500` | Internal server error (validation, etc.) |
 
@@ -183,9 +183,9 @@ http POST http://localhost:8000/webhook \
 
 ## Comparison with Previous Version
 
-| Feature | Previous (508 lines) | Current (258 lines) |
-|---------|---------------------|---------------------|
-| Endpoints | 5+ | 3 |
+| Feature | Previous (508 lines) | Current |
+|---------|---------------------|---------|
+| Endpoints | 5+ | 2 (POST /webhook, GET /health) |
 | Dependencies | FastAPI + uvicorn + httpx | FastAPI + uvicorn |
 | Async/await | Yes | No |
 | Status tracking | Yes | No |
@@ -195,17 +195,10 @@ http POST http://localhost:8000/webhook \
 
 ## Extending
 
-To add support for more GitHub events, add a new member to `GitHubWebhookEvent` in `webhook.py`:
+To add support for more GitHub events, add an entry to `_GITHUB_PATHS` in `webhook.py`:
 
 ```python
-class GitHubWebhookEvent(Enum):
-    ...
-    ISSUES_OPENED = _EventConfig(
-        path=("issue", "html_url"),
-        validations=[],
-        event="issues",
-        action="opened",
-    )
+_GITHUB_PATHS[("issues", "opened")] = ("issue", "html_url")
 ```
 
 To add another provider (e.g. GitLab), add an `elif headers.get("x-gitlab-event")` block and a `_handle_gitlab` function.

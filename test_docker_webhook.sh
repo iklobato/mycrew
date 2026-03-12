@@ -13,16 +13,13 @@ docker run -p 8080:8080 \
 echo "Waiting for container to start..."
 sleep 5
 
-echo "Testing root endpoint..."
-curl http://localhost:8080/
-
 echo "Testing health endpoint..."
 curl http://localhost:8080/health
 
-echo "Testing manual trigger endpoint..."
-curl -X POST http://localhost:8080/webhook/trigger \
+echo "Testing webhook endpoint..."
+curl -X POST http://localhost:8080/webhook \
   -H "Content-Type: application/json" \
-  -d '{"task": "Test Docker build"}' \
+  -d '{"issue_url": "https://github.com/owner/repo/issues/1"}' \
   --max-time 10
 
 echo "Stopping container..."
