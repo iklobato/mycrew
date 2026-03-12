@@ -66,6 +66,11 @@ from code_pipeline.utils import (
     log_exceptions,
     resolve_issue_url,
 )
+from code_pipeline.memory_monitor import (
+    log_memory_usage,
+    force_garbage_collection,
+    MemoryGuard,
+)
 
 _event_context_config.set(
     EventContextConfig(
@@ -166,8 +171,8 @@ _pipeline_aborted = False
 
 # Retry config for rate limits (429) and empty LLM responses
 RATE_LIMIT_MAX_RETRIES = 5
-RATE_LIMIT_BASE_DELAY = 8
-RATE_LIMIT_BACKOFF_FACTOR = 2
+# Urllib3-style: delay = BACKOFF_FACTOR * (2 ** attempt) -> 0.5, 1, 2, 4, 8 seconds
+RATE_LIMIT_BACKOFF_FACTOR = 0.5
 EMPTY_RESPONSE_MAX_RETRIES = 5
 EMPTY_RESPONSE_DELAY = 8
 
@@ -355,7 +360,7 @@ def _run_explore_in_process(
             effective_repo_context = repo_context
         else:
             effective_repo_context = build_repo_context(
-                repo_path, github_repo, "", "", test_command
+                repo_path, github_repo, "", test_command
             )
         inputs = {
             "repo_path": repo_path,
@@ -517,7 +522,7 @@ def _kickoff_with_retry(crew, inputs: dict, crew_name: str = "Crew"):
             last_error = e
             if _is_retryable_error(e) and attempt < max_retries - 1:
                 if "429" in str(e) or "RateLimitError" in type(e).__name__:
-                    delay = RATE_LIMIT_BASE_DELAY * (RATE_LIMIT_BACKOFF_FACTOR**attempt)
+                    delay = RATE_LIMIT_BACKOFF_FACTOR * (2**attempt)
                     logger.warning(
                         "Rate limit hit (attempt %d/%d), sleeping %.0fs before retry",
                         attempt + 1,
@@ -806,6 +811,11 @@ class PipelineState(BaseModel):
 class CodePipelineFlow(Flow[PipelineState]):
     """Event-driven coding pipeline: explore 1 plan 1 implement 1 review 1 commit."""
 
+    def __init__(self, *args, **kwargs):
+        """Initialize flow with memory monitoring."""
+        super().__init__(*args, **kwargs)
+        log_memory_usage("Flow initialized")
+
     def _run_quality_check(self, test_command: str) -> tuple[bool, str]:
         """Run test command in repo. Return (passed, output)."""
         if not test_command:
@@ -848,7 +858,7 @@ class CodePipelineFlow(Flow[PipelineState]):
             logger.error("Quality gate failed: %s", e, exc_info=True)
             return False, str(e)
 
-    def _truncate_exploration(self, exploration: str, max_chars: int = 12000) -> str:
+    def _truncate_exploration(self, exploration: str, max_chars: int = 8000) -> str:
         """Truncate exploration document to prevent token overflow in LLM context.
 
         Keeps essential sections but limits total size. Prioritizes:
@@ -862,7 +872,7 @@ class CodePipelineFlow(Flow[PipelineState]):
             return exploration
 
         logger.warning(
-            "Truncating exploration from %d to %d chars to prevent token overflow",
+            "Truncating exploration from %d to %d chars to prevent memory overflow",
             len(exploration),
             max_chars,
         )
@@ -1085,33 +1095,39 @@ class CodePipelineFlow(Flow[PipelineState]):
         if self.state.exploration and not self.state.from_scratch:
             logger.info("PIPELINE step=explore | resumed (cached)")
             return self.state.exploration
-        logger.info("PIPELINE step=explore crew=ExplorerCrew | start")
-        rp = self.state.repo_path
-        if rp is None or rp == "":
-            rp = os.getcwd()
-        repo_path = os.path.abspath(rp)
-        self.state.repo_path = repo_path
-        gh = self.state.github_repo
-        if gh is None:
-            gh = ""
-        logger.info(
-            "PIPELINE step=explore | repo_path=%s github_repo=%s",
-            repo_path,
-            gh,
-        )
-        rc = getattr(self.state, "repo_context", "")
-        if rc is None:
-            rc = ""
-        raw = _run_explore_in_process(
-            repo_path,
-            self.state.issue_analysis,
-            task=self.state.task,
-            test_command=self.state.test_command,
-            github_repo=gh,
-            repo_context=rc,
-        )
-        self.state.exploration = raw
-        return raw
+
+        with MemoryGuard("explore", warning_threshold_mb=800):
+            logger.info("PIPELINE step=explore crew=ExplorerCrew | start")
+            rp = self.state.repo_path
+            if rp is None or rp == "":
+                rp = os.getcwd()
+            repo_path = os.path.abspath(rp)
+            self.state.repo_path = repo_path
+            gh = self.state.github_repo
+            if gh is None:
+                gh = ""
+            logger.info(
+                "PIPELINE step=explore | repo_path=%s github_repo=%s",
+                repo_path,
+                gh,
+            )
+            rc = getattr(self.state, "repo_context", "")
+            if rc is None:
+                rc = ""
+            raw = _run_explore_in_process(
+                repo_path,
+                self.state.issue_analysis,
+                task=self.state.task,
+                test_command=self.state.test_command,
+                github_repo=gh,
+                repo_context=rc,
+            )
+            self.state.exploration = raw
+
+            # Force garbage collection after exploration (can be memory intensive)
+            force_garbage_collection()
+
+            return raw
 
     @listen(explore)
     def clarify(self):
@@ -1175,27 +1191,37 @@ class CodePipelineFlow(Flow[PipelineState]):
 
     def _run_implement(self):
         """Shared implementation logic for initial run and retries."""
-        logger.info(
-            "PIPELINE step=implement crew=ImplementerCrew | start (retry_count=%d)",
-            self.state.retry_count,
-        )
-        rp = self.state.repo_path
-        if rp is None or rp == "":
-            rp = os.getcwd()
-        return self._run_crew(
-            ImplementerCrew,
-            {
-                "task": self.state.task,
-                "plan": self.state.plan,
-                "prior_issues": self.state.prior_issues,
-                "clarifications": self.state.clarifications,
-                "repo_path": self.state.repo_path,
-                "issue_analysis": self.state.issue_analysis,
-                "exploration": self.state.exploration,
-                "test_command": self.state.test_command,
-            },
-            "implementation",
-        )
+        with MemoryGuard("implement", warning_threshold_mb=1000):
+            logger.info(
+                "PIPELINE step=implement crew=ImplementerCrew | start (retry_count=%d)",
+                self.state.retry_count,
+            )
+            rp = self.state.repo_path
+            if rp is None or rp == "":
+                rp = os.getcwd()
+
+            # Force GC before implementation (can be memory intensive)
+            force_garbage_collection()
+
+            result = self._run_crew(
+                ImplementerCrew,
+                {
+                    "task": self.state.task,
+                    "plan": self.state.plan,
+                    "prior_issues": self.state.prior_issues,
+                    "clarifications": self.state.clarifications,
+                    "repo_path": self.state.repo_path,
+                    "issue_analysis": self.state.issue_analysis,
+                    "exploration": self.state.exploration,
+                    "test_command": self.state.test_command,
+                },
+                "implementation",
+            )
+
+            # Force GC after implementation
+            force_garbage_collection()
+
+            return result
 
     @listen(implement)
     def validate_tests(self):
@@ -1332,32 +1358,38 @@ class CodePipelineFlow(Flow[PipelineState]):
         if self.state.review_verdict and not self.state.from_scratch:
             logger.info("PIPELINE step=review | resumed (cached)")
             return self.state.review_verdict
-        logger.info("PIPELINE step=review crew=ReviewerCrew | start")
-        rp = self.state.repo_path
-        if rp is None or rp == "":
-            rp = os.getcwd()
-        rc = getattr(self.state, "repo_context", "")
-        if rc is None or rc == "":
-            gh = self.state.github_repo
-            if gh is None:
-                gh = ""
-            iu = self.state.issue_url
-            if iu is None:
-                iu = ""
-            rc = build_repo_context(
-                self.state.repo_path,
-                gh,
-                iu,
-                self.state.test_command,
-            )
-        inputs = {
-            "task": self.state.task,
-            "plan": self.state.plan,
-            "implementation": self.state.implementation,
-            "repo_path": self.state.repo_path,
-            "issue_analysis": self.state.issue_analysis,
-            "repo_context": rc,
-        }
+
+        with MemoryGuard("review", warning_threshold_mb=800):
+            logger.info("PIPELINE step=review crew=ReviewerCrew | start")
+            rp = self.state.repo_path
+            if rp is None or rp == "":
+                rp = os.getcwd()
+            rc = getattr(self.state, "repo_context", "")
+            if rc is None or rc == "":
+                gh = self.state.github_repo
+                if gh is None:
+                    gh = ""
+                iu = self.state.issue_url
+                if iu is None:
+                    iu = ""
+                rc = build_repo_context(
+                    self.state.repo_path,
+                    gh,
+                    iu,
+                    self.state.test_command,
+                )
+
+            # Force GC before review
+            force_garbage_collection()
+
+            inputs = {
+                "task": self.state.task,
+                "plan": self.state.plan,
+                "implementation": self.state.implementation,
+                "repo_path": self.state.repo_path,
+                "issue_analysis": self.state.issue_analysis,
+                "repo_context": rc,
+            }
         result = _kickoff_with_retry(
             ReviewerCrew().crew(),
             inputs,
@@ -1718,6 +1750,9 @@ def _execute_flow(inputs: dict):
     global _pipeline_aborted
     _pipeline_aborted = False
 
+    # Log initial memory usage
+    log_memory_usage("Pipeline start")
+
     _ = os.path.abspath(inputs.get("repo_path", os.getcwd()))  # Keep for consistency
     task = inputs.get("task", "")
     from_scratch = inputs.get("from_scratch", False)
@@ -1739,6 +1774,12 @@ def _execute_flow(inputs: dict):
 
     if store:
         store.save(task, flow.flow_id)
+
+    # Log final memory usage
+    log_memory_usage("Pipeline complete")
+
+    # Force final garbage collection
+    force_garbage_collection()
 
     if _pipeline_aborted:
         sys.exit(1)

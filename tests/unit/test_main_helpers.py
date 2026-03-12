@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 from code_pipeline.crews.reviewer_crew.reviewer_crew import ReviewVerdict
 from code_pipeline.main import (
+    RATE_LIMIT_BACKOFF_FACTOR,
     _configure_logging,
     _fallback_exploration,
     _format_review_verdict,
@@ -36,6 +37,14 @@ def test_is_retryable_error_not_retryable():
     """Generic errors are not retryable."""
     err = Exception("Something else failed")
     assert _is_retryable_error(err) is False
+
+
+def test_rate_limit_backoff_delay_formula():
+    """Urllib3-style delay = BACKOFF_FACTOR * (2 ** attempt) yields 0.5, 1, 2, 4, 8 seconds."""
+    expected = (0.5, 1.0, 2.0, 4.0, 8.0)
+    for attempt, exp in enumerate(expected):
+        delay = RATE_LIMIT_BACKOFF_FACTOR * (2**attempt)
+        assert delay == exp
 
 
 def test_normalize_raw_verdict_approved():
