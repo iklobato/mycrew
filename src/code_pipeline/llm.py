@@ -514,19 +514,19 @@ def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
             # Configure retry strategy based on model type
             retry_config = _get_retry_config_for_model(model_str)
 
-            # Configure LLM for OpenRouter
+            # Configure LLM for OpenRouter with memory optimizations
             llm_config = {
                 "model": model_str,
                 "num_retries": retry_config["num_retries"],
                 "time_between_retries": retry_config["time_between_retries"],
-                "timeout": 120,
-                "max_tokens": 4096,  # Reduced from 8192 to leave more room for input context
+                "timeout": 90,  # Reduced timeout
+                "max_tokens": 2048,  # Further reduced to save memory and context
                 "stream": False,  # Avoid empty responses from streaming with some OpenRouter models
                 # LiteLLM: ensure last message is user (fixes Anthropic assistant prefill error)
                 "additional_params": {
                     "user_continue_message": {
                         "role": "user",
-                        "content": "Please continue.",
+                        "content": "Continue.",
                     },
                     "ensure_alternating_roles": True,
                 },

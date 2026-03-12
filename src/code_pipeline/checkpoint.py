@@ -49,17 +49,42 @@ class CheckpointStore:
         return None
 
     def save(self, task: str, flow_id: str) -> None:
-        """Save flow_id for task."""
+        """Save flow_id for task with memory management."""
         path = self._path()
         path.parent.mkdir(parents=True, exist_ok=True)
         data: dict = {}
         if path.exists():
             try:
                 data = json.loads(path.read_text())
+
+                # Clean up old entries to prevent file from growing too large
+                max_entries = 20  # Keep only last 20 tasks
+                if len(data) > max_entries:
+                    # Sort by timestamp and keep only most recent
+                    entries_with_times = []
+                    for key, entry in data.items():
+                        if isinstance(entry, dict) and "updated_at" in entry:
+                            entries_with_times.append((key, entry["updated_at"]))
+
+                    if entries_with_times:
+                        # Sort by timestamp (newest first)
+                        entries_with_times.sort(key=lambda x: x[1], reverse=True)
+                        # Keep only most recent entries
+                        keys_to_keep = {
+                            key for key, _ in entries_with_times[:max_entries]
+                        }
+                        data = {k: v for k, v in data.items() if k in keys_to_keep}
+                        logger.info(
+                            "Checkpoint cleanup: kept %d most recent entries", len(data)
+                        )
+
             except (json.JSONDecodeError, OSError):
                 pass
+
         data[self._key(task)] = {
             "flow_id": flow_id,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
-        path.write_text(json.dumps(data, indent=2))
+
+        # Write with minimal indentation to save space
+        path.write_text(json.dumps(data, separators=(",", ":")))

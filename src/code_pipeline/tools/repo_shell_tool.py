@@ -127,19 +127,21 @@ class RepoShellTool(BaseTool):
                 bufsize=1,  # Line buffered
             )
 
-            # Maximum output size (64KB)
-            MAX_OUTPUT_SIZE = 65536
+            # Reduced maximum output size (32KB) to save memory
+            MAX_OUTPUT_SIZE = 32768
             stdout_chunks = []
             stderr_chunks = []
             total_size = 0
             truncated = False
+            line_count = 0
+            MAX_LINES = 500  # Limit total lines to prevent memory bloat
 
             # Read output with timeout
             import select
             import time
 
             start_time = time.time()
-            TIMEOUT = 120
+            TIMEOUT = 90  # Reduced timeout
 
             while process.poll() is None:
                 # Check timeout
@@ -153,14 +155,21 @@ class RepoShellTool(BaseTool):
 
                 # Check for output
                 ready, _, _ = select.select(
-                    [process.stdout, process.stderr], [], [], 1.0
+                    [process.stdout, process.stderr],
+                    [],
+                    [],
+                    0.5,  # Reduced poll interval
                 )
 
                 for stream in ready:
                     if stream is process.stdout:
                         chunk = stream.readline()
                         if chunk:
-                            if total_size + len(chunk) > MAX_OUTPUT_SIZE:
+                            line_count += 1
+                            if (
+                                line_count > MAX_LINES
+                                or total_size + len(chunk) > MAX_OUTPUT_SIZE
+                            ):
                                 truncated = True
                                 break
                             stdout_chunks.append(chunk)
@@ -186,11 +195,17 @@ class RepoShellTool(BaseTool):
             if not truncated:
                 stdout_remain, stderr_remain = process.communicate(timeout=5)
                 if stdout_remain:
-                    if total_size + len(stdout_remain) > MAX_OUTPUT_SIZE:
-                        truncated = True
-                        stdout_remain = stdout_remain[: MAX_OUTPUT_SIZE - total_size]
-                    stdout_chunks.append(stdout_remain)
-                    total_size += len(stdout_remain)
+                    lines = stdout_remain.split("\n")
+                    for line in lines:
+                        if line_count >= MAX_LINES:
+                            truncated = True
+                            break
+                        if total_size + len(line) + 1 > MAX_OUTPUT_SIZE:
+                            truncated = True
+                            break
+                        stdout_chunks.append(line + "\n")
+                        total_size += len(line) + 1
+                        line_count += 1
                 if stderr_remain and not truncated:
                     if total_size + len(stderr_remain) > MAX_OUTPUT_SIZE:
                         truncated = True
@@ -200,43 +215,44 @@ class RepoShellTool(BaseTool):
 
             returncode = process.returncode or 0
 
-            # Combine output
-            stdout = "".join(stdout_chunks)
-            stderr = "".join(stderr_chunks)
-            output = stdout + stderr
+            # Combine output efficiently
+            output = "".join(stdout_chunks + stderr_chunks)
             output_len = len(output)
 
             # Add truncation notice if needed
             if truncated:
-                output = (
-                    output[:MAX_OUTPUT_SIZE] + "\n... (output truncated at 64KB limit)"
-                )
+                truncation_msg = f"\n... (output truncated at {MAX_OUTPUT_SIZE // 1024}KB, {MAX_LINES} lines limit)"
+                if output_len + len(truncation_msg) > MAX_OUTPUT_SIZE:
+                    output = (
+                        output[: MAX_OUTPUT_SIZE - len(truncation_msg)] + truncation_msg
+                    )
+                else:
+                    output = output + truncation_msg
                 output_len = len(output)
 
             # Log completion with output preview
             logger.info(
-                "│ Exit code: %d, Output length: %d chars%s",
+                "│ Exit code: %d, Output: %d chars, %d lines%s",
                 returncode,
                 output_len,
+                line_count,
                 " (truncated)" if truncated else "",
             )
 
-            # Show preview of output (first 3 lines as single line)
+            # Show preview of output (first 2 lines only to save memory)
             if output_len > 0:
                 lines = output.split("\n")
-                if len(lines) > 3:
-                    # Join first 3 lines, replace newlines with spaces for single-line display
+                if len(lines) > 2:
                     preview = " | ".join(
-                        line.strip() for line in lines[:3] if line.strip()
+                        line.strip() for line in lines[:2] if line.strip()
                     )
-                    preview += f" ... ({len(lines) - 3} more lines)"
+                    preview += f" ... ({len(lines) - 2} more lines)"
                 else:
-                    # Join all lines, replace newlines with spaces for single-line display
                     preview = " | ".join(line.strip() for line in lines if line.strip())
 
                 # Limit preview length
-                if len(preview) > 300:
-                    preview = preview[:297] + "..."
+                if len(preview) > 200:
+                    preview = preview[:197] + "..."
 
                 logger.info("│ Output preview: %s", preview)
 

@@ -110,7 +110,7 @@ The pipeline consists of 7 sequential crews with specialized agents:
 │                            Code Pipeline Flow                           │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ 1. Issue Analyst → 2. Explorer → 3. Clarify → 4. Architect →            │
-│ 5. Implementer → 6. Reviewer → 7. Commit                                │
+│ 5. Implementer → 6. Test Validator → 7. Reviewer → 8. Commit            │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -240,16 +240,17 @@ Available task variables: `TASK_DESC`, `R` (repo_path), `B` (branch), `V` (from_
 
 ## 👥 Crews & Agents
 
-The pipeline consists of 7 sequential crews with 28 specialized agents. Each crew processes the task through multiple agents, with output flowing sequentially to the next crew.
+The pipeline consists of **8 sequential crews with 35 specialized agents**. Each crew processes the task through multiple agents, with output flowing sequentially to the next crew.
 
-**Pipeline Flow**: `Issue Analyst → Explorer → Clarify → Architect → Implementer → Reviewer → Commit`
+**Pipeline Flow**: `Issue Analyst → Explorer → Clarify → Architect → Implementer → Test Validator → Reviewer → Commit`
 
 **Crew Overview:**
 - **Issue Analyst** (`analyze_issue`): Parse raw task into structured requirements with clear scope boundaries
 - **Explorer** (`explore`): Comprehensive codebase analysis to understand structure, dependencies, and conventions
 - **Clarify** (`auxiliary`/`analyze_issue`): Resolve ambiguities before planning via targeted human questions
 - **Architect** (`plan`): Create minimal file-level implementation plan (no code)
-- **Implementer** (`implement`): Execute plan by writing actual code and tests
+- **Implementer** (`implement`): Execute plan by writing actual code
+- **Test Validator** (`test_validation`): Write and validate tests, ensure test quality
 - **Reviewer** (`review`/`security`/`auxiliary`): Comprehensive code review with quality gates
 - **Commit** (`commit`/`publish`/`auxiliary`): Create feature branch, commit changes, and publish PR
 
@@ -384,7 +385,28 @@ The pipeline consists of 7 sequential crews with 28 specialized agents. Each cre
 
 **Output**: Implementation summary with `SELF_REVIEW: PASS/ISSUES` status.
 
-### 6. Reviewer Crew (`review`/`security`/`auxiliary` stage)
+### 6. Test Validator Crew (`test_validation` stage)
+**Primary Model**: `openrouter/deepseek/deepseek-v3.2`  
+**Fallbacks**: `openrouter/google/gemini-3-flash-preview`, `openrouter/deepseek/deepseek-r1`  
+**Purpose**: Write and validate tests, ensure test quality and coverage.
+
+**Agents:**
+- **test_implementer**
+  - **Tools**: `RepoShellTool`, `RepoFileWriterTool`, `CodeInterpreterTool`
+  - **Responsibilities**: Write or update tests based on plan and acceptance criteria, follow project test patterns and conventions, use Arrange-Act-Assert pattern, write meaningful assertions that test behavior
+  - **Rules**: Must read existing tests to understand patterns, use project-specific test utilities and fixtures
+- **test_quality_checker**
+  - **Tools**: `RepoShellTool`, `RepoFileWriterTool`, `CodeInterpreterTool`
+  - **Responsibilities**: **CRITICAL**: Ensure tests actually catch implementation errors by injecting bugs, create backup of implementation files, inject deliberate bugs (logic operators, null checks, error handling), run test_command - tests MUST fail, restore original implementation
+  - **Rules**: If tests don't fail when bug is injected, improve tests and repeat validation
+- **test_coverage_checker**
+  - **Tools**: `RepoShellTool`, `RepoFileWriterTool`, `CodeInterpreterTool`
+  - **Responsibilities**: Run coverage tools if available (pytest --cov, jest --coverage), check minimum coverage threshold (80%), report coverage status
+  - **Rules**: Only run if coverage tools detected in project, skip with "Coverage check: SKIPPED (no tools)" if no coverage tools
+
+**Output**: Test validation status: "Test validation: PASS" or "Test validation: FAIL - [reason]", coverage report.
+
+### 7. Reviewer Crew (`review`/`security`/`auxiliary` stage)
 **Primary Model**: `review`: `openrouter/deepseek/deepseek-v3.2`, `security`: `openrouter/deepseek/deepseek-v3.2`  
 **Fallbacks**: `openrouter/google/gemini-3-flash-preview`, `openrouter/deepseek/deepseek-r1`  
 **Purpose**: Comprehensive code review with quality gates.
@@ -413,7 +435,7 @@ The pipeline consists of 7 sequential crews with 28 specialized agents. Each cre
 
 **Output**: Final verdict with first line `APPROVED` or `ISSUES:` followed by merged issue list from all reviewers.
 
-### 7. Commit Crew (`commit`/`publish`/`auxiliary` stage)
+### 8. Commit Crew (`commit`/`publish`/`auxiliary` stage)
 **Primary Model**: `commit`: `openrouter/google/gemini-3-flash-preview`, `publish`: `openrouter/google/gemini-3-flash-preview`  
 **Fallbacks**: `openrouter/deepseek/deepseek-v3.2`, `openrouter/deepseek/deepseek-r1`  
 **Purpose**: Create feature branch, commit changes, and publish PR.
@@ -490,6 +512,11 @@ Each agent receives specific inputs and produces defined outputs that flow throu
 - **lint_fixer**: Changed files, exploration conventions, `repo_path` → Lint fixes applied, auto-fixed issues summary
 - **self_reviewer**: Plan vs actual changes (via `git status`/`git diff`) → `SELF_REVIEW: PASS` or `ISSUES:` with discrepancies
 
+### **Test Validator Crew**
+- **test_implementer**: `plan`, `implementation`, `exploration`, `repo_path`, `test_command` → Written/updated test files following project conventions
+- **test_quality_checker**: Test files, `test_command`, `repo_path` → Bug injection validation results, ensures tests catch implementation errors
+- **test_coverage_checker**: Test files, `repo_path` → Coverage percentage report or "SKIPPED (no tools)"
+
 ### **Reviewer Crew**
 - **reviewer**: `task`, `plan`, `implementation`, `repo_path` → First line: `APPROVED` or `ISSUES:` with detailed review
 - **security_reviewer**: Implementation changes, `repo_path` → `SECURE` or `SECURITY_ISSUES:` with security findings
@@ -515,12 +542,22 @@ Each agent receives specific inputs and produces defined outputs that flow throu
 - **Agent Prompt Enhancement**: Comprehensive refinement of role, goal, and backstory for all agents
 - **Security Improvements**: Expanded dangerous command patterns with comprehensive regex blocks
 - **Tool Optimization**: Added performance settings (max concurrent tools, retry attempts, rate limiting)
+- **Memory Exhaustion Prevention**: Implemented 64KB output limits in RepoShellTool with streaming to prevent container crashes from large outputs
+- **Token Overflow Protection**: Reduced max_tokens from 8192 to 4096 and added exploration truncation to prevent LLM context length errors
+- **Programmatic Mode Enhancement**: Auto-selection of recommended options in human clarification questions when running in programmatic/webhook mode
+- **Callback URL Support**: Added callback URL parameter for pipeline status notifications via HTTP POST
+- **Test Validator Crew**: Added dedicated test validation crew for comprehensive test writing and quality assurance
 
 ### **Current Status:**
 - ✅ **Agent Prompting**: Completed comprehensive refinement across all crews
 - ✅ **Model Optimization**: Updated to use cost-effective non-free models (Gemini 3 Flash, DeepSeek)
 - ✅ **Serper Integration**: Fully implemented web search capabilities across analysis, exploration, architecture, and review stages
 - ✅ **Configuration**: Enhanced config.yaml with improved tool settings and security patterns
+- ✅ **Memory Safety**: Output limiting prevents container crashes from memory-intensive commands
+- ✅ **Context Management**: Token overflow protection ensures stable LLM interactions
+- ✅ **Automation**: Programmatic mode enables fully automated pipeline execution
+- ✅ **Notifications**: Callback URL support for pipeline status updates
+- ✅ **Test Quality**: Dedicated test validation ensures comprehensive test coverage
 
 ## 🔄 Future Roadmap
 
