@@ -83,6 +83,7 @@ def _default_params() -> dict[str, Any]:
         "branch": stg.default_branch,
         "dry_run": stg.default_dry_run,
         "test_command": "",
+        "programmatic": False,
     }
 
 
@@ -196,6 +197,7 @@ async def webhook(request: Request, background_tasks: BackgroundTasks) -> JSONRe
         "branch": (payload.get("branch") or "main"),
         "dry_run": bool(payload.get("dry_run", False)),
         "test_command": (payload.get("test_command") or ""),
+        "programmatic": bool(payload.get("programmatic", False)),
     }
     logger.info("Manual trigger: %s", issue_url[:80])
     background_tasks.add_task(_run_kickoff_background, **params)

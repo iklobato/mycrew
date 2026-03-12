@@ -51,7 +51,7 @@ curl -X POST http://localhost:8000/webhook \
 ```
 
 **Required:** `issue_url` (GitHub issue or PR URL)  
-**Optional:** `branch`, `dry_run`, `test_command`
+**Optional:** `branch`, `dry_run`, `test_command`, `programmatic` (if true: no human interaction; models decide clarify questions and auto-commit)
 
 #### GitHub webhook
 

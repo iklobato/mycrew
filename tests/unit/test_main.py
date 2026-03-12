@@ -43,6 +43,7 @@ def test_pipeline_args_to_flow_inputs_calls_resolve(mock_resolve):
         branch="develop",
         dry_run=True,
         test_command="pytest",
+        programmatic=True,
     )
     result = args.to_flow_inputs()
 
@@ -53,6 +54,7 @@ def test_pipeline_args_to_flow_inputs_calls_resolve(mock_resolve):
     assert result["branch"] == "develop"
     assert result["dry_run"] is True
     assert result["test_command"] == "pytest"
+    assert result["programmatic"] is True
     assert "repo_path" in result
 
 

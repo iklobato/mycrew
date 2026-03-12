@@ -35,6 +35,7 @@ def test_webhook_trigger_success(mock_kickoff, client):
         branch="main",
         dry_run=True,
         test_command=payload["test_command"],
+        programmatic=False,
     )
 
 
@@ -48,6 +49,23 @@ def test_webhook_trigger_minimal_payload(mock_kickoff, client):
     )
     assert response.status_code == 202
     assert response.json()["status"] == "accepted"
+
+
+@patch("code_pipeline.webhook.kickoff")
+def test_webhook_trigger_programmatic_passes_to_kickoff(mock_kickoff, client):
+    """POST /webhook with programmatic: true passes programmatic=True to kickoff."""
+    mock_kickoff.return_value = "Done"
+    response = client.post(
+        "/webhook",
+        json={
+            "issue_url": "https://github.com/owner/repo/issues/42",
+            "programmatic": True,
+        },
+    )
+    assert response.status_code == 202
+    mock_kickoff.assert_called_once()
+    call_kwargs = mock_kickoff.call_args[1]
+    assert call_kwargs["programmatic"] is True
 
 
 def test_webhook_manual_missing_issue_url_returns_400(client):

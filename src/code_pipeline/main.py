@@ -49,6 +49,7 @@ from code_pipeline.crews.reviewer_crew.reviewer_crew import ReviewerCrew, Review
 from code_pipeline.crews.test_validator_crew.test_validator_crew import (
     TestValidatorCrew,
 )
+from code_pipeline.tools.human_tool import is_interactive
 from code_pipeline.checkpoint import CheckpointStore
 from code_pipeline.settings import (
     get_settings,
@@ -552,6 +553,7 @@ class PipelineArgs:
     dry_run: bool = False
     test_command: str = ""
     serper_enabled: bool = False
+    programmatic: bool = False
 
     def to_flow_inputs(self) -> dict:
         """Convert to flow inputs. Resolves issue_url via GitHub API to derive task, repo, etc."""
@@ -571,6 +573,7 @@ class PipelineArgs:
             "github_repo": resolved["github_repo"],
             "issue_url": resolved["issue_url"],
             "serper_enabled": self.serper_enabled,
+            "programmatic": self.programmatic,
         }
 
     def replace(self, **overrides) -> "PipelineArgs":
@@ -602,6 +605,7 @@ def _load_config(path: str) -> dict:
         "dry_run": "dry_run",
         "test_command": "test_command",
         "serper_enabled": "serper_enabled",
+        "programmatic": "programmatic",
     }
 
     # First check if we have the new nested structure
@@ -675,6 +679,11 @@ def _parse_args() -> PipelineArgs:
         action="store_true",
         help="Ignore checkpoint and run from the beginning",
     )
+    parser.add_argument(
+        "--programmatic",
+        action="store_true",
+        help="No human interaction; models decide clarify questions and auto-commit",
+    )
     ns = parser.parse_args()
 
     # Load config file as base (if provided)
@@ -682,7 +691,7 @@ def _parse_args() -> PipelineArgs:
     if ns.config:
         config_data = _load_config(ns.config)
         # Normalize booleans
-        for key in ("from_scratch", "dry_run"):
+        for key in ("from_scratch", "dry_run", "programmatic"):
             if key in config_data:
                 v = config_data[key]
                 if isinstance(v, str):
@@ -695,6 +704,7 @@ def _parse_args() -> PipelineArgs:
         "dry_run": False,
         "test_command": "",
         "serper_enabled": False,
+        "programmatic": False,
     }
     base = {**defaults, **config_data}
     cli_overrides = {
@@ -707,6 +717,8 @@ def _parse_args() -> PipelineArgs:
         cli_overrides["from_scratch"] = True
     if getattr(ns, "dry_run", False):
         cli_overrides["dry_run"] = True
+    if getattr(ns, "programmatic", False):
+        cli_overrides["programmatic"] = True
     for k, v in cli_overrides.items():
         if v is not None:
             base[k] = v
@@ -719,6 +731,7 @@ def _parse_args() -> PipelineArgs:
         dry_run=base["dry_run"],
         test_command=base["test_command"] or "",
         serper_enabled=base.get("serper_enabled", False),
+        programmatic=base.get("programmatic", False),
     )
 
 
@@ -734,6 +747,7 @@ class PipelineState(BaseModel):
     dry_run: bool = False
     max_retries: int = 3
     test_command: str = ""
+    programmatic: bool = False
     issue_id: str = ""
     github_repo: str = ""
     issue_url: str = ""
@@ -809,6 +823,7 @@ class CodePipelineFlow(Flow[PipelineState]):
                 github_repo=inputs.get("github_repo", "") or getattr(self.state, "github_repo", "") or "",
                 issue_url=inputs.get("issue_url", "") or getattr(self.state, "issue_url", "") or "",
                 serper_enabled=getattr(self.state, "serper_enabled", False),
+                programmatic=getattr(self.state, "programmatic", False),
             )
         )
 
@@ -1261,6 +1276,10 @@ class CodePipelineFlow(Flow[PipelineState]):
                     return self._retry_or_abort(
                         "Tests failed after approval. Fix:\n\n", output
                     )
+            # Skip human_gate when programmatic or headless (no TTY)
+            if self.state.programmatic or not is_interactive():
+                logger.info("APPROVED -> programmatic/headless, routing to commit")
+                return "commit"
             logger.info("APPROVED -> routing to human_gate")
             return "human_gate"
         return self._retry_or_abort(
@@ -1465,6 +1484,7 @@ def kickoff(
     max_retries: int | None = None,
     dry_run: bool | None = None,
     test_command: str | None = None,
+    programmatic: bool | None = None,
     inputs: dict | None = None,
 ):
     """Run the code pipeline flow. issue_url is required (GitHub issue or PR URL)."""
@@ -1476,6 +1496,7 @@ def kickoff(
         "max_retries": max_retries,
         "dry_run": dry_run,
         "test_command": test_command,
+        "programmatic": programmatic,
     }
     args = _parse_args().replace(**overrides)
     flow_inputs = (inputs or {}) | args.to_flow_inputs()
@@ -1578,6 +1599,7 @@ def _main():
         max_retries=args.max_retries,
         dry_run=args.dry_run,
         test_command=getattr(args, "test_command", ""),
+        programmatic=args.programmatic,
     )
 
 

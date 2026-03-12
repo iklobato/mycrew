@@ -20,6 +20,9 @@ pipeline:
   # Test command to run (e.g., "pytest", "npm test", "go test ./...")
   test_command: ""
 
+  # Programmatic mode: no human interaction; models decide clarify questions and auto-commit
+  programmatic: false
+
 # API Keys and Authentication
 # ---------------------------
 # Tokens are read from environment variables. Set them before running:

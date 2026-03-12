@@ -47,6 +47,10 @@ def _is_interactive() -> bool:
         return False
 
 
+# Public alias for use by flow (avoids importing _prefixed symbols)
+is_interactive = _is_interactive
+
+
 @tool("ask_human")
 def ask_human(question: str) -> str:
     """
@@ -56,6 +60,12 @@ def ask_human(question: str) -> str:
     never pass a bare question without options. Use this tool when the task is
     ambiguous. Call once per question. Order options from best to least preferred.
     """
+    from code_pipeline.settings import get_pipeline_context
+
+    if get_pipeline_context().programmatic:
+        logger.info("ask_human: programmatic mode, returning assumed answer")
+        return "(Programmatic mode: proceeding with best assumption from exploration. Use Option A / recommended approach.)"
+
     print(" CLARIFICATION NEEDED")
     print(f"{'─' * 64}")
     _print_with_highlighted_code(question)

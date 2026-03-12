@@ -29,6 +29,7 @@ class PipelineContext(BaseModel):
     github_repo: str = ""
     issue_url: str = ""
     serper_enabled: bool = False
+    programmatic: bool = False
 
 
 class Settings(BaseSettings):
@@ -138,4 +139,5 @@ def get_pipeline_context() -> PipelineContext:
         github_repo=(ctx.github_repo or "").strip(),
         issue_url=(ctx.issue_url or "").strip(),
         serper_enabled=ctx.serper_enabled,
+        programmatic=ctx.programmatic,
     )

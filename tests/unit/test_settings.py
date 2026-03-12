@@ -21,12 +21,13 @@ def test_get_settings_returns_singleton():
 
 
 def test_pipeline_context_defaults():
-    """PipelineContext has default empty strings."""
+    """PipelineContext has default empty strings and False booleans."""
     ctx = PipelineContext()
     assert ctx.repo_path == ""
     assert ctx.github_repo == ""
     assert ctx.issue_url == ""
     assert ctx.serper_enabled is False
+    assert ctx.programmatic is False
 
 
 def test_pipeline_context_frozen():
