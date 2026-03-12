@@ -38,7 +38,7 @@ async def trigger_pipeline(
             if response.status_code == 202:
                 data = response.json()
                 if data.get("status") == "accepted":
-                    print(f"\n✅ Pipeline triggered successfully!")
+                    print("\n✅ Pipeline triggered successfully!")
                     print(f"Issue: {data.get('issue_url', '')}")
                 else:
                     print(f"\n❌ Unexpected response: {data}")

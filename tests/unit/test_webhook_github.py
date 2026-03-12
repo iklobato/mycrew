@@ -101,7 +101,9 @@ def test_invalid_payloads_raise(name, payload):
 def test_extract_github_params_unsupported_event_returns_none():
     """Unsupported event/action returns None."""
     assert _extract_github_params({}, "push", "opened") is None
-    assert _extract_github_params({"issue": {"html_url": "x"}}, "issues", "opened") is None
+    assert (
+        _extract_github_params({"issue": {"html_url": "x"}}, "issues", "opened") is None
+    )
 
 
 def test_pr_comment_extraction():

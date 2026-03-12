@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import logging
+from datetime import datetime
 from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
@@ -109,12 +110,40 @@ def _get_nested(obj: dict[str, Any], path: tuple[str, ...]) -> Any:
     return current
 
 
+def _send_callback(callback_url: str, status: str, details: dict[str, Any]) -> None:
+    """Send callback to external URL. Logs errors but doesn't raise."""
+    try:
+        import httpx
+
+        payload = {"status": status, "timestamp": datetime.now().isoformat(), **details}
+
+        # Use sync client since we're in background thread
+        response = httpx.post(callback_url, json=payload, timeout=30)
+        response.raise_for_status()
+        logger.debug("Callback sent to %s", callback_url)
+    except Exception as e:
+        logger.error("Failed to send callback to %s: %s", callback_url, e)
+
+
 def _run_kickoff_background(**params: Any) -> None:
     """Run kickoff in background. Logs and swallows exceptions (CS-45: must log)."""
+    # Extract callback_url from params
+    callback_url = params.pop("callback_url", None)
+
     try:
-        kickoff(**params)
+        result = kickoff(**params)
+        # Send success callback if URL provided
+        if callback_url:
+            _send_callback(
+                callback_url,
+                "completed",
+                {"result": str(result)[:500] if result else "Pipeline completed"},
+            )
     except Exception as e:
         logger.error("Background kickoff failed: %s", e, exc_info=True)
+        # Send error callback if URL provided
+        if callback_url:
+            _send_callback(callback_url, "failed", {"error": str(e)[:500]})
 
 
 def verify_github_signature(payload_body: bytes, signature_header: str) -> None:
@@ -145,7 +174,11 @@ def _extract_github_params(
     issue_url = _get_nested(payload, path)
     if not issue_url or not str(issue_url).strip():
         raise HTTPException(status_code=400, detail="Missing or empty issue URL")
-    return {"issue_url": str(issue_url).strip(), **_default_params()}
+    return {
+        "issue_url": str(issue_url).strip(),
+        "callback_url": payload.get("callback_url"),
+        **_default_params(),
+    }
 
 
 def _handle_github(
@@ -228,9 +261,10 @@ async def webhook(request: Request, background_tasks: BackgroundTasks) -> JSONRe
     params = {
         "issue_url": issue_url,
         "branch": branch_val,
-        "dry_run": bool(payload.get("dry_run", False)),
+        "dry_run": payload.get("dry_run", False),
         "test_command": tc_val,
-        "programmatic": bool(payload.get("programmatic", False)),
+        "programmatic": payload.get("programmatic", False),
+        "callback_url": payload.get("callback_url"),
     }
     logger.info("Manual trigger: %s", issue_url[:80])
     background_tasks.add_task(_run_kickoff_background, **params)
