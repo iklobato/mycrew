@@ -8,11 +8,8 @@ from code_pipeline.main import (
     _fallback_exploration,
     _format_review_verdict,
     _is_retryable_error,
-    _log_crew_context,
     _log_implementer_summary,
     _log_reviewer_verdict,
-    _log_section,
-    _log_with_context,
     _normalize_raw_verdict,
 )
 
@@ -99,20 +96,6 @@ def test_format_review_verdict_raw_fallback():
     assert result == "APPROVED"
 
 
-def test_log_section_does_not_raise():
-    """_log_section logs without raising."""
-    _log_section("Title", "Body content")
-
-
-def test_log_with_context_does_not_raise():
-    """_log_with_context logs without raising."""
-    import logging
-
-    log = logging.getLogger("test")
-    _log_with_context(log, "INFO", "test message", step="test")
-    _log_with_context(log, "DEBUG", "debug", step="s", crew="c", agent="a")
-
-
 def test_configure_logging_idempotent():
     """_configure_logging does not add duplicate handlers on second call."""
     import logging
@@ -132,11 +115,6 @@ def test_fallback_exploration_returns_string(tmp_path):
     # With files present, implementation must find them (os.walk + pattern match)
     assert "foo.py" in result or "bar.json" in result
     assert isinstance(result, str)
-
-
-def test_log_crew_context_does_not_raise():
-    """_log_crew_context logs without raising."""
-    _log_crew_context("Crew", {"task": "x", "repo_path": "/tmp"})
 
 
 def test_log_reviewer_verdict_does_not_raise():

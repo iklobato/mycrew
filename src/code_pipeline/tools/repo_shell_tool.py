@@ -116,7 +116,9 @@ class RepoShellTool(BaseTool):
                 capture_output=True,
                 text=True,
             )
-            output = (result.stdout or "") + (result.stderr or "")
+            stdout = result.stdout if result.stdout is not None else ""
+            stderr = result.stderr if result.stderr is not None else ""
+            output = stdout + stderr
             output_len = len(output)
 
             # Truncate if too long

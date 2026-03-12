@@ -17,7 +17,10 @@ def resolve_issue_url(issue_url: str) -> dict[str, str]:
     Parse a GitHub issue/PR URL and fetch its content via the GitHub API.
     Returns task, github_repo, issue_id, repo_path. GITHUB_TOKEN required.
     """
-    url = (issue_url or "").strip()
+    if issue_url is not None:
+        url = issue_url.strip()
+    else:
+        url = ""
     if not url:
         raise ValueError("issue_url is required and cannot be empty")
 
@@ -42,7 +45,10 @@ def resolve_issue_url(issue_url: str) -> dict[str, str]:
     is_pull = kind == "pull"
 
     github_repo = f"{owner}/{repo_name}"
-    issue_id = f"PR#{number}" if is_pull else f"#{number}"
+    if is_pull:
+        issue_id = f"PR#{number}"
+    else:
+        issue_id = f"#{number}"
 
     # Fetch title from GitHub API
     token = get_settings().github_token.strip()
@@ -70,7 +76,11 @@ def resolve_issue_url(issue_url: str) -> dict[str, str]:
             "Check GITHUB_TOKEN and issue URL."
         ) from e
 
-    task = (data.get("title") or "").strip()
+    title_val = data.get("title")
+    if title_val is not None:
+        task = title_val.strip()
+    else:
+        task = ""
     if not task:
         raise ValueError("GitHub issue has no title")
 
@@ -94,18 +104,30 @@ def build_repo_context(
     github_repo, etc. across task descriptions. Used when running inside the repo.
     """
     lines = []
-    rp = (repo_path or "").strip()
+    if repo_path is not None:
+        rp = repo_path.strip()
+    else:
+        rp = ""
     if rp:
         lines.append(f"- Repository: {rp}")
-    gh = (github_repo or "").strip()
+    if github_repo is not None:
+        gh = github_repo.strip()
+    else:
+        gh = ""
     if gh:
         lines.append(f"- GitHub: {gh} (use for gh -R)")
     else:
         lines.append("- GitHub: (auto-detected from git remote when empty)")
-    iu = (issue_url or "").strip()
+    if issue_url is not None:
+        iu = issue_url.strip()
+    else:
+        iu = ""
     if iu:
         lines.append(f"- Issue URL: {iu}")
-    tc = (test_command or "").strip()
+    if test_command is not None:
+        tc = test_command.strip()
+    else:
+        tc = ""
     if tc:
         lines.append(f"- Test command: {tc}")
     if not lines:
@@ -172,19 +194,32 @@ def enrich_repo_context(
     Auto-detect repo_path, github_repo, and issue_url when running inside a GitHub repo.
     Only fills values that are empty. Returns dict with repo_path, github_repo, issue_url.
     """
-    repo = os.path.abspath(repo_path or os.getcwd())
+    rp = repo_path
+    if rp is None or rp == "":
+        rp = os.getcwd()
+    repo = os.path.abspath(rp)
     if not repo or repo == ".":
         repo = detect_repo_path(os.getcwd())
 
-    gh = (github_repo or "").strip() or None
+    gh_raw = github_repo
+    if gh_raw is not None:
+        gh = gh_raw.strip()
+    else:
+        gh = None
     if not gh:
         gh = detect_github_repo(repo)
-    gh = gh or ""
+    if not gh:
+        gh = ""
 
-    url = (issue_url or "").strip() or None
+    iu_raw = issue_url
+    if iu_raw is not None:
+        url = iu_raw.strip()
+    else:
+        url = None
     if not url and gh and issue_id:
         url = derive_issue_url(gh, issue_id)
-    url = url or ""
+    if not url:
+        url = ""
 
     return {"repo_path": repo, "github_repo": gh, "issue_url": url}
 
@@ -197,7 +232,10 @@ def log_exceptions(
     Use as @log_exceptions or @log_exceptions("custom message").
     """
 
-    msg_prefix: str | None = message if isinstance(message, str) else None
+    if isinstance(message, str):
+        msg_prefix: str | None = message
+    else:
+        msg_prefix = None
 
     def decorator(fn: F) -> F:
         @functools.wraps(fn)
@@ -206,7 +244,10 @@ def log_exceptions(
                 return fn(*args, **kwargs)
             except Exception as e:
                 log = logging.getLogger(fn.__module__)
-                msg = msg_prefix or f"{fn.__qualname__} failed"
+                if msg_prefix is not None:
+                    msg = msg_prefix
+                else:
+                    msg = f"{fn.__qualname__} failed"
                 log.error("%s: %s", msg, e, exc_info=True)
                 raise
 

@@ -23,7 +23,11 @@ def _print_with_highlighted_code(text: str) -> None:
     for m in matches:
         if m.start() > last_end:
             console.print(text[last_end : m.start()])
-        lang = (m.group(1) or "text").strip().lower()
+        g1 = m.group(1)
+        if g1 is not None:
+            lang = g1.strip().lower()
+        else:
+            lang = "text"
         code = m.group(2).rstrip()
         if lang in ("text", "plain"):
             console.print(code)
@@ -81,7 +85,9 @@ def ask_human(question: str) -> str:
 
     try:
         answer = input("Your answer: ").strip()
-        return answer if answer else "(no answer provided)"
+        if answer:
+            return answer
+        return "(no answer provided)"
     except EOFError as e:
         logger.error("ask_human: EOFError (stdin closed): %s", e, exc_info=True)
         print("(stdin closed, continuing without answer)")

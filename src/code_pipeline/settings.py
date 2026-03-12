@@ -134,10 +134,19 @@ def get_pipeline_context() -> PipelineContext:
     ctx = _pipeline_context_var.get()
     if ctx is None:
         ctx = PipelineContext()
+    rp = ctx.repo_path
+    if rp is None or rp == "":
+        rp = os.getcwd()
+    gh = ctx.github_repo
+    if gh is None:
+        gh = ""
+    iu = ctx.issue_url
+    if iu is None:
+        iu = ""
     return PipelineContext(
-        repo_path=os.path.abspath(ctx.repo_path or os.getcwd()),
-        github_repo=(ctx.github_repo or "").strip(),
-        issue_url=(ctx.issue_url or "").strip(),
+        repo_path=os.path.abspath(rp),
+        github_repo=gh.strip(),
+        issue_url=iu.strip(),
         serper_enabled=ctx.serper_enabled,
         programmatic=ctx.programmatic,
     )

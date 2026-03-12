@@ -12,7 +12,11 @@ logger = logging.getLogger(__name__)
 
 def _task_hash(task: str) -> str:
     """Stable hash for checkpoint key."""
-    return hashlib.sha256((task or "").encode()).hexdigest()[:16]
+    if task is not None:
+        task_bytes = task.encode()
+    else:
+        task_bytes = "".encode()
+    return hashlib.sha256(task_bytes).hexdigest()[:16]
 
 
 class CheckpointStore:

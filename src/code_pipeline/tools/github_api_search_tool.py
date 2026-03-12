@@ -217,7 +217,10 @@ class GitHubAPISearchTool(BaseTool):
                 f"   Relevance score: {result.get('score', 'N/A')}"
             )
         elif result_type in ["issue", "pull_request"]:
-            item_type = "Issue" if result_type == "issue" else "Pull Request"
+            if result_type == "issue":
+                item_type = "Issue"
+            else:
+                item_type = "Pull Request"
             return (
                 f"{index}. **{item_type} #{result['number']}: {result['title']}**\n"
                 f"   State: {result['state']}\n"

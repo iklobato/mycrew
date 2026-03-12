@@ -37,7 +37,15 @@ def get_tools_for_stage(
 ) -> list[BaseTool]:
     """Return the full tool list for a pipeline stage. Centralizes tool selection."""
     repo_path = os.path.abspath(repo_path)
-    github_repo = (github_repo or "").strip() or None
+    gh_raw = github_repo
+    if gh_raw is not None:
+        gh_stripped = gh_raw.strip()
+    else:
+        gh_stripped = ""
+    if gh_stripped:
+        github_repo = gh_stripped
+    else:
+        github_repo = None
     logger.debug(
         "get_tools_for_stage: stage=%s, repo_path=%s, serper_enabled=%s",
         stage,

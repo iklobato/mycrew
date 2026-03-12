@@ -59,18 +59,26 @@ class RepoFileWriterTool(BaseTool):
         directory: str | None = None,
         **kwargs: Any,
     ) -> str:
-        action = "modifying" if _strtobool(overwrite) else "creating"
+        if _strtobool(overwrite):
+            action = "modifying"
+        else:
+            action = "creating"
         logger.info("┌─[ RepoFileWriterTool EXECUTE ]─")
         logger.info("│ Input:")
         logger.info("│   Action: %s", action)
         logger.info("│   Filename: %s", filename)
-        logger.info("│   Directory: %s", directory if directory else "(repo root)")
+        if directory:
+            dir_display = directory
+        else:
+            dir_display = "(repo root)"
+        logger.info("│   Directory: %s", dir_display)
         logger.info("│   Overwrite: %s", overwrite)
         logger.info("│   Content length: %d chars", len(content))
-        logger.info(
-            "│   Content preview: %s",
-            content[:100] + "..." if len(content) > 100 else content,
-        )
+        if len(content) > 100:
+            content_preview = content[:100] + "..."
+        else:
+            content_preview = content
+        logger.info("│   Content preview: %s", content_preview)
 
         if not self.repo_path:
             logger.warning("RepoFileWriterTool: repo_path not set")
@@ -111,7 +119,11 @@ class RepoFileWriterTool(BaseTool):
             if parent and not os.path.exists(parent):
                 os.makedirs(parent, exist_ok=True)
 
-            with open(filepath, "w" if overwrite_flag else "x") as f:
+            if overwrite_flag:
+                mode = "w"
+            else:
+                mode = "x"
+            with open(filepath, mode) as f:
                 f.write(content)
 
             rel = os.path.relpath(filepath, repo)

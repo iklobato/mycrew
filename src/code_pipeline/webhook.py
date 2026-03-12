@@ -22,7 +22,13 @@ _REDACT_HEADERS = frozenset({"authorization", "x-hub-signature-256"})
 
 def _sanitize_headers(headers: dict[str, str]) -> dict[str, str]:
     """Redact sensitive headers for logging."""
-    return {k: "(redacted)" if k in _REDACT_HEADERS else v for k, v in headers.items()}
+    result = {}
+    for k, v in headers.items():
+        if k in _REDACT_HEADERS:
+            result[k] = "(redacted)"
+        else:
+            result[k] = v
+    return result
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
@@ -32,7 +38,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         body = await request.body()
         headers = {k.lower(): v for k, v in request.headers.items()}
         client = request.client
-        client_str = f"{client.host}:{client.port}" if client else "(unknown)"
+        if client:
+            client_str = f"{client.host}:{client.port}"
+        else:
+            client_str = "(unknown)"
 
         # Parse body for logging (truncate if large)
         body_preview: str | dict[str, Any] = ""
@@ -40,7 +49,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             try:
                 parsed = json.loads(body)
                 body_str = json.dumps(parsed)
-                body_preview = parsed if len(body_str) <= 2000 else body_str[:2000] + "..."
+                if len(body_str) <= 2000:
+                    body_preview = parsed
+                else:
+                    body_preview = body_str[:2000] + "..."
             except json.JSONDecodeError:
                 body_preview = body[:500].decode("utf-8", errors="replace")
                 if len(body) > 500:
@@ -170,7 +182,11 @@ def _accepted_response(issue_url: str) -> JSONResponse:
     """Common 202 response."""
     return JSONResponse(
         status_code=202,
-        content={"status": "accepted", "issue_url": issue_url[:100], "message": "Pipeline queued"},
+        content={
+            "status": "accepted",
+            "issue_url": issue_url[:100],
+            "message": "Pipeline queued",
+        },
     )
 
 
@@ -181,7 +197,10 @@ async def webhook(request: Request, background_tasks: BackgroundTasks) -> JSONRe
     body = await request.body()
 
     try:
-        payload = json.loads(body) if body else {}
+        if body:
+            payload = json.loads(body)
+        else:
+            payload = {}
     except json.JSONDecodeError:
         payload = {}
 
@@ -189,14 +208,28 @@ async def webhook(request: Request, background_tasks: BackgroundTasks) -> JSONRe
         return _handle_github(body, headers, payload, background_tasks)
 
     # Manual trigger
-    issue_url = (payload.get("issue_url") or "").strip()
+    iu_raw = payload.get("issue_url")
+    if iu_raw is not None:
+        issue_url = iu_raw.strip()
+    else:
+        issue_url = ""
     if not issue_url:
         raise HTTPException(status_code=400, detail="issue_url required")
+    branch_raw = payload.get("branch")
+    if branch_raw is not None:
+        branch_val = branch_raw
+    else:
+        branch_val = "main"
+    tc_raw = payload.get("test_command")
+    if tc_raw is not None:
+        tc_val = tc_raw
+    else:
+        tc_val = ""
     params = {
         "issue_url": issue_url,
-        "branch": (payload.get("branch") or "main"),
+        "branch": branch_val,
         "dry_run": bool(payload.get("dry_run", False)),
-        "test_command": (payload.get("test_command") or ""),
+        "test_command": tc_val,
         "programmatic": bool(payload.get("programmatic", False)),
     }
     logger.info("Manual trigger: %s", issue_url[:80])
@@ -222,10 +255,11 @@ def main() -> None:
     )
     stg = get_settings()
     logger.info("Starting webhook server")
-    logger.info(
-        "GitHub webhook secret: %s",
-        "configured" if stg.github_webhook_secret else "not configured",
-    )
+    if stg.github_webhook_secret:
+        secret_status = "configured"
+    else:
+        secret_status = "not configured"
+    logger.info("GitHub webhook secret: %s", secret_status)
     logger.info("Default branch: %s", stg.default_branch)
     logger.info("Default dry_run: %s", stg.default_dry_run)
     uvicorn.run(app, host=stg.host, port=stg.port, log_level="info")
