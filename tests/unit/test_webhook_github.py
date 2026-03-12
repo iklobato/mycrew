@@ -12,6 +12,8 @@ from code_pipeline.webhook import (
     GitHubWebhookEvent,
     TriggerRequest,
     _extract_github_params,
+    _get_nested,
+    _run_kickoff_background,
     verify_github_signature,
 )
 
@@ -179,6 +181,53 @@ def test_github_webhook_event_from_event_action_unknown_returns_none():
     """from_event_action returns None for unknown event or action."""
     assert GitHubWebhookEvent.from_event_action("push", "opened") is None
     assert GitHubWebhookEvent.from_event_action("issues", "opened") is None
+
+
+def test_get_nested_missing_key_returns_none():
+    """_get_nested returns None when key is missing."""
+    assert _get_nested({}, ("a",)) is None
+    assert _get_nested({"a": 1}, ("a", "b")) is None
+    assert _get_nested({"a": {"b": 1}}, ("a", "c")) is None
+
+
+def test_get_nested_nested_path_returns_value():
+    """_get_nested returns value for valid nested path."""
+    data = {"a": {"b": {"c": 42}}}
+    assert _get_nested(data, ("a", "b", "c")) == 42
+
+
+def test_get_nested_not_dict_returns_none():
+    """_get_nested returns None when intermediate value is not dict."""
+    data = {"a": "string"}
+    assert _get_nested(data, ("a", "b")) is None
+
+
+def test_run_kickoff_background_calls_kickoff():
+    """_run_kickoff_background calls kickoff with params."""
+    from unittest.mock import patch
+
+    with patch("code_pipeline.webhook.kickoff") as mock_kickoff:
+        _run_kickoff_background(
+            issue_url="https://github.com/o/r/issues/1",
+            branch="main",
+            dry_run=True,
+        )
+        mock_kickoff.assert_called_once_with(
+            issue_url="https://github.com/o/r/issues/1",
+            branch="main",
+            dry_run=True,
+        )
+
+
+def test_run_kickoff_background_logs_on_exception():
+    """_run_kickoff_background logs and swallows exception."""
+    from unittest.mock import patch
+
+    with patch("code_pipeline.webhook.kickoff", side_effect=RuntimeError("oops")):
+        with patch("code_pipeline.webhook.logger") as mock_logger:
+            _run_kickoff_background(issue_url="https://x")
+            mock_logger.error.assert_called_once()
+            assert "oops" in str(mock_logger.error.call_args)
 
 
 def test_trigger_request_missing_issue_url_raises():

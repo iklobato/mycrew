@@ -10,6 +10,7 @@ from code_pipeline.utils import (
     detect_github_repo,
     detect_repo_path,
     enrich_repo_context,
+    log_exceptions,
     resolve_issue_url,
 )
 
@@ -337,6 +338,27 @@ def test_enrich_repo_context_fills_empty(detect_gh):
     assert result["github_repo"] == "detected/repo"
     assert result["issue_url"] == "https://github.com/detected/repo/issues/42"
     detect_gh.assert_called_once_with("/abs/repo")
+
+
+def test_log_exceptions_decorator_logs_and_reraises():
+    """log_exceptions decorator logs exception and re-raises."""
+
+    @log_exceptions("custom msg")
+    def failing():
+        raise ValueError("test error")
+
+    with pytest.raises(ValueError, match="test error"):
+        failing()
+
+
+def test_log_exceptions_decorator_passes_through_success():
+    """log_exceptions decorator passes return value when no exception."""
+
+    @log_exceptions("custom msg")
+    def succeeding():
+        return 42
+
+    assert succeeding() == 42
 
 
 def test_enrich_repo_context_derive_issue_url_when_issue_id():

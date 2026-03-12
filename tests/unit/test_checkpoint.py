@@ -80,3 +80,25 @@ def test_checkpoint_store_load_malformed_entry_returns_none(tmp_path):
     data[keys[0]] = {"updated_at": "2020-01-01"}  # no flow_id
     path.write_text(json.dumps(data, indent=2))
     assert store.load("task") is None
+
+
+def test_checkpoint_store_save_overwrites_invalid_existing_json(tmp_path):
+    """save overwrites existing invalid JSON file with valid data."""
+    checkpoint_dir = tmp_path / ".code_pipeline"
+    checkpoint_dir.mkdir(parents=True)
+    (checkpoint_dir / "checkpoint.json").write_text("not valid json {{{")
+    store = CheckpointStore(str(tmp_path))
+    store.save("task", "flow-new")
+    assert store.load("task") == "flow-new"
+
+
+def test_checkpoint_store_different_tasks_different_keys(tmp_path):
+    """Different tasks produce different storage keys."""
+    store = CheckpointStore(str(tmp_path))
+    store.save("Task A", "flow-a")
+    store.save("Task B", "flow-b")
+    path = tmp_path / ".code_pipeline" / "checkpoint.json"
+    data = json.loads(path.read_text())
+    keys = list(data.keys())
+    assert len(keys) == 2
+    assert all("|" in k for k in keys)
