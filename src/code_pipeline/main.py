@@ -359,14 +359,21 @@ def _run_explore_in_process(
     """Run ExplorerCrew in-process. On exception, use fallback exploration."""
     try:
         crew = ExplorerCrew().crew()
+        if repo_context:
+            effective_repo_context = repo_context
+        else:
+            effective_repo_context = build_repo_context(
+                repo_path, github_repo, "", "", test_command
+            )
         inputs = {
             "repo_path": repo_path,
             "task": task,
             "issue_analysis": issue_analysis,
             "test_command": test_command,
             "github_repo": github_repo,
-            "repo_context": repo_context
-            or build_repo_context(repo_path, github_repo, "", "", test_command),
+            "repo_context": effective_repo_context,
+            "focus_paths": "",
+            "exclude_paths": "",
         }
         result = _kickoff_with_retry(
             crew,
