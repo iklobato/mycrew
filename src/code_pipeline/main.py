@@ -310,10 +310,6 @@ def _fallback_exploration(repo_path: str, issue_analysis: str) -> str:
                         break
             if len(files_list) >= 80:
                 break
-        if files_list:
-            files = "\n".join(files_list[:80])
-        else:
-            files = "(none found)"
         entries = []
         try:
             for e in sorted(os.listdir(repo_path))[:30]:
@@ -333,22 +329,8 @@ def _fallback_exploration(repo_path: str, issue_analysis: str) -> str:
                 exc_info=True,
             )
             entries = ["(unable to list)"]
-        layout = "\n".join(entries)
-        return f"""## Tech Stack
+        return """## Tech Stack
 (Inferred from fallback exploration - ExplorerCrew unavailable)
-
-## Directory Layout
-```
-{layout}
-```
-
-## Key Files
-```
-{files}
-```
-
-## Conventions
-(Use issue context to focus: {issue_analysis[:200]}...)
 """
     except Exception as e:
         logger.error("Fallback exploration failed: %s", e, exc_info=True)
@@ -866,6 +848,84 @@ class CodePipelineFlow(Flow[PipelineState]):
             logger.error("Quality gate failed: %s", e, exc_info=True)
             return False, str(e)
 
+    def _truncate_exploration(self, exploration: str, max_chars: int = 12000) -> str:
+        """Truncate exploration document to prevent token overflow in LLM context.
+
+        Keeps essential sections but limits total size. Prioritizes:
+        1. Tech Stack
+        2. Directory Layout
+        3. Dependency Map
+        4. Test Layout
+        5. Lint & Format
+        """
+        if not exploration or len(exploration) <= max_chars:
+            return exploration
+
+        logger.warning(
+            "Truncating exploration from %d to %d chars to prevent token overflow",
+            len(exploration),
+            max_chars,
+        )
+
+        # Split by sections
+        sections = []
+        current_section = []
+        current_title = None
+
+        lines = exploration.split("\n")
+        for line in lines:
+            if line.startswith("## "):
+                # Save previous section
+                if current_title and current_section:
+                    sections.append((current_title, "\n".join(current_section)))
+                # Start new section
+                current_title = line[3:].strip()
+                current_section = [line]
+            elif current_title:
+                current_section.append(line)
+
+        # Add last section
+        if current_title and current_section:
+            sections.append((current_title, "\n".join(current_section)))
+
+        # Priority order of sections to keep
+        priority_sections = [
+            "Tech Stack",
+            "Directory Layout",
+            "Dependency Map",
+            "Test Layout",
+            "Lint & Format",
+            "Conventions",
+            "API Boundary",
+        ]
+
+        # Build truncated exploration
+        truncated = []
+        total_chars = 0
+
+        for title in priority_sections:
+            for section_title, section_content in sections:
+                if section_title.lower() == title.lower():
+                    if total_chars + len(section_content) > max_chars:
+                        # Truncate this section if needed
+                        remaining = max_chars - total_chars
+                        if remaining > 100:  # Only include if we have meaningful space
+                            truncated.append(
+                                section_content[:remaining] + "\n... (truncated)"
+                            )
+                            total_chars = max_chars
+                        break
+                    else:
+                        truncated.append(section_content)
+                        total_chars += len(section_content)
+                    break
+
+        if not truncated:
+            # Fallback: just take the beginning
+            return exploration[:max_chars] + "\n... (truncated)"
+
+        return "\n\n".join(truncated)
+
     def _run_crew(self, crew_class, inputs: dict, state_attr: str | None = None):
         """Run a crew and optionally store result in state. Returns raw output."""
         crew_name = crew_class.__name__
@@ -1080,11 +1140,16 @@ class CodePipelineFlow(Flow[PipelineState]):
             logger.info("PIPELINE step=plan | resumed (cached)")
             return self.state.plan
         logger.info("PIPELINE step=plan crew=ArchitectCrew | start")
+
+        # Truncate exploration to prevent token overflow
+        # Keep essential sections but limit total size
+        truncated_exploration = self._truncate_exploration(self.state.exploration)
+
         return self._run_crew(
             ArchitectCrew,
             {
                 "task": self.state.task,
-                "exploration": self.state.exploration,
+                "exploration": truncated_exploration,
                 "issue_analysis": self.state.issue_analysis,
                 "prior_issues": self.state.prior_issues,
                 "clarifications": self.state.clarifications,
