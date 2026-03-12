@@ -1,13 +1,23 @@
+import logging
+
 from crewai import Agent, LLM, Task
 from crewai.project import CrewBase, agent, llm, task
 
 from code_pipeline.crews.base import PipelineCrewBase
 from code_pipeline.llm import get_llm_for_stage
+from code_pipeline.memory_monitor import ExplorerCrewMemoryOptimizer
 
 
 @CrewBase
 class ExplorerCrew(PipelineCrewBase):
     """Explorer crew: repo summary, dependency map, and test layout."""
+
+    def __init__(self, *args, **kwargs):
+        """Initialize ExplorerCrew with memory optimization."""
+        super().__init__(*args, **kwargs)
+        self.memory_optimizer = ExplorerCrewMemoryOptimizer("ExplorerCrew")
+        logger = logging.getLogger(__name__)
+        logger.info("ExplorerCrew initialized with memory optimization")
 
     @llm
     def explore_llm(self) -> LLM:

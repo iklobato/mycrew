@@ -70,6 +70,9 @@ from code_pipeline.memory_monitor import (
     log_memory_usage,
     force_garbage_collection,
     MemoryGuard,
+    ExplorerCrewMemoryOptimizer,
+    compress_large_string,
+    filter_redundant_output,
 )
 
 _event_context_config.set(
@@ -353,8 +356,13 @@ def _run_explore_in_process(
     github_repo: str = "",
     repo_context: str = "",
 ) -> str:
-    """Run ExplorerCrew in-process. On exception, use fallback exploration."""
+    """Run ExplorerCrew in-process with memory optimization. On exception, use fallback exploration."""
     try:
+        # Initialize memory optimizer for ExplorerCrew
+        # Note: Currently used for logging and tracking only
+        # In future, could be used to optimize agent outputs
+        _memory_optimizer = ExplorerCrewMemoryOptimizer("ExplorerCrew")
+
         crew = ExplorerCrew().crew()
         if repo_context:
             effective_repo_context = repo_context
@@ -372,6 +380,10 @@ def _run_explore_in_process(
             "focus_paths": "",
             "exclude_paths": "",
         }
+
+        # Log memory before exploration
+        log_memory_usage("Before ExplorerCrew")
+
         result = _kickoff_with_retry(
             crew,
             inputs,
@@ -381,9 +393,35 @@ def _run_explore_in_process(
             raw = result.raw
         else:
             raw = str(result)
-        logger.info("ExplorerCrew completed (output_len=%d)", len(raw))
-        if raw is not None and raw != "":
-            raw_str = raw
+
+        # Apply output filtering to remove redundancy
+        if raw:
+            # For ExplorerCrew, we can't easily get individual agent outputs
+            # but we can still apply basic filtering
+            filtered_raw = filter_redundant_output(raw, [])
+
+            # Compress large outputs
+            compression_result = compress_large_string(filtered_raw, threshold_kb=5)
+            if compression_result:
+                logger.info(
+                    "Compressed exploration: %d KB -> %d KB (ratio: %.2f)",
+                    compression_result.original_size / 1024,
+                    compression_result.compressed_size / 1024,
+                    compression_result.compression_ratio,
+                )
+                # Store compression metadata for later decompression if needed
+                # For now, we'll keep uncompressed version for compatibility
+            else:
+                logger.info(
+                    "ExplorerCrew completed (output_len=%d, filtered_len=%d)",
+                    len(raw),
+                    len(filtered_raw),
+                )
+        else:
+            filtered_raw = ""
+
+        if filtered_raw is not None and filtered_raw != "":
+            raw_str = filtered_raw
         else:
             raw_str = ""
         if len(raw_str.strip()) < 200:
@@ -391,7 +429,11 @@ def _run_explore_in_process(
                 "Exploration too short (%d chars), using fallback", len(raw_str)
             )
             return _fallback_exploration(repo_path, issue_analysis)
-        return raw
+
+        # Log memory after exploration
+        log_memory_usage("After ExplorerCrew")
+
+        return filtered_raw if filtered_raw else raw
     except Exception as e:
         logger.error("ExplorerCrew failed: %s", e, exc_info=True)
         return _fallback_exploration(repo_path, issue_analysis)
@@ -858,7 +900,7 @@ class CodePipelineFlow(Flow[PipelineState]):
             logger.error("Quality gate failed: %s", e, exc_info=True)
             return False, str(e)
 
-    def _truncate_exploration(self, exploration: str, max_chars: int = 8000) -> str:
+    def _truncate_exploration(self, exploration: str, max_chars: int = 6000) -> str:
         """Truncate exploration document to prevent token overflow in LLM context.
 
         Keeps essential sections but limits total size. Prioritizes:
@@ -872,7 +914,7 @@ class CodePipelineFlow(Flow[PipelineState]):
             return exploration
 
         logger.warning(
-            "Truncating exploration from %d to %d chars to prevent memory overflow",
+            "Truncating exploration from %d to %d chars (aggressive memory reduction)",
             len(exploration),
             max_chars,
         )
@@ -898,26 +940,38 @@ class CodePipelineFlow(Flow[PipelineState]):
         if current_title and current_section:
             sections.append((current_title, "\n".join(current_section)))
 
-        # Priority order of sections to keep
+        # Priority order of sections to keep with aggressive size limits
+        # Downstream stages (plan, implement) need these most:
         priority_sections = [
-            "Tech Stack",
-            "Directory Layout",
-            "Dependency Map",
-            "Test Layout",
-            "Lint & Format",
-            "Conventions",
-            "API Boundary",
+            ("Tech Stack", 1000),  # Max 1000 chars
+            ("Directory Layout", 1500),  # Max 1500 chars
+            ("Dependency Map", 800),  # Max 800 chars
+            ("Test Layout", 1000),  # Max 1000 chars
+            ("Lint & Format", 500),  # Max 500 chars
+            ("Conventions", 800),  # Max 800 chars
+            ("API Boundary", 600),  # Max 600 chars
         ]
 
-        # Build truncated exploration
+        # Build truncated exploration with per-section limits
         truncated = []
         total_chars = 0
 
-        for title in priority_sections:
+        for title, max_section_chars in priority_sections:
+            if total_chars >= max_chars:
+                break
+
             for section_title, section_content in sections:
                 if section_title.lower() == title.lower():
+                    # Apply per-section limit
+                    if len(section_content) > max_section_chars:
+                        # Truncate this section to its limit
+                        section_content = (
+                            section_content[:max_section_chars]
+                            + "\n... (section truncated)"
+                        )
+
                     if total_chars + len(section_content) > max_chars:
-                        # Truncate this section if needed
+                        # Truncate this section to fit remaining space
                         remaining = max_chars - total_chars
                         if remaining > 100:  # Only include if we have meaningful space
                             truncated.append(
@@ -935,6 +989,97 @@ class CodePipelineFlow(Flow[PipelineState]):
             return exploration[:max_chars] + "\n... (truncated)"
 
         return "\n\n".join(truncated)
+
+    def _cleanup_after_plan(self) -> None:
+        """Aggressive memory cleanup after plan stage.
+
+        Clears exploration field (replaced by truncated version in plan inputs)
+        and forces garbage collection.
+        """
+        logger.info("Memory cleanup after plan stage")
+
+        # Apply compression before clearing if exploration is large
+        if self.state.exploration:
+            compression_result = compress_large_string(
+                self.state.exploration, threshold_kb=5
+            )
+            if compression_result:
+                logger.info(
+                    "Compressed exploration before cleanup: %d KB -> %d KB",
+                    compression_result.original_size / 1024,
+                    compression_result.compressed_size / 1024,
+                )
+
+        # Clear exploration field (already used for planning)
+        self.state.exploration = ""
+
+        # Force garbage collection
+        from code_pipeline.memory_monitor import force_garbage_collection
+
+        force_garbage_collection()
+
+    def _cleanup_after_implement(self) -> None:
+        """Aggressive memory cleanup after implement stage.
+
+        Clears plan and exploration fields (no longer needed for review).
+        """
+        logger.info("Memory cleanup after implement stage")
+
+        # Apply compression to implementation if large
+        if self.state.implementation:
+            compression_result = compress_large_string(
+                self.state.implementation, threshold_kb=5
+            )
+            if compression_result:
+                logger.info(
+                    "Compressed implementation: %d KB -> %d KB",
+                    compression_result.original_size / 1024,
+                    compression_result.compressed_size / 1024,
+                )
+
+        # Clear fields no longer needed for review stage
+        self.state.plan = ""
+        self.state.exploration = ""
+
+        # Force garbage collection
+        from code_pipeline.memory_monitor import force_garbage_collection
+
+        force_garbage_collection()
+
+    def _cleanup_after_review(self) -> None:
+        """Aggressive memory cleanup after review stage.
+
+        Clears implementation details before commit stage.
+        """
+        logger.info("Memory cleanup after review stage")
+
+        # Apply compression to review verdict if large
+        if self.state.review_verdict:
+            compression_result = compress_large_string(
+                self.state.review_verdict, threshold_kb=5
+            )
+            if compression_result:
+                logger.info(
+                    "Compressed review verdict: %d KB -> %d KB",
+                    compression_result.original_size / 1024,
+                    compression_result.compressed_size / 1024,
+                )
+            if compression_result:
+                logger.info(
+                    "Compressed review feedback: %d KB -> %d KB",
+                    compression_result.original_size / 1024,
+                    compression_result.compressed_size / 1024,
+                )
+
+        # Clear implementation details (commit only needs minimal context)
+        self.state.implementation = ""
+        self.state.plan = ""
+        self.state.exploration = ""
+
+        # Force garbage collection
+        from code_pipeline.memory_monitor import force_garbage_collection
+
+        force_garbage_collection()
 
     def _run_crew(self, crew_class, inputs: dict, state_attr: str | None = None):
         """Run a crew and optionally store result in state. Returns raw output."""
@@ -1122,7 +1267,26 @@ class CodePipelineFlow(Flow[PipelineState]):
                 github_repo=gh,
                 repo_context=rc,
             )
-            self.state.exploration = raw
+
+            # Apply compression to exploration if large
+            if raw:
+                compression_result = compress_large_string(raw, threshold_kb=5)
+                if compression_result:
+                    logger.info(
+                        "Storing compressed exploration: %d KB -> %d KB (ratio: %.2f)",
+                        compression_result.original_size / 1024,
+                        compression_result.compressed_size / 1024,
+                        compression_result.compression_ratio,
+                    )
+                    # Store both compressed and original for now
+                    # In a future optimization, we could store only compressed
+                    # and decompress when needed
+                    self.state.exploration = raw
+                    # Store compression metadata in state if we extend the state model
+                else:
+                    self.state.exploration = raw
+            else:
+                self.state.exploration = ""
 
             # Force garbage collection after exploration (can be memory intensive)
             force_garbage_collection()
@@ -1161,7 +1325,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         # Keep essential sections but limit total size
         truncated_exploration = self._truncate_exploration(self.state.exploration)
 
-        return self._run_crew(
+        result = self._run_crew(
             ArchitectCrew,
             {
                 "task": self.state.task,
@@ -1175,6 +1339,11 @@ class CodePipelineFlow(Flow[PipelineState]):
             },
             "plan",
         )
+
+        # Cleanup after plan stage to free memory
+        self._cleanup_after_plan()
+
+        return result
 
     @listen(plan)
     def implement(self):
@@ -1220,6 +1389,9 @@ class CodePipelineFlow(Flow[PipelineState]):
 
             # Force GC after implementation
             force_garbage_collection()
+
+            # Cleanup after implement stage to free memory
+            self._cleanup_after_implement()
 
             return result
 
@@ -1398,6 +1570,10 @@ class CodePipelineFlow(Flow[PipelineState]):
         verdict_str = _format_review_verdict(result)
         self.state.review_verdict = verdict_str
         _log_reviewer_verdict(verdict_str)
+
+        # Cleanup after review stage to free memory before commit
+        self._cleanup_after_review()
+
         return verdict_str
 
     @router(run_review)

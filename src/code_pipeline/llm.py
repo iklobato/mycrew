@@ -12,6 +12,11 @@ from crewai import LLM
 
 from code_pipeline.settings import get_settings
 from code_pipeline.utils import log_exceptions
+from code_pipeline.memory_monitor import (
+    calculate_optimal_max_tokens,
+    get_stage_max_tokens,
+    estimate_context_size,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -488,8 +493,20 @@ def _get_agent_model_config(stage: PipelineStage, agent_name: str) -> StageModel
     return stage_config  # type: ignore[return-value]
 
 
-def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
-    """Try models in order, return the first that works with smart retry strategy."""
+def llm_with_fallback(
+    *models: str | OpenRouterModel,
+    context_text: str = "",
+    stage_name: str = "",
+    estimated_context_tokens: int = 0,
+) -> LLM:
+    """Try models in order, return the first that works with smart retry strategy.
+
+    Args:
+        *models: Models to try in order
+        context_text: Text that will be in the context/prompt (for token estimation)
+        stage_name: Pipeline stage name (for stage-specific adjustments)
+        estimated_context_tokens: Pre-estimated token count (optional, will estimate if not provided)
+    """
     api_key = get_settings().openrouter_api_key
     if not api_key:
         raise ValueError("OPENROUTER_API_KEY environment variable is required")
@@ -501,6 +518,34 @@ def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
         len(models),
         ", ".join(str(m) for m in models),
     )
+
+    # Calculate optimal max_tokens based on context
+    if estimated_context_tokens <= 0 and context_text:
+        estimated_context_tokens = estimate_context_size(context_text)
+
+    max_tokens = 2048  # Default base value
+
+    if context_text or estimated_context_tokens > 0:
+        if stage_name:
+            # Use stage-specific adjustment
+            max_tokens = get_stage_max_tokens(
+                stage_name, context_text, base_max_tokens=2048
+            )
+        else:
+            # Use general optimal calculation
+            max_tokens = calculate_optimal_max_tokens(
+                context_text,
+                max_context_tokens=8000,
+                min_output_tokens=512,
+                safety_margin=0.2,
+            )
+
+        logger.info(
+            "│ Context-aware max_tokens: %d (stage: %s, estimated context: %d tokens)",
+            max_tokens,
+            stage_name or "general",
+            estimated_context_tokens,
+        )
 
     last_error = None
     for idx, model in enumerate(models):
@@ -520,7 +565,7 @@ def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
                 "num_retries": retry_config["num_retries"],
                 "time_between_retries": retry_config["time_between_retries"],
                 "timeout": 90,  # Reduced timeout
-                "max_tokens": 2048,  # Further reduced to save memory and context
+                "max_tokens": max_tokens,  # Dynamically adjusted based on context
                 "stream": False,  # Avoid empty responses from streaming with some OpenRouter models
                 # LiteLLM: ensure last message is user (fixes Anthropic assistant prefill error)
                 "additional_params": {
@@ -540,10 +585,11 @@ def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
 
             llm = LLM(**llm_config)
             logger.info(
-                "└─[ LLM SUCCESS ]─ Selected: %s (attempt %d/%d)",
+                "└─[ LLM SUCCESS ]─ Selected: %s (attempt %d/%d, max_tokens: %d)",
                 model_str,
                 attempt,
                 total,
+                max_tokens,
             )
             return llm
         except Exception as e:
@@ -598,8 +644,20 @@ def _get_retry_config_for_model(model_str: str) -> dict[str, int]:
         }
 
 
-def get_llm_for_stage(stage: str | PipelineStage, agent_name: str | None = None) -> LLM:
-    """Return LLM for the given pipeline stage. Uses primary + fallbacks from PIPELINE_MODELS."""
+def get_llm_for_stage(
+    stage: str | PipelineStage,
+    agent_name: str | None = None,
+    context_text: str = "",
+    estimated_context_tokens: int = 0,
+) -> LLM:
+    """Return LLM for the given pipeline stage. Uses primary + fallbacks from PIPELINE_MODELS.
+
+    Args:
+        stage: Pipeline stage name or enum
+        agent_name: Optional agent name for agent-specific configuration
+        context_text: Text that will be in the context/prompt (for token estimation)
+        estimated_context_tokens: Pre-estimated token count (optional)
+    """
     if isinstance(stage, str):
         stage_enum = PipelineStage(stage)
     else:
@@ -616,7 +674,12 @@ def get_llm_for_stage(stage: str | PipelineStage, agent_name: str | None = None)
         )
 
     models: tuple[str | OpenRouterModel, ...] = (config.primary,) + config.fallbacks
-    return llm_with_fallback(*models)
+    return llm_with_fallback(
+        *models,
+        context_text=context_text,
+        stage_name=stage_enum.value,
+        estimated_context_tokens=estimated_context_tokens,
+    )
 
 
 def get_llm() -> LLM:

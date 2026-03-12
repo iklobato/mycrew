@@ -60,13 +60,18 @@ class RepoShellTool(BaseTool):
         "grep: use 'grep PATTERN file' or 'cmd | grep PATTERN'; "
         "for patterns with '-' or '>' use 'grep -e \"pattern\" file' or 'grep -- \"->\" file'. "
         "gh: issue list --state= accepts only open|closed|all; for merged PRs use 'gh pr list --state=merged'. "
-        "Commands run with cwd=repo_path. Output is limited to 65536 chars (64KB) to prevent memory exhaustion. "
+        "Commands run with cwd=repo_path. Output is limited to 16KB to prevent memory exhaustion. "
         'For large repositories, use focused searches: \'grep -r "pattern" src --include="*.py" --exclude-dir=node_modules --exclude-dir=.git | head -100\'. '
-        "Dangerous commands (rm -rf /, mkfs, etc.) are blocked."
+        "Dangerous commands (rm -rf /, mkfs, etc.) are blocked. "
+        "Command outputs are cached (LRU) to avoid redundant executions."
     )
     args_schema: Type[BaseModel] = RepoShellToolInput
 
     repo_path: str = ""
+
+    # LRU cache for command outputs (max 32 entries to limit memory)
+    _command_cache: dict[str, tuple[str, float]] = {}
+    _CACHE_MAX_SIZE = 32
 
     def _run(self, command: str) -> str:
         """Execute a shell command in the repo with safety checks."""
@@ -83,6 +88,25 @@ class RepoShellTool(BaseTool):
         command = command.strip()
         if not command:
             return "Error: empty command."
+
+        # Check cache first (cache key includes repo_path for safety)
+        import time
+
+        cache_key = f"{repo_path}:{command}"
+        if cache_key in self._command_cache:
+            cached_output, timestamp = self._command_cache[cache_key]
+            # Cache valid for 5 minutes (300 seconds)
+            if time.time() - timestamp < 300:
+                logger.info(
+                    "│ Using cached output (age: %.1fs)", time.time() - timestamp
+                )
+                # Move to end (most recently used)
+                del self._command_cache[cache_key]
+                self._command_cache[cache_key] = (cached_output, time.time())
+                return cached_output
+            else:
+                # Expired cache entry
+                del self._command_cache[cache_key]
 
         # Block dangerous patterns
         cmd_lower = command.lower()
@@ -127,14 +151,14 @@ class RepoShellTool(BaseTool):
                 bufsize=1,  # Line buffered
             )
 
-            # Reduced maximum output size (32KB) to save memory
-            MAX_OUTPUT_SIZE = 32768
+            # Aggressive memory reduction: 16KB max output, 200 lines max
+            MAX_OUTPUT_SIZE = 16384  # Reduced from 32KB to 16KB
             stdout_chunks = []
             stderr_chunks = []
             total_size = 0
             truncated = False
             line_count = 0
-            MAX_LINES = 500  # Limit total lines to prevent memory bloat
+            MAX_LINES = 200  # Reduced from 500 to 200 lines
 
             # Read output with timeout
             import select
@@ -216,12 +240,46 @@ class RepoShellTool(BaseTool):
             returncode = process.returncode or 0
 
             # Combine output efficiently
-            output = "".join(stdout_chunks + stderr_chunks)
+            all_lines = stdout_chunks + stderr_chunks
+
+            # Apply smart sampling for very large outputs (first 50, middle 50, last 50)
+            if len(all_lines) > 150:  # If we have more than 150 lines, apply sampling
+                sampled_lines = []
+                total_lines = len(all_lines)
+
+                # First 50 lines
+                sampled_lines.extend(all_lines[:50])
+
+                # Middle 50 lines (centered around midpoint)
+                if total_lines > 100:
+                    mid_start = max(50, total_lines // 2 - 25)
+                    mid_end = min(total_lines - 50, total_lines // 2 + 25)
+                    sampled_lines.append(
+                        f"\n... (skipped {mid_start - 50} lines) ...\n"
+                    )
+                    sampled_lines.extend(all_lines[mid_start:mid_end])
+
+                # Last 50 lines
+                if total_lines > 100:
+                    sampled_lines.append(
+                        f"\n... (skipped {total_lines - 100} lines) ...\n"
+                    )
+                sampled_lines.extend(all_lines[-50:])
+
+                output = "".join(sampled_lines)
+                truncated = True  # Mark as truncated since we sampled
+            else:
+                output = "".join(all_lines)
+
             output_len = len(output)
 
             # Add truncation notice if needed
             if truncated:
-                truncation_msg = f"\n... (output truncated at {MAX_OUTPUT_SIZE // 1024}KB, {MAX_LINES} lines limit)"
+                if len(all_lines) > 150:
+                    truncation_msg = f"\n... (output sampled: first 50 / middle 50 / last 50 of {len(all_lines)} total lines, {MAX_OUTPUT_SIZE // 1024}KB limit)"
+                else:
+                    truncation_msg = f"\n... (output truncated at {MAX_OUTPUT_SIZE // 1024}KB, {MAX_LINES} lines limit)"
+
                 if output_len + len(truncation_msg) > MAX_OUTPUT_SIZE:
                     output = (
                         output[: MAX_OUTPUT_SIZE - len(truncation_msg)] + truncation_msg
@@ -257,6 +315,22 @@ class RepoShellTool(BaseTool):
                 logger.info("│ Output preview: %s", preview)
 
             logger.info("└─[ RepoShellTool COMPLETE ]─")
+
+            # Cache the result (only cache successful commands with return code 0)
+            if returncode == 0:
+                cache_key = f"{repo_path}:{command}"
+                # Apply LRU eviction if cache is full
+                if len(self._command_cache) >= self._CACHE_MAX_SIZE:
+                    # Remove oldest entry (first key)
+                    oldest_key = next(iter(self._command_cache))
+                    del self._command_cache[oldest_key]
+                    logger.debug("│ Cache evicted oldest entry")
+
+                self._command_cache[cache_key] = (output, time.time())
+                logger.debug(
+                    "│ Cached output (cache size: %d)", len(self._command_cache)
+                )
+
             return output
 
         except subprocess.TimeoutExpired:

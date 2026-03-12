@@ -163,6 +163,16 @@ tasks:
     cmds:
       - doctl apps logs 5a45a942-e0c3-4648-aad0-6b45ae0efbcd mycrew --tail 50 --follow
 
+  logs:build:
+    desc: Follow build logs in real time (App Platform)
+    cmds:
+      - doctl apps logs 5a45a942-e0c3-4648-aad0-6b45ae0efbcd mycrew --type build --follow --tail 100
+
+  logs:deploy:
+    desc: Follow deployment logs in real time (App Platform)
+    cmds:
+      - doctl apps logs 5a45a942-e0c3-4648-aad0-6b45ae0efbcd mycrew --type deploy --follow --tail 100
+
   help:
     desc: Show pipeline CLI help
     cmds:
