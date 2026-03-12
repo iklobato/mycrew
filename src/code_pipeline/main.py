@@ -51,9 +51,9 @@ from code_pipeline.crews.test_validator_crew.test_validator_crew import (
 from code_pipeline.tools.human_tool import is_interactive
 from code_pipeline.checkpoint import CheckpointStore
 from code_pipeline.settings import (
+    PipelineContext,
     get_settings,
     init_settings_from_config,
-    PipelineContext,
     set_pipeline_context,
 )
 from code_pipeline.utils import (
@@ -193,7 +193,10 @@ def _configure_logging(level: str | int | None = None) -> None:
 
 def _log_reviewer_verdict(verdict: str) -> None:
     """Log reviewer verdict in a human-readable format."""
-    v = (verdict if verdict is not None and verdict != "" else "").strip()
+    if verdict is not None and verdict != "":
+        v = verdict.strip()
+    else:
+        v = "".strip()
     if not v:
         logger.info("Review: (empty verdict)")
         return
@@ -222,11 +225,10 @@ def _log_reviewer_verdict(verdict: str) -> None:
 
 def _log_implementer_summary(implementation: str) -> None:
     """Log a brief summary of what the implementer changed."""
-    impl = (
-        implementation
-        if implementation is not None and implementation != ""
-        else ""
-    ).strip()
+    if implementation is not None and implementation != "":
+        impl = implementation.strip()
+    else:
+        impl = "".strip()
     if not impl:
         logger.info("Implementer: (no summary)")
         return
@@ -250,9 +252,13 @@ def _log_implementer_summary(implementation: str) -> None:
         # Fallback: first few lines
         preview = "\n  ".join(line.strip() for line in lines[:8] if line.strip())
         if preview:
+            if len(preview) > 400:
+                preview_display = preview[:400] + "..."
+            else:
+                preview_display = preview
             logger.info(
                 "Implementer summary:\n  %s",
-                preview[:400] + ("..." if len(preview) > 400 else ""),
+                preview_display,
             )
 
 
@@ -274,7 +280,10 @@ def _is_retryable_error(e: Exception) -> bool:
             return True
         cause = getattr(current, "__cause__", None)
         context = getattr(current, "__context__", None)
-        current = cause if cause is not None else context
+        if cause is not None:
+            current = cause
+        else:
+            current = context
     return False
 
 
@@ -297,14 +306,21 @@ def _fallback_exploration(repo_path: str, issue_analysis: str) -> str:
                         break
             if len(files_list) >= 80:
                 break
-        files = "\n".join(files_list[:80]) if files_list else "(none found)"
+        if files_list:
+            files = "\n".join(files_list[:80])
+        else:
+            files = "(none found)"
         entries = []
         try:
             for e in sorted(os.listdir(repo_path))[:30]:
                 # Get file/directory info
                 entry_path = os.path.join(repo_path, e)
                 is_dir = os.path.isdir(entry_path)
-                entries.append(f"{'d' if is_dir else '-'} {e}")
+                if is_dir:
+                    prefix = "d"
+                else:
+                    prefix = "-"
+                entries.append(f"{prefix} {e}")
         except OSError as e:
             logger.error(
                 "Fallback exploration: failed to list directory %s: %s",
@@ -370,9 +386,15 @@ def _run_explore_in_process(
             inputs,
             crew_name="ExplorerCrew",
         )
-        raw = result.raw if hasattr(result, "raw") else str(result)
+        if hasattr(result, "raw"):
+            raw = result.raw
+        else:
+            raw = str(result)
         logger.info("ExplorerCrew completed (output_len=%d)", len(raw))
-        raw_str = raw if raw is not None and raw != "" else ""
+        if raw is not None and raw != "":
+            raw_str = raw
+        else:
+            raw_str = ""
         if len(raw_str.strip()) < 200:
             logger.warning(
                 "Exploration too short (%d chars), using fallback", len(raw_str)
@@ -390,16 +412,18 @@ def _format_review_verdict(result) -> str:
     if isinstance(pydantic_val, ReviewVerdict):
         if pydantic_val.verdict == "APPROVED":
             return "APPROVED"
-        issues = (
-            pydantic_val.issues
-            if pydantic_val.issues is not None
-            else []
-        )
+        if pydantic_val.issues is not None:
+            issues = pydantic_val.issues
+        else:
+            issues = []
         if not issues:
             return "ISSUES:\n- (Reviewer found problems but did not list specifics)"
         return "ISSUES:\n" + "\n".join(f"- {i}" for i in issues)
     raw_attr = getattr(result, "raw", None)
-    raw = raw_attr if raw_attr is not None else str(result)
+    if raw_attr is not None:
+        raw = raw_attr
+    else:
+        raw = str(result)
     return _normalize_raw_verdict(raw)
 
 
@@ -425,7 +449,10 @@ def _log_crew_metrics(crew, result, crew_name: str = "Crew") -> None:
     try:
         # Log basic crew info
         agents_attr = getattr(crew, "agents", None)
-        agents = agents_attr if agents_attr is not None else []
+        if agents_attr is not None:
+            agents = agents_attr
+        else:
+            agents = []
         logger.info("│ Crew %s has %d agent(s)", crew_name, len(agents))
 
         # Log token usage at INFO level
@@ -446,11 +473,12 @@ def _log_crew_metrics(crew, result, crew_name: str = "Crew") -> None:
             if um is not None:
                 role = getattr(agent, "role", None)
                 name = getattr(agent, "name", None)
-                agent_name = (
-                    role
-                    if role is not None and role != ""
-                    else (name if name is not None and name != "" else f"agent_{i}")
-                )
+                if role is not None and role != "":
+                    agent_name = role
+                elif name is not None and name != "":
+                    agent_name = name
+                else:
+                    agent_name = f"agent_{i}"
                 tokens = getattr(um, "total_tokens", 0)
                 cost = getattr(um, "total_cost", 0)
                 if tokens > 0:
@@ -555,14 +583,19 @@ class PipelineArgs:
 
     def to_flow_inputs(self) -> dict:
         """Convert to flow inputs. Resolves issue_url via GitHub API to derive task, repo, etc."""
-        issue_url_val = self.issue_url if self.issue_url is not None else ""
+        if self.issue_url is not None:
+            issue_url_val = self.issue_url
+        else:
+            issue_url_val = ""
         if not issue_url_val.strip():
             raise ValueError("issue_url is required")
         resolved = resolve_issue_url(self.issue_url)
         repo_path_val = resolved.get("repo_path", ".")
-        repo_path = os.path.abspath(
-            repo_path_val if repo_path_val is not None and repo_path_val != "" else os.getcwd()
-        )
+        if repo_path_val is not None and repo_path_val != "":
+            repo_path_resolved = repo_path_val
+        else:
+            repo_path_resolved = os.getcwd()
+        repo_path = os.path.abspath(repo_path_resolved)
         return {
             "repo_path": repo_path,
             "task": resolved["task"],
@@ -725,13 +758,19 @@ def _parse_args() -> PipelineArgs:
         if v is not None:
             base[k] = v
 
+    iu = base["issue_url"]
+    if iu is None:
+        iu = ""
+    tc = base["test_command"]
+    if tc is None:
+        tc = ""
     return PipelineArgs(
-        issue_url=base["issue_url"] or "",
+        issue_url=iu,
         branch=base["branch"],
         from_scratch=base["from_scratch"],
         max_retries=3,
         dry_run=base["dry_run"],
-        test_command=base["test_command"] or "",
+        test_command=tc,
         serper_enabled=base.get("serper_enabled", False),
         programmatic=base.get("programmatic", False),
     )
@@ -796,11 +835,23 @@ class CodePipelineFlow(Flow[PipelineState]):
                 text=True,
                 timeout=300,
             )
-            output = (result.stdout or "") + (result.stderr or "")
+            if result.stdout is not None:
+                stdout = result.stdout
+            else:
+                stdout = ""
+            if result.stderr is not None:
+                stderr = result.stderr
+            else:
+                stderr = ""
+            output = stdout + stderr
             passed = result.returncode == 0
+            if passed:
+                gate_status = "PASSED"
+            else:
+                gate_status = "FAILED"
             logger.info(
                 "Quality gate %s (exit=%d)",
-                "PASSED" if passed else "FAILED",
+                gate_status,
                 result.returncode,
             )
             return passed, output
@@ -817,15 +868,21 @@ class CodePipelineFlow(Flow[PipelineState]):
 
         # Set pipeline context for crews to read (repo_path, github_repo, etc.)
         rp = inputs.get("repo_path", "")
-        rp = rp if rp is not None and rp != "" else getattr(self.state, "repo_path", "")
-        rp = rp if rp is not None and rp != "" else os.getcwd()
+        if rp is None or rp == "":
+            rp = getattr(self.state, "repo_path", "")
+        if rp is None or rp == "":
+            rp = os.getcwd()
         repo_path = os.path.abspath(rp)
         gh = inputs.get("github_repo", "")
-        gh = gh if gh is not None and gh != "" else getattr(self.state, "github_repo", "")
-        gh = gh if gh is not None and gh != "" else ""
+        if gh is None or gh == "":
+            gh = getattr(self.state, "github_repo", "")
+        if gh is None or gh == "":
+            gh = ""
         iu = inputs.get("issue_url", "")
-        iu = iu if iu is not None and iu != "" else getattr(self.state, "issue_url", "")
-        iu = iu if iu is not None and iu != "" else ""
+        if iu is None or iu == "":
+            iu = getattr(self.state, "issue_url", "")
+        if iu is None or iu == "":
+            iu = ""
         set_pipeline_context(
             PipelineContext(
                 repo_path=repo_path,
@@ -840,25 +897,36 @@ class CodePipelineFlow(Flow[PipelineState]):
         if "repo_context" not in inputs:
             inputs = dict(inputs)
             rp_in = inputs.get("repo_path", "")
-            rp_in = rp_in if rp_in is not None and rp_in != "" else self.state.repo_path
+            if rp_in is None or rp_in == "":
+                rp_in = self.state.repo_path
             gh_in = inputs.get("github_repo", "")
-            gh_in = gh_in if gh_in is not None and gh_in != "" else self.state.github_repo
+            if gh_in is None or gh_in == "":
+                gh_in = self.state.github_repo
             iu_in = inputs.get("issue_url", "")
-            iu_in = iu_in if iu_in is not None and iu_in != "" else self.state.issue_url
+            if iu_in is None or iu_in == "":
+                iu_in = self.state.issue_url
             tc_in = inputs.get("test_command", "")
-            tc_in = tc_in if tc_in is not None and tc_in != "" else self.state.test_command
+            if tc_in is None or tc_in == "":
+                tc_in = self.state.test_command
             inputs["repo_context"] = build_repo_context(rp_in, gh_in, iu_in, tc_in)
 
-        step_name = state_attr if state_attr is not None and state_attr != "" else "crew"
+        if state_attr is not None and state_attr != "":
+            step_name = state_attr
+        else:
+            step_name = "crew"
         logger.info("PIPELINE step=%s crew=%s | start", step_name, crew_name)
         try:
             result = _kickoff_with_retry(
                 crew_class().crew(), inputs, crew_name=crew_name
             )
         except Exception as e:
+            if state_attr is not None and state_attr != "":
+                err_step = state_attr
+            else:
+                err_step = "crew"
             logger.error(
                 "PIPELINE step=%s crew=%s | failed: %s",
-                state_attr or "crew",
+                err_step,
                 crew_name,
                 e,
             )
@@ -878,7 +946,10 @@ class CodePipelineFlow(Flow[PipelineState]):
                         text_parts.append(str(item["content"]))
                     else:
                         text_parts.append(str(item))
-                raw = "\n".join(text_parts) if text_parts else str(raw_value)
+                if text_parts:
+                    raw = "\n".join(text_parts)
+                else:
+                    raw = str(raw_value)
             else:
                 raw = str(raw_value)
         else:
@@ -926,7 +997,10 @@ class CodePipelineFlow(Flow[PipelineState]):
             logger.info("PIPELINE step=analyze_issue | resumed (cached)")
             return self.state.issue_analysis
         logger.info("PIPELINE step=analyze_issue crew=IssueAnalystCrew | start")
-        repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
+        rp = self.state.repo_path
+        if rp is None or rp == "":
+            rp = os.getcwd()
+        repo_path = os.path.abspath(rp)
         self.state.repo_path = repo_path
         return self._run_crew(
             IssueAnalystCrew,
@@ -948,20 +1022,29 @@ class CodePipelineFlow(Flow[PipelineState]):
             logger.info("PIPELINE step=explore | resumed (cached)")
             return self.state.exploration
         logger.info("PIPELINE step=explore crew=ExplorerCrew | start")
-        repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
+        rp = self.state.repo_path
+        if rp is None or rp == "":
+            rp = os.getcwd()
+        repo_path = os.path.abspath(rp)
         self.state.repo_path = repo_path
+        gh = self.state.github_repo
+        if gh is None:
+            gh = ""
         logger.info(
             "PIPELINE step=explore | repo_path=%s github_repo=%s",
             repo_path,
-            self.state.github_repo or "",
+            gh,
         )
+        rc = getattr(self.state, "repo_context", "")
+        if rc is None:
+            rc = ""
         raw = _run_explore_in_process(
             repo_path,
             self.state.issue_analysis,
             task=self.state.task,
             test_command=self.state.test_command,
-            github_repo=self.state.github_repo or "",
-            repo_context=getattr(self.state, "repo_context", "") or "",
+            github_repo=gh,
+            repo_context=rc,
         )
         self.state.exploration = raw
         return raw
@@ -1027,7 +1110,9 @@ class CodePipelineFlow(Flow[PipelineState]):
             "PIPELINE step=implement crew=ImplementerCrew | start (retry_count=%d)",
             self.state.retry_count,
         )
-        repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
+        rp = self.state.repo_path
+        if rp is None or rp == "":
+            rp = os.getcwd()
         return self._run_crew(
             ImplementerCrew,
             {
@@ -1051,8 +1136,6 @@ class CodePipelineFlow(Flow[PipelineState]):
             return "quality_gate"
 
         logger.info("PIPELINE step=validate_tests crew=TestValidatorCrew | start")
-        repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
-
         return self._run_crew(
             TestValidatorCrew,
             {
@@ -1079,8 +1162,6 @@ class CodePipelineFlow(Flow[PipelineState]):
             return "quality_gate_retry"
 
         logger.info("PIPELINE step=validate_tests_retry crew=TestValidatorCrew | start")
-        repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
-
         return self._run_crew(
             TestValidatorCrew,
             {
@@ -1103,7 +1184,10 @@ class CodePipelineFlow(Flow[PipelineState]):
     def _repo_has_changes(self) -> tuple[bool, str]:
         """Run git status --short in repo. Return (has_changes, output).
         Ignores .code_pipeline/ (pipeline state, not application code)."""
-        repo = os.path.abspath(self.state.repo_path or "")
+        rp = self.state.repo_path
+        if rp is None:
+            rp = ""
+        repo = os.path.abspath(rp)
         if not repo or not os.path.isdir(repo):
             return False, "Repo path invalid"
         try:
@@ -1114,11 +1198,20 @@ class CodePipelineFlow(Flow[PipelineState]):
                 text=True,
                 timeout=10,
             )
-            out = (result.stdout or "").strip()
+            stdout = result.stdout
+            if stdout is None:
+                stdout = ""
+            out = stdout.strip()
             # Filter out .code_pipeline — pipeline state, not application changes
             lines = [line for line in out.splitlines() if ".code_pipeline" not in line]
             filtered = "\n".join(lines).strip()
-            return bool(filtered), filtered or out or "(no changes)"
+            if filtered:
+                status_out = filtered
+            elif out:
+                status_out = out
+            else:
+                status_out = "(no changes)"
+            return bool(filtered), status_out
         except Exception as e:
             logger.warning("git status failed: %s", e)
             return False, str(e)
@@ -1153,11 +1246,13 @@ class CodePipelineFlow(Flow[PipelineState]):
             return "review"
         if self.state.quality_gate_passed:
             return "review"
-        prefix = (
-            "No file changes detected. Implementer must write files:\n\n"
-            if "No file changes" in (self.state.quality_gate_output or "")
-            else "Quality gate failed (tests/lint):\n\n"
-        )
+        qg_out = self.state.quality_gate_output
+        if qg_out is None:
+            qg_out = ""
+        if "No file changes" in qg_out:
+            prefix = "No file changes detected. Implementer must write files:\n\n"
+        else:
+            prefix = "Quality gate failed (tests/lint):\n\n"
         return self._retry_or_abort(prefix, self.state.quality_gate_output)
 
     @listen("review")
@@ -1169,20 +1264,30 @@ class CodePipelineFlow(Flow[PipelineState]):
             logger.info("PIPELINE step=review | resumed (cached)")
             return self.state.review_verdict
         logger.info("PIPELINE step=review crew=ReviewerCrew | start")
-        repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
+        rp = self.state.repo_path
+        if rp is None or rp == "":
+            rp = os.getcwd()
+        rc = getattr(self.state, "repo_context", "")
+        if rc is None or rc == "":
+            gh = self.state.github_repo
+            if gh is None:
+                gh = ""
+            iu = self.state.issue_url
+            if iu is None:
+                iu = ""
+            rc = build_repo_context(
+                self.state.repo_path,
+                gh,
+                iu,
+                self.state.test_command,
+            )
         inputs = {
             "task": self.state.task,
             "plan": self.state.plan,
             "implementation": self.state.implementation,
             "repo_path": self.state.repo_path,
             "issue_analysis": self.state.issue_analysis,
-            "repo_context": getattr(self.state, "repo_context", "")
-            or build_repo_context(
-                self.state.repo_path,
-                self.state.github_repo or "",
-                self.state.issue_url or "",
-                self.state.test_command,
-            ),
+            "repo_context": rc,
         }
         result = _kickoff_with_retry(
             ReviewerCrew().crew(),
@@ -1198,9 +1303,13 @@ class CodePipelineFlow(Flow[PipelineState]):
     def route_verdict(self):
         """Route based on verdict: commit, retry, or abort. Run verification when APPROVED."""
         verdict = self.state.review_verdict.strip()
+        if verdict:
+            verdict_prefix = verdict[:50]
+        else:
+            verdict_prefix = "(empty)"
         logger.info(
             "PIPELINE step=route_verdict | verdict_prefix=%s",
-            verdict[:50] if verdict else "(empty)",
+            verdict_prefix,
         )
         if verdict.upper().startswith("APPROVED"):
             if self.state.test_command:
@@ -1258,9 +1367,12 @@ class CodePipelineFlow(Flow[PipelineState]):
         Human rejected the implementation. Feed their feedback back as prior_issues
         and restart from the plan step.
         """
+        fb = result.feedback
+        if fb is None:
+            fb = ""
         logger.info(
             "PIPELINE step=handle_human_replan | feedback_len=%d",
-            len(result.feedback or ""),
+            len(fb),
         )
         if self.state.replan_count >= self.state.max_replans:
             logger.warning("Max replans (%d) reached, aborting", self.state.max_replans)
@@ -1276,7 +1388,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         # Store human feedback as prior issues so the planner and implementer see it
         self.state.prior_issues = (
             f"[Human reviewer requested changes in replan #{self.state.replan_count}]\n"
-            f"{result.feedback}"
+            f"{fb}"
         )
 
         logger.info(
@@ -1376,26 +1488,57 @@ class CodePipelineFlow(Flow[PipelineState]):
     def run_commit(self):
         """Run CommitCrew; creates feature branch, commits, then pushes and creates PR."""
         feature_branch = self._make_feature_branch_name()
-        repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
         logger.info(
             "Flow step: commit (dry_run=%s, feature_branch=%s)",
             self.state.dry_run,
             feature_branch,
         )
+        if self.state.dry_run:
+            dry_run_val = "true"
+        else:
+            dry_run_val = "false"
+        if self.state.issue_id is not None:
+            issue_id_val = self.state.issue_id
+        else:
+            issue_id_val = ""
+        if self.state.task is not None:
+            task_val = self.state.task
+        else:
+            task_val = ""
+        if self.state.implementation is not None:
+            impl_val = self.state.implementation
+        else:
+            impl_val = ""
+        if self.state.plan is not None:
+            plan_val = self.state.plan
+        else:
+            plan_val = ""
+        if self.state.review_verdict is not None:
+            verdict_val = self.state.review_verdict
+        else:
+            verdict_val = ""
+        if self.state.issue_url is not None:
+            issue_url_val = self.state.issue_url
+        else:
+            issue_url_val = ""
+        if self.state.github_repo is not None:
+            gh_val = self.state.github_repo
+        else:
+            gh_val = ""
         return self._run_crew(
             CommitCrew,
             {
                 "repo_path": self.state.repo_path,
                 "branch": self.state.branch,
                 "feature_branch": feature_branch,
-                "dry_run": "true" if self.state.dry_run else "false",
-                "issue_id": self.state.issue_id or "",
-                "task": self.state.task or "",
-                "implementation": self.state.implementation or "",
-                "plan": self.state.plan or "",
-                "review_verdict": self.state.review_verdict or "",
-                "issue_url": self.state.issue_url or "",
-                "github_repo": self.state.github_repo or "",
+                "dry_run": dry_run_val,
+                "issue_id": issue_id_val,
+                "task": task_val,
+                "implementation": impl_val,
+                "plan": plan_val,
+                "review_verdict": verdict_val,
+                "issue_url": issue_url_val,
+                "github_repo": gh_val,
             },
             state_attr=None,
         )
@@ -1436,7 +1579,11 @@ def kickoff(
         "programmatic": programmatic,
     }
     args = _parse_args().replace(**overrides)
-    flow_inputs = (inputs or {}) | args.to_flow_inputs()
+    if inputs is not None:
+        flow_inputs_base = inputs
+    else:
+        flow_inputs_base = {}
+    flow_inputs = flow_inputs_base | args.to_flow_inputs()
     # Enrich repo_path when it's "." (resolve to git root)
     enriched = enrich_repo_context(
         flow_inputs.get("repo_path", ""),
@@ -1447,8 +1594,15 @@ def kickoff(
     for k, v in enriched.items():
         if not v:
             continue
-        current = (flow_inputs.get(k) or "").strip()
-        use = (not current or current == ".") if k == "repo_path" else not current
+        current_raw = flow_inputs.get(k)
+        if current_raw is not None:
+            current = current_raw.strip()
+        else:
+            current = ""
+        if k == "repo_path":
+            use = (not current) or (current == ".")
+        else:
+            use = not current
         if use:
             flow_inputs[k] = v
     flow_inputs["repo_context"] = build_repo_context(
@@ -1471,14 +1625,17 @@ def _execute_flow(inputs: dict):
     global _pipeline_aborted
     _pipeline_aborted = False
 
-    repo_path = os.path.abspath(inputs.get("repo_path", os.getcwd()))
+    _ = os.path.abspath(inputs.get("repo_path", os.getcwd()))  # Keep for consistency
     task = inputs.get("task", "")
     from_scratch = inputs.get("from_scratch", False)
 
     flow = CodePipelineFlow()
     kickoff_inputs = dict(inputs)
 
-    store = CheckpointStore(repo_path) if task else None
+    if task:
+        store = CheckpointStore(inputs.get("repo_path", os.getcwd()))
+    else:
+        store = None
     if not from_scratch and store:
         checkpoint_id = store.load(task)
         if checkpoint_id:
@@ -1528,7 +1685,11 @@ def _execute_flow_with_trigger(trigger_payload: dict):
 def _main():
     """Entry point for CLI. Decorator logs any exception before re-raising."""
     args = _parse_args()
-    _configure_logging(level=logging.DEBUG if getattr(args, "verbose", False) else None)
+    if getattr(args, "verbose", False):
+        log_level = logging.DEBUG
+    else:
+        log_level = None
+    _configure_logging(level=log_level)
     kickoff(
         issue_url=args.issue_url,
         branch=args.branch,

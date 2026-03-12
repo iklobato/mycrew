@@ -26,9 +26,14 @@ try:
     class _OpenRouterLogger(CustomLogger):
         """Log all OpenRouter API calls via logging.info."""
 
-        def log_pre_api_call(self, model: str, messages: list, kwargs: dict) -> None:
+        def log_pre_api_call(
+            self, model: str, messages: list[Any], kwargs: dict[str, Any]
+        ) -> None:
             if model and str(model).startswith("openrouter/"):
-                n = len(messages) if messages else 0
+                if messages:
+                    n = len(messages)
+                else:
+                    n = 0
                 logger.info(
                     "OpenRouter pre_call model=%s messages=%d",
                     model,
@@ -37,7 +42,7 @@ try:
 
         def log_success_event(
             self,
-            kwargs: dict,
+            kwargs: dict[str, Any],
             response_obj: object,
             start_time: float | None,
             end_time: float | None,
@@ -67,7 +72,7 @@ try:
 
         def log_failure_event(
             self,
-            kwargs: dict,
+            kwargs: dict[str, Any],
             response_obj: object,
             start_time: float | None,
             end_time: float | None,
@@ -75,7 +80,10 @@ try:
             model = kwargs.get("model", "")
             if not str(model).startswith("openrouter/"):
                 return
-            err = str(response_obj) if response_obj else "unknown"
+            if response_obj:
+                err = str(response_obj)
+            else:
+                err = "unknown"
             logger.info(
                 "OpenRouter failure model=%s error=%s",
                 model,
@@ -83,9 +91,11 @@ try:
             )
 
     _existing = getattr(litellm, "callbacks", None)
-    litellm.callbacks = list(_existing if _existing is not None else []) + [
-        _OpenRouterLogger()
-    ]
+    if _existing is not None:
+        _callbacks_list = list(_existing)
+    else:
+        _callbacks_list = []
+    litellm.callbacks = _callbacks_list + [_OpenRouterLogger()]
 except ImportError as e:
     logging.getLogger(__name__).info(
         "litellm import failed (modify_params/callbacks unavailable): %s", e
@@ -97,7 +107,7 @@ _original_format_messages = LLM._format_messages_for_provider
 
 
 @log_exceptions("_patched_format_messages")
-def _patched_format_messages(self, messages):
+def _patched_format_messages(self, messages: list[Any]) -> list[dict[str, Any]]:
     result = _original_format_messages(self, messages)
     # Many providers (Anthropic, Mistral, Ollama) require the last message to be user.
     if result and result[-1].get("role") == "assistant":
@@ -475,7 +485,7 @@ def _get_agent_model_config(stage: PipelineStage, agent_name: str) -> StageModel
         stage, DEFAULT_PIPELINE_MODELS[PipelineStage.ANALYZE_ISSUE]
     )
     _agent_model_cache[cache_key] = stage_config
-    return stage_config
+    return stage_config  # type: ignore[return-value]
 
 
 def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
@@ -562,7 +572,7 @@ def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
     raise Exception("All models failed")
 
 
-def _get_retry_config_for_model(model_str: str) -> dict:
+def _get_retry_config_for_model(model_str: str) -> dict[str, int]:
     """Get retry configuration optimized for specific model types."""
     model_lower = model_str.lower()
 
@@ -590,7 +600,10 @@ def _get_retry_config_for_model(model_str: str) -> dict:
 
 def get_llm_for_stage(stage: str | PipelineStage, agent_name: str | None = None) -> LLM:
     """Return LLM for the given pipeline stage. Uses primary + fallbacks from PIPELINE_MODELS."""
-    stage_enum = PipelineStage(stage) if isinstance(stage, str) else stage
+    if isinstance(stage, str):
+        stage_enum = PipelineStage(stage)
+    else:
+        stage_enum = stage
     logger.debug("get_llm_for_stage: stage=%s, agent=%s", stage_enum, agent_name)
 
     if agent_name:
