@@ -67,7 +67,44 @@ def ask_human(question: str) -> str:
     from code_pipeline.settings import get_pipeline_context
 
     if get_pipeline_context().programmatic:
-        logger.info("ask_human: programmatic mode, returning assumed answer")
+        logger.info("ask_human: programmatic mode, auto-selecting recommended option")
+
+        # Parse the question to find the recommended option
+        # Look for "Option A (recommended):" pattern
+        import re
+
+        # Try to find Option A (recommended)
+        option_a_match = re.search(
+            r"Option A\s*\(recommended\)\s*:(.*?)(?=\nOption B|\nOption C|\nOption D|\nOption E|\nOption F|\Z)",
+            question,
+            re.DOTALL | re.IGNORECASE,
+        )
+
+        if option_a_match:
+            option_a_text = option_a_match.group(1).strip()
+            logger.info(
+                f"ask_human: programmatic mode, selecting Option A: {option_a_text[:100]}..."
+            )
+            return f"Option A: {option_a_text}"
+
+        # If no recommended option found, fall back to Option A
+        option_a_match = re.search(
+            r"Option A\s*:(.*?)(?=\nOption B|\nOption C|\nOption D|\nOption E|\nOption F|\Z)",
+            question,
+            re.DOTALL | re.IGNORECASE,
+        )
+
+        if option_a_match:
+            option_a_text = option_a_match.group(1).strip()
+            logger.info(
+                f"ask_human: programmatic mode, selecting Option A (fallback): {option_a_text[:100]}..."
+            )
+            return f"Option A: {option_a_text}"
+
+        # If still no match, return generic response
+        logger.info(
+            "ask_human: programmatic mode, no Option A found, returning generic response"
+        )
         return "(Programmatic mode: proceeding with best assumption from exploration. Use Option A / recommended approach.)"
 
     print(" CLARIFICATION NEEDED")
