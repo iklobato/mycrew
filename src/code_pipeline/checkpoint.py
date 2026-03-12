@@ -43,7 +43,10 @@ class CheckpointStore:
             data = json.loads(path.read_text())
             entry = data.get(self._key(task))
             if entry and isinstance(entry, dict):
-                return entry.get("flow_id")
+                flow_id = entry.get("flow_id")
+                if flow_id:
+                    logger.info("Checkpoint loaded for task: flow_id=%s", flow_id[:8])
+                return flow_id
         except (json.JSONDecodeError, OSError) as e:
             logger.warning("Checkpoint load failed: %s", e)
         return None
@@ -88,3 +91,4 @@ class CheckpointStore:
 
         # Write with minimal indentation to save space
         path.write_text(json.dumps(data, separators=(",", ":")))
+        logger.info("Checkpoint saved for task: flow_id=%s", flow_id[:8])

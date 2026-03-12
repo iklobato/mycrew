@@ -716,6 +716,12 @@ def _load_config(path: str) -> dict:
     init_settings_from_config(data)
     get_settings().apply_crewai_telemetry()
 
+    logger.info(
+        "Loaded config from %s (issue_url=%s, branch=%s)",
+        path,
+        out.get("issue_url", ""),
+        out.get("branch", ""),
+    )
     return out
 
 
@@ -1981,12 +1987,14 @@ def run_with_trigger():
         logger.error("Invalid JSON trigger payload: %s", e, exc_info=True)
         raise ValueError(f"Invalid JSON payload: {e}") from e
 
+    logger.info("Trigger payload parsed, executing flow")
     return _execute_flow_with_trigger(trigger_payload)
 
 
 @log_exceptions("Flow execution (run_with_trigger)")
 def _execute_flow_with_trigger(trigger_payload: dict):
     """Run flow with trigger payload. Decorator logs any exception before re-raising."""
+    logger.info("Flow execution started (trigger payload)")
     flow = CodePipelineFlow()
     return flow.kickoff({"crewai_trigger_payload": trigger_payload})
 

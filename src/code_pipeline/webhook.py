@@ -127,6 +127,11 @@ def _send_callback(callback_url: str, status: str, details: dict[str, Any]) -> N
 
 def _run_kickoff_background(**params: Any) -> None:
     """Run kickoff in background. Logs and swallows exceptions (CS-45: must log)."""
+    issue_url = params.get("issue_url", "")
+    logger.info(
+        "Background kickoff started: issue_url=%s", issue_url[:80] if issue_url else ""
+    )
+
     # Extract callback_url from params
     callback_url = params.pop("callback_url", None)
 
@@ -200,6 +205,12 @@ def _handle_github(
                 "reason": f"Event {event}/{action} not supported",
             },
         )
+    logger.info(
+        "GitHub webhook accepted: event=%s action=%s issue_url=%s",
+        event,
+        action,
+        params["issue_url"][:80],
+    )
     background_tasks.add_task(_run_kickoff_background, **params)
     return JSONResponse(
         status_code=202,

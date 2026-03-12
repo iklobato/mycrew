@@ -11,6 +11,7 @@ from typing import Callable, TypeVar
 from code_pipeline.settings import get_settings
 
 F = TypeVar("F", bound=Callable[..., object])
+logger = logging.getLogger(__name__)
 
 
 def resolve_issue_url(issue_url: str) -> dict[str, str]:
@@ -85,6 +86,12 @@ def resolve_issue_url(issue_url: str) -> dict[str, str]:
     if not task:
         raise ValueError("GitHub issue has no title")
 
+    logger.info(
+        "Resolved issue_url=%s -> task=%s, github_repo=%s",
+        url[:80],
+        task[:60],
+        github_repo,
+    )
     return {
         "task": task,
         "github_repo": github_repo,
@@ -201,7 +208,6 @@ def clone_repo_for_issue(
     if not abs_target.startswith(abs_parent):
         raise ValueError("Target path escapes parent_dir")
     os.makedirs(parent_dir, exist_ok=True)
-    logger = logging.getLogger(__name__)
     logger.info("Cloning %s branch=%s into %s", github_repo, branch, target_dir)
     result = subprocess.run(
         ["git", "clone", "--branch", branch, "--depth", "1", url, target_dir],
@@ -212,6 +218,7 @@ def clone_repo_for_issue(
     if result.returncode != 0:
         stderr = result.stderr if result.stderr else ""
         raise ValueError(f"git clone failed: {stderr.strip() or 'unknown error'}")
+    logger.info("Clone complete: %s -> %s", github_repo, abs_target)
     return abs_target
 
 
@@ -222,7 +229,6 @@ def delete_cloned_repo(path: str) -> None:
     Called in finally block after pipeline execution.
     Only deletes paths under /tmp for safety.
     """
-    logger = logging.getLogger(__name__)
     if not path or not path.strip():
         return
     abs_path = os.path.abspath(os.path.normpath(path.strip()))
@@ -307,6 +313,12 @@ def enrich_repo_context(
     if not url:
         url = ""
 
+    logger.info(
+        "Enriched repo_context: repo_path=%s, github_repo=%s, issue_url=%s",
+        repo,
+        gh,
+        url,
+    )
     return {"repo_path": repo, "github_repo": gh, "issue_url": url}
 
 
