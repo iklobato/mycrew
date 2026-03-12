@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0", alias="HOST")
     port: int = Field(default=8000, alias="PORT")
 
+    # Valkey/Redis (optional; when set, offloads large pipeline state)
+    redis_url: str = Field(default="", alias="REDIS_URL")
+
     # Logging
     code_pipeline_log_level: str = Field(
         default="INFO", alias="CODE_PIPELINE_LOG_LEVEL"

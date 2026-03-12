@@ -1,15 +1,27 @@
 """RepoShellTool: run shell commands in a repo with safety checks."""
 
+import hashlib
 import logging
 import os
 import re
 import subprocess
+import time
 from typing import Type
 
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+
+def _get_valkey_cache_safe():
+    """Return ValkeyCache if REDIS_URL set, else None. Avoids import errors."""
+    try:
+        from code_pipeline.valkey_cache import get_valkey_cache
+
+        return get_valkey_cache()
+    except Exception:
+        return None
 
 
 # Dangerous patterns to block
@@ -90,10 +102,17 @@ class RepoShellTool(BaseTool):
             return "Error: empty command."
 
         # Check cache first (cache key includes repo_path for safety)
-        import time
-
         cache_key = f"{repo_path}:{command}"
-        if cache_key in self._command_cache:
+        valkey_cache = _get_valkey_cache_safe()
+        if valkey_cache is not None:
+            valkey_key = (
+                f"reposhell:{hashlib.sha256(cache_key.encode()).hexdigest()[:32]}"
+            )
+            cached = valkey_cache.retrieve(valkey_key)
+            if cached is not None:
+                logger.info("│ Using Valkey cached output")
+                return cached
+        elif cache_key in self._command_cache:
             cached_output, timestamp = self._command_cache[cache_key]
             # Cache valid for 5 minutes (300 seconds)
             if time.time() - timestamp < 300:
@@ -162,7 +181,6 @@ class RepoShellTool(BaseTool):
 
             # Read output with timeout
             import select
-            import time
 
             start_time = time.time()
             TIMEOUT = 90  # Reduced timeout
@@ -319,17 +337,20 @@ class RepoShellTool(BaseTool):
             # Cache the result (only cache successful commands with return code 0)
             if returncode == 0:
                 cache_key = f"{repo_path}:{command}"
-                # Apply LRU eviction if cache is full
-                if len(self._command_cache) >= self._CACHE_MAX_SIZE:
-                    # Remove oldest entry (first key)
-                    oldest_key = next(iter(self._command_cache))
-                    del self._command_cache[oldest_key]
-                    logger.debug("│ Cache evicted oldest entry")
-
-                self._command_cache[cache_key] = (output, time.time())
-                logger.debug(
-                    "│ Cached output (cache size: %d)", len(self._command_cache)
-                )
+                if valkey_cache is not None:
+                    valkey_key = f"reposhell:{hashlib.sha256(cache_key.encode()).hexdigest()[:32]}"
+                    if valkey_cache.store(valkey_key, output, ttl_seconds=300):
+                        logger.debug("│ Cached output in Valkey")
+                else:
+                    # Apply LRU eviction if cache is full
+                    if len(self._command_cache) >= self._CACHE_MAX_SIZE:
+                        oldest_key = next(iter(self._command_cache))
+                        del self._command_cache[oldest_key]
+                        logger.debug("│ Cache evicted oldest entry")
+                    self._command_cache[cache_key] = (output, time.time())
+                    logger.debug(
+                        "│ Cached output (cache size: %d)", len(self._command_cache)
+                    )
 
             return output
 

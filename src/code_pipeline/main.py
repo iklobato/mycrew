@@ -66,14 +66,7 @@ from code_pipeline.utils import (
     log_exceptions,
     resolve_issue_url,
 )
-from code_pipeline.memory_monitor import (
-    log_memory_usage,
-    force_garbage_collection,
-    MemoryGuard,
-    ExplorerCrewMemoryOptimizer,
-    compress_large_string,
-    filter_redundant_output,
-)
+from code_pipeline.valkey_cache import get_valkey_cache
 
 _event_context_config.set(
     EventContextConfig(
@@ -195,6 +188,7 @@ def _configure_logging(level: str | int | None = None) -> None:
         logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     )
     log.addHandler(handler)
+    log.propagate = False  # Avoid duplicate output when root logger also has a handler
     resolved_level = level
     if resolved_level is None:
         resolved_level = getattr(
@@ -358,11 +352,6 @@ def _run_explore_in_process(
 ) -> str:
     """Run ExplorerCrew in-process with memory optimization. On exception, use fallback exploration."""
     try:
-        # Initialize memory optimizer for ExplorerCrew
-        # Note: Currently used for logging and tracking only
-        # In future, could be used to optimize agent outputs
-        _memory_optimizer = ExplorerCrewMemoryOptimizer("ExplorerCrew")
-
         crew = ExplorerCrew().crew()
         if repo_context:
             effective_repo_context = repo_context
@@ -381,9 +370,6 @@ def _run_explore_in_process(
             "exclude_paths": "",
         }
 
-        # Log memory before exploration
-        log_memory_usage("Before ExplorerCrew")
-
         result = _kickoff_with_retry(
             crew,
             inputs,
@@ -394,46 +380,14 @@ def _run_explore_in_process(
         else:
             raw = str(result)
 
-        # Apply output filtering to remove redundancy
-        if raw:
-            # For ExplorerCrew, we can't easily get individual agent outputs
-            # but we can still apply basic filtering
-            filtered_raw = filter_redundant_output(raw, [])
-
-            # Compress large outputs
-            compression_result = compress_large_string(filtered_raw, threshold_kb=5)
-            if compression_result:
-                logger.info(
-                    "Compressed exploration: %d KB -> %d KB (ratio: %.2f)",
-                    compression_result.original_size / 1024,
-                    compression_result.compressed_size / 1024,
-                    compression_result.compression_ratio,
-                )
-                # Store compression metadata for later decompression if needed
-                # For now, we'll keep uncompressed version for compatibility
-            else:
-                logger.info(
-                    "ExplorerCrew completed (output_len=%d, filtered_len=%d)",
-                    len(raw),
-                    len(filtered_raw),
-                )
-        else:
-            filtered_raw = ""
-
-        if filtered_raw is not None and filtered_raw != "":
-            raw_str = filtered_raw
-        else:
-            raw_str = ""
+        raw_str = raw or ""
         if len(raw_str.strip()) < 200:
             logger.warning(
                 "Exploration too short (%d chars), using fallback", len(raw_str)
             )
             return _fallback_exploration(repo_path, issue_analysis)
 
-        # Log memory after exploration
-        log_memory_usage("After ExplorerCrew")
-
-        return filtered_raw if filtered_raw else raw
+        return raw
     except Exception as e:
         logger.error("ExplorerCrew failed: %s", e, exc_info=True)
         return _fallback_exploration(repo_path, issue_analysis)
@@ -860,9 +814,8 @@ class CodePipelineFlow(Flow[PipelineState]):
     """Event-driven coding pipeline: explore 1 plan 1 implement 1 review 1 commit."""
 
     def __init__(self, *args, **kwargs):
-        """Initialize flow with memory monitoring."""
+        """Initialize flow."""
         super().__init__(*args, **kwargs)
-        log_memory_usage("Flow initialized")
 
     def _run_quality_check(self, test_command: str) -> tuple[bool, str]:
         """Run test command in repo. Return (passed, output)."""
@@ -996,96 +949,69 @@ class CodePipelineFlow(Flow[PipelineState]):
 
         return "\n\n".join(truncated)
 
-    def _cleanup_after_plan(self) -> None:
-        """Aggressive memory cleanup after plan stage.
+    VALKEY_THRESHOLD_BYTES = 5120
 
-        Clears exploration field (replaced by truncated version in plan inputs)
-        and forces garbage collection.
-        """
-        logger.info("Memory cleanup after plan stage")
+    def _get_flow_id(self) -> str:
+        """Return flow identifier for Valkey keys."""
+        return (
+            getattr(self, "flow_id", None)
+            or (self.state.id if self.state.id else "")
+            or str(uuid.uuid4())
+        )
 
-        # Apply compression before clearing if exploration is large
-        if self.state.exploration:
-            compression_result = compress_large_string(
-                self.state.exploration, threshold_kb=5
+    def _maybe_offload_to_valkey(self, field: str, value: str) -> str:
+        """If value exceeds threshold and Valkey available, store and return key ref."""
+        if not value or len(value.encode("utf-8")) < self.VALKEY_THRESHOLD_BYTES:
+            return value
+        cache = get_valkey_cache()
+        if cache is None:
+            return value
+        flow_id = self._get_flow_id()
+        key = f"{flow_id}:{field}"
+        if cache.store(key, value):
+            ref = f"__valkey:{flow_id}:{field}"
+            logger.info(
+                "Offloaded %s to Valkey (key=%s, size=%d)", field, key, len(value)
             )
-            if compression_result:
-                logger.info(
-                    "Compressed exploration before cleanup: %d KB -> %d KB",
-                    compression_result.original_size / 1024,
-                    compression_result.compressed_size / 1024,
-                )
+            return ref
+        return value
 
-        # Clear exploration field (already used for planning)
+    def _get_field_from_state_or_valkey(self, field: str) -> str:
+        """Return field value from state or Valkey if stored externally."""
+        value = getattr(self.state, field, "") or ""
+        if not value:
+            return ""
+        if not value.startswith("__valkey:"):
+            return value
+        # Parse ref: __valkey:flow_id:field
+        parts = value.split(":", 2)
+        if len(parts) != 3:
+            return value
+        cache = get_valkey_cache()
+        if cache is None:
+            return value[:200] + "\n... (Valkey unavailable)"
+        retrieved = cache.retrieve(f"{parts[1]}:{parts[2]}")
+        if retrieved is not None:
+            return retrieved
+        return value[:200] + "\n... (Valkey fetch failed)"
+
+    def _cleanup_after_plan(self) -> None:
+        """Clear exploration field after plan stage (already used for planning)."""
+        logger.info("Memory cleanup after plan stage")
         self.state.exploration = ""
 
-        # Force garbage collection
-        from code_pipeline.memory_monitor import force_garbage_collection
-
-        force_garbage_collection()
-
     def _cleanup_after_implement(self) -> None:
-        """Aggressive memory cleanup after implement stage.
-
-        Clears plan and exploration fields (no longer needed for review).
-        """
+        """Clear plan and exploration fields after implement (no longer needed for review)."""
         logger.info("Memory cleanup after implement stage")
-
-        # Apply compression to implementation if large
-        if self.state.implementation:
-            compression_result = compress_large_string(
-                self.state.implementation, threshold_kb=5
-            )
-            if compression_result:
-                logger.info(
-                    "Compressed implementation: %d KB -> %d KB",
-                    compression_result.original_size / 1024,
-                    compression_result.compressed_size / 1024,
-                )
-
-        # Clear fields no longer needed for review stage
         self.state.plan = ""
         self.state.exploration = ""
 
-        # Force garbage collection
-        from code_pipeline.memory_monitor import force_garbage_collection
-
-        force_garbage_collection()
-
     def _cleanup_after_review(self) -> None:
-        """Aggressive memory cleanup after review stage.
-
-        Clears implementation details before commit stage.
-        """
+        """Clear implementation details before commit stage."""
         logger.info("Memory cleanup after review stage")
-
-        # Apply compression to review verdict if large
-        if self.state.review_verdict:
-            compression_result = compress_large_string(
-                self.state.review_verdict, threshold_kb=5
-            )
-            if compression_result:
-                logger.info(
-                    "Compressed review verdict: %d KB -> %d KB",
-                    compression_result.original_size / 1024,
-                    compression_result.compressed_size / 1024,
-                )
-            if compression_result:
-                logger.info(
-                    "Compressed review feedback: %d KB -> %d KB",
-                    compression_result.original_size / 1024,
-                    compression_result.compressed_size / 1024,
-                )
-
-        # Clear implementation details (commit only needs minimal context)
         self.state.implementation = ""
         self.state.plan = ""
         self.state.exploration = ""
-
-        # Force garbage collection
-        from code_pipeline.memory_monitor import force_garbage_collection
-
-        force_garbage_collection()
 
     def _run_crew(self, crew_class, inputs: dict, state_attr: str | None = None):
         """Run a crew and optionally store result in state. Returns raw output."""
@@ -1181,7 +1107,12 @@ class CodePipelineFlow(Flow[PipelineState]):
             raw = str(result)
 
         if state_attr:
-            setattr(self.state, state_attr, raw)
+            offloaded = (
+                self._maybe_offload_to_valkey(state_attr, raw)
+                if state_attr in ("plan", "implementation")
+                else raw
+            )
+            setattr(self.state, state_attr, offloaded)
             if state_attr == "implementation":
                 _log_implementer_summary(raw)
             else:
@@ -1245,59 +1176,36 @@ class CodePipelineFlow(Flow[PipelineState]):
         """Run ExplorerCrew sequentially. On failure, use fallback exploration."""
         if self.state.exploration and not self.state.from_scratch:
             logger.info("PIPELINE step=explore | resumed (cached)")
-            return self.state.exploration
+            return self._get_field_from_state_or_valkey("exploration")
 
-        with MemoryGuard("explore", warning_threshold_mb=800):
-            logger.info("PIPELINE step=explore crew=ExplorerCrew | start")
-            rp = self.state.repo_path
-            if rp is None or rp == "":
-                rp = os.getcwd()
-            repo_path = os.path.abspath(rp)
-            self.state.repo_path = repo_path
-            gh = self.state.github_repo
-            if gh is None:
-                gh = ""
-            logger.info(
-                "PIPELINE step=explore | repo_path=%s github_repo=%s",
-                repo_path,
-                gh,
-            )
-            rc = getattr(self.state, "repo_context", "")
-            if rc is None:
-                rc = ""
-            raw = _run_explore_in_process(
-                repo_path,
-                self.state.issue_analysis,
-                task=self.state.task,
-                test_command=self.state.test_command,
-                github_repo=gh,
-                repo_context=rc,
-            )
-
-            # Apply compression to exploration if large
-            if raw:
-                compression_result = compress_large_string(raw, threshold_kb=5)
-                if compression_result:
-                    logger.info(
-                        "Storing compressed exploration: %d KB -> %d KB (ratio: %.2f)",
-                        compression_result.original_size / 1024,
-                        compression_result.compressed_size / 1024,
-                        compression_result.compression_ratio,
-                    )
-                    # Store both compressed and original for now
-                    # In a future optimization, we could store only compressed
-                    # and decompress when needed
-                    self.state.exploration = raw
-                    # Store compression metadata in state if we extend the state model
-                else:
-                    self.state.exploration = raw
-            else:
-                self.state.exploration = ""
-
-            # Force garbage collection after exploration (can be memory intensive)
-            force_garbage_collection()
-
-            return raw
+        logger.info("PIPELINE step=explore crew=ExplorerCrew | start")
+        rp = self.state.repo_path
+        if rp is None or rp == "":
+            rp = os.getcwd()
+        repo_path = os.path.abspath(rp)
+        self.state.repo_path = repo_path
+        gh = self.state.github_repo
+        if gh is None:
+            gh = ""
+        logger.info(
+            "PIPELINE step=explore | repo_path=%s github_repo=%s",
+            repo_path,
+            gh,
+        )
+        rc = getattr(self.state, "repo_context", "")
+        if rc is None:
+            rc = ""
+        raw = _run_explore_in_process(
+            repo_path,
+            self.state.issue_analysis,
+            task=self.state.task,
+            test_command=self.state.test_command,
+            github_repo=gh,
+            repo_context=rc,
+        )
+        raw_str = raw or ""
+        self.state.exploration = self._maybe_offload_to_valkey("exploration", raw_str)
+        return raw_str
 
     @listen(explore)
     def clarify(self):
@@ -1314,7 +1222,7 @@ class CodePipelineFlow(Flow[PipelineState]):
             {
                 "task": self.state.task,
                 "issue_analysis": self.state.issue_analysis,
-                "exploration": self.state.exploration,
+                "exploration": self._get_field_from_state_or_valkey("exploration"),
             },
             "clarifications",
         )
@@ -1324,12 +1232,12 @@ class CodePipelineFlow(Flow[PipelineState]):
         """Run ArchitectCrew to produce file-level plan."""
         if self.state.plan and not self.state.from_scratch:
             logger.info("PIPELINE step=plan | resumed (cached)")
-            return self.state.plan
+            return self._get_field_from_state_or_valkey("plan")
         logger.info("PIPELINE step=plan crew=ArchitectCrew | start")
 
         # Truncate exploration to prevent token overflow
-        # Keep essential sections but limit total size
-        truncated_exploration = self._truncate_exploration(self.state.exploration)
+        exploration = self._get_field_from_state_or_valkey("exploration")
+        truncated_exploration = self._truncate_exploration(exploration)
 
         result = self._run_crew(
             ArchitectCrew,
@@ -1356,7 +1264,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         """Run ImplementerCrew; fires on first run (after plan)."""
         if self.state.implementation and not self.state.from_scratch:
             logger.info("Flow step: implement (resumed, cached)")
-            return self.state.implementation
+            return self._get_field_from_state_or_valkey("implementation")
         return self._run_implement()
 
     @listen("retry")
@@ -1366,40 +1274,29 @@ class CodePipelineFlow(Flow[PipelineState]):
 
     def _run_implement(self):
         """Shared implementation logic for initial run and retries."""
-        with MemoryGuard("implement", warning_threshold_mb=1000):
-            logger.info(
-                "PIPELINE step=implement crew=ImplementerCrew | start (retry_count=%d)",
-                self.state.retry_count,
-            )
-            rp = self.state.repo_path
-            if rp is None or rp == "":
-                rp = os.getcwd()
-
-            # Force GC before implementation (can be memory intensive)
-            force_garbage_collection()
-
-            result = self._run_crew(
-                ImplementerCrew,
-                {
-                    "task": self.state.task,
-                    "plan": self.state.plan,
-                    "prior_issues": self.state.prior_issues,
-                    "clarifications": self.state.clarifications,
-                    "repo_path": self.state.repo_path,
-                    "issue_analysis": self.state.issue_analysis,
-                    "exploration": self.state.exploration,
-                    "test_command": self.state.test_command,
-                },
-                "implementation",
-            )
-
-            # Force GC after implementation
-            force_garbage_collection()
-
-            # Cleanup after implement stage to free memory
-            self._cleanup_after_implement()
-
-            return result
+        logger.info(
+            "PIPELINE step=implement crew=ImplementerCrew | start (retry_count=%d)",
+            self.state.retry_count,
+        )
+        rp = self.state.repo_path
+        if rp is None or rp == "":
+            rp = os.getcwd()
+        result = self._run_crew(
+            ImplementerCrew,
+            {
+                "task": self.state.task,
+                "plan": self._get_field_from_state_or_valkey("plan"),
+                "prior_issues": self.state.prior_issues,
+                "clarifications": self.state.clarifications,
+                "repo_path": self.state.repo_path,
+                "issue_analysis": self.state.issue_analysis,
+                "exploration": self._get_field_from_state_or_valkey("exploration"),
+                "test_command": self.state.test_command,
+            },
+            "implementation",
+        )
+        self._cleanup_after_implement()
+        return result
 
     @listen(implement)
     def validate_tests(self):
@@ -1413,9 +1310,11 @@ class CodePipelineFlow(Flow[PipelineState]):
             TestValidatorCrew,
             {
                 "task": self.state.task,
-                "plan": self.state.plan,
-                "implementation": self.state.implementation,
-                "exploration": self.state.exploration,
+                "plan": self._get_field_from_state_or_valkey("plan"),
+                "implementation": self._get_field_from_state_or_valkey(
+                    "implementation"
+                ),
+                "exploration": self._get_field_from_state_or_valkey("exploration"),
                 "repo_path": self.state.repo_path,
                 "test_command": self.state.test_command,
             },
@@ -1439,9 +1338,11 @@ class CodePipelineFlow(Flow[PipelineState]):
             TestValidatorCrew,
             {
                 "task": self.state.task,
-                "plan": self.state.plan,
-                "implementation": self.state.implementation,
-                "exploration": self.state.exploration,
+                "plan": self._get_field_from_state_or_valkey("plan"),
+                "implementation": self._get_field_from_state_or_valkey(
+                    "implementation"
+                ),
+                "exploration": self._get_field_from_state_or_valkey("exploration"),
                 "repo_path": self.state.repo_path,
                 "test_command": self.state.test_command,
                 "prior_issues": self.state.prior_issues,
@@ -1537,37 +1438,32 @@ class CodePipelineFlow(Flow[PipelineState]):
             logger.info("PIPELINE step=review | resumed (cached)")
             return self.state.review_verdict
 
-        with MemoryGuard("review", warning_threshold_mb=800):
-            logger.info("PIPELINE step=review crew=ReviewerCrew | start")
-            rp = self.state.repo_path
-            if rp is None or rp == "":
-                rp = os.getcwd()
-            rc = getattr(self.state, "repo_context", "")
-            if rc is None or rc == "":
-                gh = self.state.github_repo
-                if gh is None:
-                    gh = ""
-                iu = self.state.issue_url
-                if iu is None:
-                    iu = ""
-                rc = build_repo_context(
-                    self.state.repo_path,
-                    gh,
-                    iu,
-                    self.state.test_command,
-                )
-
-            # Force GC before review
-            force_garbage_collection()
-
-            inputs = {
-                "task": self.state.task,
-                "plan": self.state.plan,
-                "implementation": self.state.implementation,
-                "repo_path": self.state.repo_path,
-                "issue_analysis": self.state.issue_analysis,
-                "repo_context": rc,
-            }
+        logger.info("PIPELINE step=review crew=ReviewerCrew | start")
+        rp = self.state.repo_path
+        if rp is None or rp == "":
+            rp = os.getcwd()
+        rc = getattr(self.state, "repo_context", "")
+        if rc is None or rc == "":
+            gh = self.state.github_repo
+            if gh is None:
+                gh = ""
+            iu = self.state.issue_url
+            if iu is None:
+                iu = ""
+            rc = build_repo_context(
+                self.state.repo_path,
+                gh,
+                iu,
+                self.state.test_command,
+            )
+        inputs = {
+            "task": self.state.task,
+            "plan": self._get_field_from_state_or_valkey("plan"),
+            "implementation": self._get_field_from_state_or_valkey("implementation"),
+            "repo_path": self.state.repo_path,
+            "issue_analysis": self.state.issue_analysis,
+            "repo_context": rc,
+        }
         result = _kickoff_with_retry(
             ReviewerCrew().crew(),
             inputs,
@@ -1640,8 +1536,8 @@ class CodePipelineFlow(Flow[PipelineState]):
         return (
             f"## Task\n{self.state.task}\n\n"
             f"## Review Verdict\n{self.state.review_verdict}\n\n"
-            f"## Implementation Summary\n{self.state.implementation}\n\n"
-            f"## Plan\n{self.state.plan}"
+            f"## Implementation Summary\n{self._get_field_from_state_or_valkey('implementation')}\n\n"
+            f"## Plan\n{self._get_field_from_state_or_valkey('plan')}"
         )
 
     @listen("replan")
@@ -1788,14 +1684,8 @@ class CodePipelineFlow(Flow[PipelineState]):
             task_val = self.state.task
         else:
             task_val = ""
-        if self.state.implementation is not None:
-            impl_val = self.state.implementation
-        else:
-            impl_val = ""
-        if self.state.plan is not None:
-            plan_val = self.state.plan
-        else:
-            plan_val = ""
+        impl_val = self._get_field_from_state_or_valkey("implementation")
+        plan_val = self._get_field_from_state_or_valkey("plan")
         if self.state.review_verdict is not None:
             verdict_val = self.state.review_verdict
         else:
@@ -1932,9 +1822,6 @@ def _execute_flow(inputs: dict):
     global _pipeline_aborted
     _pipeline_aborted = False
 
-    # Log initial memory usage
-    log_memory_usage("Pipeline start")
-
     _ = os.path.abspath(inputs.get("repo_path", os.getcwd()))  # Keep for consistency
     task = inputs.get("task", "")
     from_scratch = inputs.get("from_scratch", False)
@@ -1956,12 +1843,6 @@ def _execute_flow(inputs: dict):
 
     if store:
         store.save(task, flow.flow_id)
-
-    # Log final memory usage
-    log_memory_usage("Pipeline complete")
-
-    # Force final garbage collection
-    force_garbage_collection()
 
     if _pipeline_aborted:
         sys.exit(1)
