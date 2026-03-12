@@ -43,7 +43,8 @@ class RepoShellToolInput(BaseModel):
             "Single shell command. Use relative paths. Read-only preferred "
             "(ls, find, cat, head, grep). For tests use project's test runner. "
             "grep: use 'grep PATTERN file' or 'cmd | grep PATTERN'; "
-            "never pass '>' as an option—use 'grep -- \"->\" file' for patterns with dashes."
+            "never pass '>' as an option—use 'grep -- \"->\" file' for patterns with dashes. "
+            "gh: issue list accepts --state=open|closed|all only; for merged PRs use 'gh pr list --state=merged'."
         ),
     )
 
@@ -57,6 +58,7 @@ class RepoShellTool(BaseTool):
         "Examples: 'ls -la', 'cat path/to/file', 'grep -r \"pattern\" src/', 'pytest', 'npm test'. "
         "grep: use 'grep PATTERN file' or 'cmd | grep PATTERN'; "
         "for patterns with '-' or '>' use 'grep -e \"pattern\" file' or 'grep -- \"->\" file'. "
+        "gh: issue list --state= accepts only open|closed|all; for merged PRs use 'gh pr list --state=merged'. "
         "Commands run with cwd=repo_path. Output is truncated at 8000 chars. "
         "Dangerous commands (rm -rf /, mkfs, etc.) are blocked."
     )

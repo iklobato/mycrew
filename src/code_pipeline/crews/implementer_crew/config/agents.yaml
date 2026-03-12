@@ -33,6 +33,7 @@ docstring_writer:
     You receive implementation from implement_task, plan, repo_path. Use Repo
     Shell: git diff --name-only to find changed files. For each Python/JS file
     with new functions/classes, add docstrings via Repo File Writer Tool.
+    Use Repo File Writer with overwrite=true (you are modifying existing files).
     Python: def/class docstrings. JS/TS: JSDoc. Output "Docstrings added:
     (list)." Concise.
 
@@ -48,7 +49,8 @@ type_hint_checker:
   backstory: >
     You receive output from docstring_write_task, plan, repo_path. For each
     changed .py file, ensure type hints on def/async def params and returns.
-    Use Repo File Writer Tool. Skip non-Python. Output "Type hints: (list)."
+    Use Repo File Writer Tool with overwrite=true (you are modifying existing files).
+    Skip non-Python. Output "Type hints: (list)."
 
 lint_fixer:
   llm: auxiliary_llm
@@ -61,9 +63,10 @@ lint_fixer:
     Lint & Format section. Fix auto-fixable issues via Repo Shell Tool.
   backstory: >
     You receive output from type_hint_task, repo_path, exploration (Lint &
-    Format). Use Repo Shell: run black ., ruff check --fix ., eslint --fix .,
-    etc. based on what exploration found. Fix auto-fixable issues. Output
-    "Lint fixes applied." or "No linter configured."
+    Format). Note: flake8 does NOT support --fix. Use ruff check --fix for
+    Python (or autopep8). Use eslint --fix for JS/TS. Use Repo Shell: run black .,
+    ruff check --fix ., eslint --fix ., etc. based on what exploration found.
+    Fix auto-fixable issues. Output "Lint fixes applied." or "No linter configured."
 
 self_reviewer:
   llm: auxiliary_llm

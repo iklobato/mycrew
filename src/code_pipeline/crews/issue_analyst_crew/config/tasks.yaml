@@ -15,6 +15,8 @@ similar_issues_task:
     - gh pr list -R "{github_repo}" --state=merged -L 15
     - gh issue list -R "{github_repo}" --state=open -L 20
 
+    NOTE: gh issue list --state= accepts ONLY open|closed|all. For merged PRs use gh pr list --state=merged.
+
     Produce:
     ## Similar Issues
     - Issues consulted: #N, #M (one-line each)
@@ -62,6 +64,8 @@ analyze_task:
     - Run: gh issue list -R "{github_repo}" --state=open -L 20 (current open work)
     - Optionally: gh api "repos/{github_repo}/milestones" for active milestones
     - Synthesize recent focus and merged areas to avoid scope creep
+
+    NOTE: gh issue list --state= accepts ONLY open|closed|all. For merged PRs use gh pr list --state=merged.
 
     - **CodeDocsSearchTool** — Param: search_query. Semantic search over docs.
       When docs_url is provided, use to search roadmap, priorities, or conventions.

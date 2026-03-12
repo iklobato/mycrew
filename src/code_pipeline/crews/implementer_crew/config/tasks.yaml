@@ -59,7 +59,8 @@ docstring_write_task:
 
     Use Repo Shell to read changed files (git diff --name-only). For each
     Python/JS file with new functions/classes, add docstrings. Use Repo
-    File Writer Tool. Output "Docstrings added: (list)."
+    File Writer Tool with overwrite=true (files exist from implement_task).
+    Output "Docstrings added: (list)."
   expected_output: >
     Implementation summary + docstrings added.
   agent: docstring_writer
@@ -73,7 +74,8 @@ type_hint_task:
     Context: {repo_context}
 
     For each changed .py file, ensure type hints on def/async def. Use
-    Repo File Writer Tool. Skip non-Python. Output "Type hints: (list)."
+    Repo File Writer Tool with overwrite=true (files exist from previous tasks).
+    Skip non-Python. Output "Type hints: (list)."
   expected_output: >
     Previous output + type hints updated.
   agent: type_hint_checker
@@ -85,6 +87,9 @@ lint_fix_task:
 
     Context: {repo_context}
     Exploration (Lint & Format): {exploration}
+
+    Note: flake8 does NOT support --fix. Use ruff check --fix for Python auto-fix
+    (or autopep8). Use eslint --fix for JS/TS.
 
     Use Repo Shell: run black ., ruff check --fix ., eslint --fix ., etc.
     based on what the exploration found. Fix auto-fixable issues. Output
