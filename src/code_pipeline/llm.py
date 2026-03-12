@@ -19,11 +19,76 @@ logger = logging.getLogger(__name__)
 # (fixes Anthropic "assistant message prefill" error when using OpenRouter/Claude)
 try:
     import litellm
+    from litellm.integrations.custom_logger import CustomLogger
 
     litellm.modify_params = True
+
+    class _OpenRouterLogger(CustomLogger):
+        """Log all OpenRouter API calls via logging.info."""
+
+        def log_pre_api_call(self, model: str, messages: list, kwargs: dict) -> None:
+            if model and str(model).startswith("openrouter/"):
+                n = len(messages) if messages else 0
+                logger.info(
+                    "OpenRouter pre_call model=%s messages=%d",
+                    model,
+                    n,
+                )
+
+        def log_success_event(
+            self,
+            kwargs: dict,
+            response_obj: object,
+            start_time: float | None,
+            end_time: float | None,
+        ) -> None:
+            model = kwargs.get("model", "")
+            if not str(model).startswith("openrouter/"):
+                return
+            duration = ""
+            if start_time is not None and end_time is not None:
+                delta = end_time - start_time
+                secs = getattr(delta, "total_seconds", lambda: float(delta))()
+                duration = " duration=%.2fs" % secs
+            usage = getattr(response_obj, "usage", None)
+            tokens = ""
+            if usage:
+                total = getattr(usage, "total_tokens", None)
+                if total is None and isinstance(usage, dict):
+                    total = usage.get("total_tokens")
+                if total is not None:
+                    tokens = " tokens=%s" % total
+            logger.info(
+                "OpenRouter success model=%s%s%s",
+                model,
+                duration,
+                tokens,
+            )
+
+        def log_failure_event(
+            self,
+            kwargs: dict,
+            response_obj: object,
+            start_time: float | None,
+            end_time: float | None,
+        ) -> None:
+            model = kwargs.get("model", "")
+            if not str(model).startswith("openrouter/"):
+                return
+            err = str(response_obj) if response_obj else "unknown"
+            logger.info(
+                "OpenRouter failure model=%s error=%s",
+                model,
+                err[:200],
+            )
+
+    _existing = getattr(litellm, "callbacks", None)
+    litellm.callbacks = list(_existing if _existing is not None else []) + [
+        _OpenRouterLogger()
+    ]
 except ImportError as e:
-    logging.getLogger(__name__).error(
-        "litellm import failed (modify_params unavailable): %s", e, exc_info=True
+    logging.getLogger(__name__).info(
+        "litellm import failed (modify_params/callbacks unavailable): %s", e
     )
 
 # Monkey-patch: Anthropic requires the conversation to end with a user message.
@@ -54,9 +119,11 @@ class OpenRouterModel(StrEnum):
 
     # Cheaper alternatives (primary recommendations)
     DEEPSEEK_CHAT = "openrouter/deepseek/deepseek-chat"  # ~70% cheaper than v3.2
-    GEMINI_2_FLASH = "openrouter/google/gemini-2.0-flash-exp"  # Cheaper than gemini-3
-    QWEN2_5_CODER = "openrouter/qwen/qwen-2.5-coder-32b-instruct"  # ~60% cheaper than qwen3-coder
-    MISTRAL_SMALL = "openrouter/deepseek/deepseek-chat"  # Replaced invalid mistral-small with deepseek-chat
+    GEMINI_2_FLASH = "openrouter/google/gemini-2.0-flash-001"  # Cheaper than gemini-3
+    QWEN2_5_CODER = (
+        "openrouter/qwen/qwen-2.5-coder-32b-instruct"  # ~60% cheaper than qwen3-coder
+    )
+    MISTRAL_SMALL = "openrouter/mistralai/mistral-small-24b-instruct-2501"  # Available mistral small model
     LLAMA_3_3_70B = (
         "openrouter/meta-llama/llama-3.3-70b-instruct"  # Good for complex tasks
     )
@@ -92,87 +159,97 @@ class StageModelConfig:
     fallbacks: tuple[OpenRouterModel, ...]
 
 
-# Default model configuration - optimized for cost-effectiveness and task suitability
+# Default model configuration - optimized for MAXIMUM cost-effectiveness using cheapest non-free models
+# Using only 4 cheapest models: DeepSeek Chat, Qwen2.5 Coder, Gemini 2.0 Flash, Mistral Small
 DEFAULT_PIPELINE_MODELS: dict[PipelineStage, StageModelConfig] = {
     # Issue Analysis: Needs reasoning + GitHub issue understanding
-    # DeepSeek Chat provides good reasoning at ~70% cheaper cost than v3.2
+    # DeepSeek Chat is the cheapest good reasoning model
     PipelineStage.ANALYZE_ISSUE: StageModelConfig(
         primary=OpenRouterModel.DEEPSEEK_CHAT,
         fallbacks=(
-            OpenRouterModel.LLAMA_3_3_70B,  # Excellent for complex reasoning
-            OpenRouterModel.QWEN2_5_CODER,  # Good code understanding
+            OpenRouterModel.QWEN2_5_CODER,  # Cheaper coding alternative
+            OpenRouterModel.MISTRAL_SMALL,  # Cheapest general alternative
         ),
     ),
     # Exploration: Needs code understanding + tech stack analysis
-    # Qwen2.5 Coder is specialized for code analysis and ~60% cheaper than qwen3-coder
+    # Qwen2.5 Coder is the cheapest specialized coding model
     PipelineStage.EXPLORE: StageModelConfig(
         primary=OpenRouterModel.QWEN2_5_CODER,
         fallbacks=(
-            OpenRouterModel.DEEPSEEK_CHAT,  # Good all-around understanding
-            OpenRouterModel.LLAMA_3_3_70B,  # For complex codebase analysis
+            OpenRouterModel.DEEPSEEK_CHAT,  # Cheaper reasoning alternative
+            OpenRouterModel.MISTRAL_SMALL,  # Cheapest general alternative
         ),
     ),
     # Planning: Needs design thinking + architecture planning
-    # Gemini 2.0 Flash is fast, cheap, and good for brainstorming
+    # Gemini 2.0 Flash is the cheapest fast brainstorming model
     PipelineStage.PLAN: StageModelConfig(
         primary=OpenRouterModel.GEMINI_2_FLASH,
         fallbacks=(
-            OpenRouterModel.DEEPSEEK_CHAT,  # Good for detailed planning
-            OpenRouterModel.MISTRAL_SMALL,  # Fast alternative
+            OpenRouterModel.MISTRAL_SMALL,  # Cheapest alternative
+            OpenRouterModel.DEEPSEEK_CHAT,  # Cheaper reasoning alternative
         ),
     ),
     # Implementation: Needs coding excellence + precision
-    # Qwen2.5 Coder is specialized for coding tasks and much cheaper than v3.2
+    # Qwen2.5 Coder is the cheapest specialized coding model
     PipelineStage.IMPLEMENT: StageModelConfig(
         primary=OpenRouterModel.QWEN2_5_CODER,
         fallbacks=(
-            OpenRouterModel.DEEPSEEK_CHAT,  # Good coding capability
-            OpenRouterModel.LLAMA_3_3_70B,  # For complex implementations
+            OpenRouterModel.DEEPSEEK_CHAT,  # Cheaper reasoning alternative
+            OpenRouterModel.MISTRAL_SMALL,  # Cheapest general alternative
         ),
     ),
     # Review: Needs critical thinking + code review skills
-    # DeepSeek Chat provides good reasoning for review at lower cost
+    # DeepSeek Chat is the cheapest good reasoning model
     PipelineStage.REVIEW: StageModelConfig(
         primary=OpenRouterModel.DEEPSEEK_CHAT,
         fallbacks=(
-            OpenRouterModel.LLAMA_3_3_70B,  # Excellent for thorough reviews
-            OpenRouterModel.QWEN2_5_CODER,  # Good for code-specific reviews
+            OpenRouterModel.QWEN2_5_CODER,  # Cheaper coding alternative for code-specific reviews
+            OpenRouterModel.MISTRAL_SMALL,  # Cheapest general alternative
         ),
     ),
     # Commit: Needs concise, clear writing for commit messages
-    # Gemini 2.0 Flash is perfect for short, clear text generation
+    # Gemini 2.0 Flash is the cheapest fast text generation model
     PipelineStage.COMMIT: StageModelConfig(
         primary=OpenRouterModel.GEMINI_2_FLASH,
         fallbacks=(
-            OpenRouterModel.MISTRAL_SMALL,  # Fast and cheap
-            OpenRouterModel.DEEPSEEK_CHAT,  # For more complex commit messages
+            OpenRouterModel.MISTRAL_SMALL,  # Cheapest alternative
+            OpenRouterModel.DEEPSEEK_CHAT,  # Cheaper reasoning alternative
         ),
     ),
     # Publish: Needs PR description writing + communication
-    # Gemini 2.0 Flash excels at clear documentation writing
+    # Gemini 2.0 Flash is the cheapest fast text generation model
     PipelineStage.PUBLISH: StageModelConfig(
         primary=OpenRouterModel.GEMINI_2_FLASH,
         fallbacks=(
-            OpenRouterModel.MISTRAL_SMALL,  # Fast alternative
-            OpenRouterModel.DEEPSEEK_CHAT,  # For detailed PR descriptions
+            OpenRouterModel.MISTRAL_SMALL,  # Cheapest alternative
+            OpenRouterModel.DEEPSEEK_CHAT,  # Cheaper reasoning alternative
         ),
     ),
-    # Auxiliary: General-purpose tasks, needs to be cheap
-    # Mistral Small is very cost-effective for general tasks
+    # Auxiliary: General-purpose tasks, needs to be cheapest possible
+    # Mistral Small is the cheapest general-purpose model
     PipelineStage.AUXILIARY: StageModelConfig(
         primary=OpenRouterModel.MISTRAL_SMALL,
         fallbacks=(
-            OpenRouterModel.GEMINI_2_FLASH,  # Fast fallback
-            OpenRouterModel.DEEPSEEK_CHAT,  # More capable fallback
+            OpenRouterModel.GEMINI_2_FLASH,  # Cheapest fast alternative
+            OpenRouterModel.DEEPSEEK_CHAT,  # Cheaper reasoning alternative
         ),
     ),
     # Security: Needs security reasoning + vulnerability analysis
-    # Llama 3.3 70B is excellent for complex security reasoning
+    # DeepSeek Chat is cheapest good reasoning model (security doesn't need expensive Llama)
     PipelineStage.SECURITY: StageModelConfig(
-        primary=OpenRouterModel.LLAMA_3_3_70B,
+        primary=OpenRouterModel.DEEPSEEK_CHAT,
         fallbacks=(
-            OpenRouterModel.DEEPSEEK_CHAT,  # Good security reasoning
-            OpenRouterModel.QWEN2_5_CODER,  # For code-specific security issues
+            OpenRouterModel.QWEN2_5_CODER,  # Cheaper coding alternative for code security
+            OpenRouterModel.MISTRAL_SMALL,  # Cheapest general alternative
+        ),
+    ),
+    # Test Validation: Needs test writing and validation
+    # Qwen2.5 Coder is cheapest specialized coding model for test writing
+    PipelineStage.TEST_VALIDATION: StageModelConfig(
+        primary=OpenRouterModel.QWEN2_5_CODER,
+        fallbacks=(
+            OpenRouterModel.DEEPSEEK_CHAT,  # Cheaper reasoning alternative
+            OpenRouterModel.MISTRAL_SMALL,  # Cheapest general alternative
         ),
     ),
 }
@@ -463,26 +540,24 @@ def llm_with_fallback(*models: str | OpenRouterModel) -> LLM:
             last_error = e
             error_msg = str(e)
             if "429" in error_msg or "RateLimitError" in error_msg:
-                # Rate limit hit - apply longer backoff for this model
-                logger.warning("│ Model %s rate limited, trying next...", model_str)
-                # If it's a free model with strict limits, wait longer before retrying same model
+                logger.info("│ Model %s rate limited, trying next...", model_str)
                 if "free" in model_str.lower():
-                    logger.warning(
+                    logger.info(
                         "│ Free model rate limited, waiting 30s before next attempt..."
                     )
                     import time
 
                     time.sleep(30)
             elif "None or empty" in error_msg or "Invalid response" in error_msg:
-                logger.warning(
+                logger.info(
                     "│ Model %s returned empty response, trying next...", model_str
                 )
             else:
-                logger.warning("│ Model %s failed: %s", model_str, error_msg[:100])
+                logger.info("│ Model %s failed: %s", model_str, error_msg[:100])
             continue
 
     if last_error is not None:
-        logger.error("└─[ LLM FAILED ]─ All models failed")
+        logger.info("└─[ LLM FAILED ]─ All models failed")
         raise Exception("All models failed") from last_error
     raise Exception("All models failed")
 

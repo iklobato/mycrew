@@ -45,84 +45,83 @@ logging:
 
 # Model Configuration
 # -------------------
-# Two-level configuration:
-# 1. Stage-level: All agents in a crew use the same model configuration
-# 2. Agent-level: Override for specific agents within a crew
+# MAXIMUM cost-effectiveness configuration using only 4 cheapest non-free models:
+# 1. DeepSeek Chat - cheapest good reasoning model
+# 2. Qwen2.5 Coder - cheapest specialized coding model  
+# 3. Gemini 2.0 Flash - cheapest fast text generation
+# 4. Mistral Small - cheapest general-purpose model
 #
-# Cost-optimized model selection based on task requirements:
-# - DeepSeek Chat: Good reasoning, ~70% cheaper than v3.2
-# - Qwen2.5 Coder: Specialized for coding, ~60% cheaper than qwen3-coder
-# - Gemini 2.0 Flash: Fast and cheap for text generation
-# - Llama 3.3 70B: Excellent for complex reasoning tasks
-# - Mistral Small: Very cost-effective for general tasks
+# No expensive models (Llama 3.3 70B, GPT, Claude, etc.) to minimize costs
 models:
   # Issue Analyst Crew: Needs reasoning + GitHub issue understanding
   analyze_issue:
     primary: "openrouter/deepseek/deepseek-chat"
     fallbacks:
-      - "openrouter/meta-llama/llama-3.3-70b-instruct"
       - "openrouter/qwen/qwen-2.5-coder-32b-instruct"
-    # Optional: agent-level overrides
-    # agents:
-    #   issue_analyst:
-    #     primary: "openrouter/meta-llama/llama-3.3-70b-instruct"
-    #     fallbacks: ["openrouter/deepseek/deepseek-chat"]
+      - "openrouter/mistralai/mistral-small-24b-instruct-2501"
   
   # Explorer Crew: Needs code understanding + tech stack analysis
   explore:
     primary: "openrouter/qwen/qwen-2.5-coder-32b-instruct"
     fallbacks:
       - "openrouter/deepseek/deepseek-chat"
-      - "openrouter/meta-llama/llama-3.3-70b-instruct"
+      - "openrouter/mistralai/mistral-small-24b-instruct-2501"
   
   # Architect Crew: Needs design thinking + architecture planning
   plan:
-    primary: "openrouter/google/gemini-2.0-flash-exp"
+    primary: "openrouter/google/gemini-2.0-flash-001"
     fallbacks:
+      - "openrouter/mistralai/mistral-small-24b-instruct-2501"
       - "openrouter/deepseek/deepseek-chat"
-      - "openrouter/mistralai/mistral-small-24b-instruct-2507"
   
   # Implementer Crew: Needs coding excellence + precision
   implement:
     primary: "openrouter/qwen/qwen-2.5-coder-32b-instruct"
     fallbacks:
       - "openrouter/deepseek/deepseek-chat"
-      - "openrouter/meta-llama/llama-3.3-70b-instruct"
+      - "openrouter/mistralai/mistral-small-24b-instruct-2501"
   
   # Reviewer Crew: Needs critical thinking + code review skills
   review:
     primary: "openrouter/deepseek/deepseek-chat"
     fallbacks:
-      - "openrouter/meta-llama/llama-3.3-70b-instruct"
       - "openrouter/qwen/qwen-2.5-coder-32b-instruct"
+      - "openrouter/mistralai/mistral-small-24b-instruct-2501"
   
   # Commit Crew: Needs concise, clear writing for commit messages
   commit:
-    primary: "openrouter/google/gemini-2.0-flash-exp"
+    primary: "openrouter/google/gemini-2.0-flash-001"
     fallbacks:
-      - "openrouter/mistralai/mistral-small-24b-instruct-2507"
+      - "openrouter/mistralai/mistral-small-24b-instruct-2501"
       - "openrouter/deepseek/deepseek-chat"
   
   # Publish stage: Needs PR description writing + communication
   publish:
-    primary: "openrouter/google/gemini-2.0-flash-exp"
+    primary: "openrouter/google/gemini-2.0-flash-001"
     fallbacks:
-      - "openrouter/mistralai/mistral-small-24b-instruct-2507"
+      - "openrouter/mistralai/mistral-small-24b-instruct-2501"
       - "openrouter/deepseek/deepseek-chat"
   
-  # Auxiliary stage: General-purpose tasks, needs to be cheap
+  # Auxiliary stage: General-purpose tasks, needs to be cheapest
   auxiliary:
-    primary: "openrouter/mistralai/mistral-small-24b-instruct-2507"
+    primary: "openrouter/mistralai/mistral-small-24b-instruct-2501"
     fallbacks:
-      - "openrouter/google/gemini-2.0-flash-exp"
+      - "openrouter/google/gemini-2.0-flash-001"
       - "openrouter/deepseek/deepseek-chat"
   
   # Security stage: Needs security reasoning + vulnerability analysis
   security:
-    primary: "openrouter/meta-llama/llama-3.3-70b-instruct"
+    primary: "openrouter/deepseek/deepseek-chat"
+    fallbacks:
+      - "openrouter/qwen/qwen-2.5-coder-32b-instruct"
+      - "openrouter/mistralai/mistral-small-24b-instruct-2501"
+  
+  # Test Validation: Needs test writing and validation
+  test_validation:
+    primary: "openrouter/qwen/qwen-2.5-coder-32b-instruct"
     fallbacks:
       - "openrouter/deepseek/deepseek-chat"
-      - "openrouter/qwen/qwen-2.5-coder-32b-instruct"
+      - "openrouter/mistralai/mistral-small-24b-instruct-2501"
 
 # Tool Configuration
 # ------------------

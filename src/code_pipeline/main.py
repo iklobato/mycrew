@@ -19,7 +19,6 @@ import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass
-from pathlib import Path
 
 from pydantic import BaseModel
 
@@ -73,6 +72,90 @@ _event_context_config.set(
 
 logger = logging.getLogger(__name__)
 
+
+def _validate_models_available() -> None:
+    """Validate that configured models are available on OpenRouter before pipeline kickoff."""
+    try:
+        import httpx
+        from code_pipeline.llm import PIPELINE_MODELS, OpenRouterModel
+        from code_pipeline.settings import get_settings
+
+        api_key = get_settings().openrouter_api_key
+        if not api_key:
+            logger.warning("OPENROUTER_API_KEY not set, skipping model validation")
+            return
+
+        # Get all unique models from pipeline configuration
+        all_models = set()
+        for stage_config in PIPELINE_MODELS.values():
+            all_models.add(stage_config.primary)
+            all_models.update(stage_config.fallbacks)
+
+        # Also check enum values
+        for model_enum in OpenRouterModel:
+            all_models.add(model_enum.value)
+
+        # Fetch available models from OpenRouter
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            response = httpx.get(
+                "https://openrouter.ai/api/v1/models", headers=headers, timeout=30
+            )
+            response.raise_for_status()
+            available_models = {model["id"] for model in response.json()["data"]}
+        except Exception as e:
+            logger.warning("Failed to fetch available models from OpenRouter: %s", e)
+            return
+
+        # Check each configured model
+        missing_models = []
+        for model in all_models:
+            model_str = str(model)
+            if model_str not in available_models:
+                # Try without openrouter/ prefix
+                if model_str.startswith("openrouter/"):
+                    model_without_prefix = model_str[11:]  # Remove "openrouter/"
+                    if model_without_prefix not in available_models:
+                        missing_models.append(model_str)
+                else:
+                    missing_models.append(model_str)
+
+        if missing_models:
+            logger.warning(
+                "Some configured models may not be available on OpenRouter: %s",
+                ", ".join(missing_models),
+            )
+            logger.warning(
+                "Available Gemini models: %s",
+                ", ".join(
+                    sorted([m for m in available_models if "gemini" in m.lower()])
+                ),
+            )
+            logger.warning(
+                "Available Mistral models: %s",
+                ", ".join(
+                    sorted(
+                        [
+                            m
+                            for m in available_models
+                            if "mistral" in m.lower() and "small" in m.lower()
+                        ]
+                    )
+                ),
+            )
+        else:
+            logger.info("All configured models are available on OpenRouter")
+
+    except ImportError:
+        logger.warning("httpx not available, skipping model validation")
+    except Exception as e:
+        logger.warning("Model validation failed: %s", e)
+
+
 # Set by handle_abort when pipeline aborts after max retries; checked by _execute_flow
 _pipeline_aborted = False
 
@@ -91,124 +174,26 @@ def _configure_logging(level: str | int | None = None) -> None:
     if log.handlers:
         return
 
-    class PipelineFormatter(logging.Formatter):
-        """Custom formatter for pipeline logging with step/crew/agent context."""
-
-        # ANSI color codes
-        COLORS = {
-            "DEBUG": "\033[0;36m",  # Cyan
-            "INFO": "\033[0;32m",  # Green
-            "WARNING": "\033[0;33m",  # Yellow
-            "ERROR": "\033[0;31m",  # Red
-            "CRITICAL": "\033[0;35m",  # Magenta
-            "RESET": "\033[0m",
-        }
-
-        def format(self, record):
-            # Add step/crew/agent context if available
-            step_info = getattr(record, "pipeline_step", "")
-            crew_info = getattr(record, "pipeline_crew", "")
-            agent_info = getattr(record, "pipeline_agent", "")
-
-            # Build the message with context
-            context_parts = []
-            if step_info:
-                context_parts.append(f"[{step_info}]")
-            if crew_info:
-                context_parts.append(f"[{crew_info}]")
-            if agent_info:
-                context_parts.append(f"[{agent_info}]")
-
-            if context_parts:
-                context = " ".join(context_parts) + " "
-                record.msg = f"{context}{record.msg}"
-
-            # Apply colors if terminal supports it
-            if sys.stderr.isatty():
-                levelname = record.levelname
-                if levelname in self.COLORS:
-                    record.levelname = (
-                        f"{self.COLORS[levelname]}{levelname}{self.COLORS['RESET']}"
-                    )
-                    record.msg = f"{self.COLORS.get('INFO', '')}{record.msg}{self.COLORS['RESET']}"
-
-            return super().format(record)
+    # Reduce LiteLLM completion spam so pipeline logs are readable
+    for name in ("LiteLLM", "litellm"):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(
-        PipelineFormatter("%(asctime)s │ %(levelname)-7s │ %(message)s")
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     )
     log.addHandler(handler)
-    log.propagate = False
-    if level is not None:
-        log.setLevel(level)
-    else:
-        env_level = get_settings().code_pipeline_log_level.upper()
-        log.setLevel(getattr(logging, env_level, logging.INFO))
-
-
-def _log_with_context(
-    logger: logging.Logger,
-    level: str,
-    message: str,
-    step: str = "",
-    crew: str = "",
-    agent: str = "",
-    *args,
-    **kwargs,
-) -> None:
-    """Log a message with pipeline context (step, crew, agent)."""
-    extra = {}
-    if step:
-        extra["pipeline_step"] = step
-    if crew:
-        extra["pipeline_crew"] = crew
-    if agent:
-        extra["pipeline_agent"] = agent
-
-    log_method = getattr(logger, level.lower())
-    log_method(message, *args, extra=extra, **kwargs)
-
-
-def _log_section(title: str, body: str, char: str = "─") -> None:
-    """Log a section with a visual separator."""
-    width = 60
-    logger.info("%s %s %s", char * 2, title, char * (width - len(title) - 4))
-    for line in body.strip().split("\n"):
-        logger.info("  %s", line)
-    logger.info(char * width)
-
-
-def _log_crew_context(crew_name: str, inputs: dict, exclude_keys: tuple = ()) -> None:
-    """Log a brief summary of the context a crew is considering."""
-    exclude = set(exclude_keys) | {
-        "plan",
-        "implementation",
-        "exploration",
-        "issue_analysis",
-        "clarifications",
-    }
-    parts = []
-    for k, v in sorted(inputs.items()):
-        if k in exclude or v is None:
-            continue
-        s = str(v).strip()
-        if not s:
-            continue
-        # Convert multi-line values to single line and truncate to 500 chars
-        s = " ".join(s.splitlines())
-        if len(s) > 500:
-            s = s[:497] + "..."
-        parts.append(f"  {k}: {s}")
-    if parts:
-        logger.info("%s context:", crew_name)
-        for p in parts:
-            logger.info("%s", p)
+    resolved_level = level
+    if resolved_level is None:
+        resolved_level = getattr(
+            logging, get_settings().code_pipeline_log_level.upper(), logging.INFO
+        )
+    log.setLevel(resolved_level)
 
 
 def _log_reviewer_verdict(verdict: str) -> None:
     """Log reviewer verdict in a human-readable format."""
-    v = (verdict or "").strip()
+    v = (verdict if verdict is not None and verdict != "" else "").strip()
     if not v:
         logger.info("Review: (empty verdict)")
         return
@@ -237,7 +222,11 @@ def _log_reviewer_verdict(verdict: str) -> None:
 
 def _log_implementer_summary(implementation: str) -> None:
     """Log a brief summary of what the implementer changed."""
-    impl = (implementation or "").strip()
+    impl = (
+        implementation
+        if implementation is not None and implementation != ""
+        else ""
+    ).strip()
     if not impl:
         logger.info("Implementer: (no summary)")
         return
@@ -283,9 +272,9 @@ def _is_retryable_error(e: Exception) -> bool:
     while current is not None:
         if _err_matches(current):
             return True
-        current = getattr(current, "__cause__", None) or getattr(
-            current, "__context__", None
-        )
+        cause = getattr(current, "__cause__", None)
+        context = getattr(current, "__context__", None)
+        current = cause if cause is not None else context
     return False
 
 
@@ -383,9 +372,10 @@ def _run_explore_in_process(
         )
         raw = result.raw if hasattr(result, "raw") else str(result)
         logger.info("ExplorerCrew completed (output_len=%d)", len(raw))
-        if len((raw or "").strip()) < 200:
+        raw_str = raw if raw is not None and raw != "" else ""
+        if len(raw_str.strip()) < 200:
             logger.warning(
-                "Exploration too short (%d chars), using fallback", len(raw or "")
+                "Exploration too short (%d chars), using fallback", len(raw_str)
             )
             return _fallback_exploration(repo_path, issue_analysis)
         return raw
@@ -400,11 +390,16 @@ def _format_review_verdict(result) -> str:
     if isinstance(pydantic_val, ReviewVerdict):
         if pydantic_val.verdict == "APPROVED":
             return "APPROVED"
-        issues = pydantic_val.issues or []
+        issues = (
+            pydantic_val.issues
+            if pydantic_val.issues is not None
+            else []
+        )
         if not issues:
             return "ISSUES:\n- (Reviewer found problems but did not list specifics)"
         return "ISSUES:\n" + "\n".join(f"- {i}" for i in issues)
-    raw = getattr(result, "raw", None) or str(result)
+    raw_attr = getattr(result, "raw", None)
+    raw = raw_attr if raw_attr is not None else str(result)
     return _normalize_raw_verdict(raw)
 
 
@@ -429,7 +424,8 @@ def _log_crew_metrics(crew, result, crew_name: str = "Crew") -> None:
     """Log crew output (tasks_output, token_usage) and per-agent usage_metrics."""
     try:
         # Log basic crew info
-        agents = getattr(crew, "agents", None) or []
+        agents_attr = getattr(crew, "agents", None)
+        agents = agents_attr if agents_attr is not None else []
         logger.info("│ Crew %s has %d agent(s)", crew_name, len(agents))
 
         # Log token usage at INFO level
@@ -448,10 +444,12 @@ def _log_crew_metrics(crew, result, crew_name: str = "Crew") -> None:
         for i, agent in enumerate(agents):
             um = getattr(agent, "usage_metrics", None)
             if um is not None:
+                role = getattr(agent, "role", None)
+                name = getattr(agent, "name", None)
                 agent_name = (
-                    getattr(agent, "role", None)
-                    or getattr(agent, "name", None)
-                    or f"agent_{i}"
+                    role
+                    if role is not None and role != ""
+                    else (name if name is not None and name != "" else f"agent_{i}")
                 )
                 tokens = getattr(um, "total_tokens", 0)
                 cost = getattr(um, "total_cost", 0)
@@ -557,10 +555,14 @@ class PipelineArgs:
 
     def to_flow_inputs(self) -> dict:
         """Convert to flow inputs. Resolves issue_url via GitHub API to derive task, repo, etc."""
-        if not (self.issue_url or "").strip():
+        issue_url_val = self.issue_url if self.issue_url is not None else ""
+        if not issue_url_val.strip():
             raise ValueError("issue_url is required")
         resolved = resolve_issue_url(self.issue_url)
-        repo_path = os.path.abspath(resolved.get("repo_path", ".") or os.getcwd())
+        repo_path_val = resolved.get("repo_path", ".")
+        repo_path = os.path.abspath(
+            repo_path_val if repo_path_val is not None and repo_path_val != "" else os.getcwd()
+        )
         return {
             "repo_path": repo_path,
             "task": resolved["task"],
@@ -814,14 +816,21 @@ class CodePipelineFlow(Flow[PipelineState]):
         crew_name = crew_class.__name__
 
         # Set pipeline context for crews to read (repo_path, github_repo, etc.)
-        repo_path = os.path.abspath(
-            inputs.get("repo_path", "") or getattr(self.state, "repo_path", "") or os.getcwd()
-        )
+        rp = inputs.get("repo_path", "")
+        rp = rp if rp is not None and rp != "" else getattr(self.state, "repo_path", "")
+        rp = rp if rp is not None and rp != "" else os.getcwd()
+        repo_path = os.path.abspath(rp)
+        gh = inputs.get("github_repo", "")
+        gh = gh if gh is not None and gh != "" else getattr(self.state, "github_repo", "")
+        gh = gh if gh is not None and gh != "" else ""
+        iu = inputs.get("issue_url", "")
+        iu = iu if iu is not None and iu != "" else getattr(self.state, "issue_url", "")
+        iu = iu if iu is not None and iu != "" else ""
         set_pipeline_context(
             PipelineContext(
                 repo_path=repo_path,
-                github_repo=inputs.get("github_repo", "") or getattr(self.state, "github_repo", "") or "",
-                issue_url=inputs.get("issue_url", "") or getattr(self.state, "issue_url", "") or "",
+                github_repo=gh,
+                issue_url=iu,
                 serper_enabled=getattr(self.state, "serper_enabled", False),
                 programmatic=getattr(self.state, "programmatic", False),
             )
@@ -830,50 +839,28 @@ class CodePipelineFlow(Flow[PipelineState]):
         # Build repo context if not provided
         if "repo_context" not in inputs:
             inputs = dict(inputs)
-            inputs["repo_context"] = build_repo_context(
-                inputs.get("repo_path", "") or self.state.repo_path,
-                inputs.get("github_repo", "") or self.state.github_repo,
-                inputs.get("issue_url", "") or self.state.issue_url,
-                inputs.get("test_command", "") or self.state.test_command,
-            )
+            rp_in = inputs.get("repo_path", "")
+            rp_in = rp_in if rp_in is not None and rp_in != "" else self.state.repo_path
+            gh_in = inputs.get("github_repo", "")
+            gh_in = gh_in if gh_in is not None and gh_in != "" else self.state.github_repo
+            iu_in = inputs.get("issue_url", "")
+            iu_in = iu_in if iu_in is not None and iu_in != "" else self.state.issue_url
+            tc_in = inputs.get("test_command", "")
+            tc_in = tc_in if tc_in is not None and tc_in != "" else self.state.test_command
+            inputs["repo_context"] = build_repo_context(rp_in, gh_in, iu_in, tc_in)
 
-        # Enhanced crew execution logging with context
-        _log_with_context(
-            logger,
-            "INFO",
-            f"┌─[ CREW START: {crew_name} ]─",
-            step="crew",
-            crew=crew_name,
-        )
-        _log_with_context(
-            logger,
-            "INFO",
-            f"│ Stage: {state_attr if state_attr else 'no state attr'}",
-            step="crew",
-            crew=crew_name,
-        )
-        _log_with_context(
-            logger,
-            "INFO",
-            f"│ Input keys: {', '.join(sorted(inputs.keys()))}",
-            step="crew",
-            crew=crew_name,
-        )
-        _log_crew_context(crew_name, inputs)
-
+        step_name = state_attr if state_attr is not None and state_attr != "" else "crew"
+        logger.info("PIPELINE step=%s crew=%s | start", step_name, crew_name)
         try:
             result = _kickoff_with_retry(
-                crew_class().crew(),
-                inputs,
-                crew_name=crew_name,
+                crew_class().crew(), inputs, crew_name=crew_name
             )
         except Exception as e:
-            _log_with_context(
-                logger,
-                "ERROR",
-                f"└─[ CREW FAILED: {crew_name} ]─ {e}",
-                step="crew",
-                crew=crew_name,
+            logger.error(
+                "PIPELINE step=%s crew=%s | failed: %s",
+                state_attr or "crew",
+                crew_name,
+                e,
             )
             raise
 
@@ -902,32 +889,16 @@ class CodePipelineFlow(Flow[PipelineState]):
             if state_attr == "implementation":
                 _log_implementer_summary(raw)
             else:
-                _log_with_context(
-                    logger,
-                    "INFO",
-                    f"└─[ CREW COMPLETED: {crew_name} -> {state_attr} ]─ Output length: {len(raw)} chars",
-                    step="crew",
-                    crew=crew_name,
+                logger.info(
+                    "PIPELINE step=%s crew=%s | completed -> %s, output_len=%d",
+                    state_attr,
+                    crew_name,
+                    state_attr,
+                    len(raw),
                 )
-                # Log first 200 chars of output for visibility
-                if raw:
-                    preview = raw[:200].replace("\n", " ")
-                    if len(raw) > 200:
-                        preview += "..."
-                    _log_with_context(
-                        logger,
-                        "INFO",
-                        f"│ Output preview: {preview}",
-                        step="crew",
-                        crew=crew_name,
-                    )
         else:
-            _log_with_context(
-                logger,
-                "INFO",
-                f"└─[ CREW COMPLETED: {crew_name} ]─ (no state attr)",
-                step="crew",
-                crew=crew_name,
+            logger.info(
+                "PIPELINE step=crew crew=%s | completed (no state attr)", crew_name
             )
 
         return raw
@@ -952,11 +923,9 @@ class CodePipelineFlow(Flow[PipelineState]):
     def analyze_issue(self):
         """Run IssueAnalystCrew to parse issue into structured requirements."""
         if self.state.issue_analysis and not self.state.from_scratch:
-            logger.info("Flow step: analyze_issue (resumed, cached)")
+            logger.info("PIPELINE step=analyze_issue | resumed (cached)")
             return self.state.issue_analysis
-        _log_with_context(
-            logger, "INFO", "Flow step: analyze_issue (start)", step="analyze_issue"
-        )
+        logger.info("PIPELINE step=analyze_issue crew=IssueAnalystCrew | start")
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
         self.state.repo_path = repo_path
         return self._run_crew(
@@ -976,25 +945,15 @@ class CodePipelineFlow(Flow[PipelineState]):
     def explore(self):
         """Run ExplorerCrew sequentially. On failure, use fallback exploration."""
         if self.state.exploration and not self.state.from_scratch:
-            logger.info("Flow step: explore (resumed, cached)")
+            logger.info("PIPELINE step=explore | resumed (cached)")
             return self.state.exploration
-        _log_with_context(logger, "INFO", "Flow step: explore", step="explore")
+        logger.info("PIPELINE step=explore crew=ExplorerCrew | start")
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
         self.state.repo_path = repo_path
-        _log_crew_context(
-            "ExplorerCrew",
-            {
-                "repo_path": repo_path,
-                "test_command": self.state.test_command,
-                "github_repo": self.state.github_repo or "",
-            },
-            exclude_keys=(
-                "plan",
-                "implementation",
-                "exploration",
-                "issue_analysis",
-                "clarifications",
-            ),
+        logger.info(
+            "PIPELINE step=explore | repo_path=%s github_repo=%s",
+            repo_path,
+            self.state.github_repo or "",
         )
         raw = _run_explore_in_process(
             repo_path,
@@ -1014,9 +973,9 @@ class CodePipelineFlow(Flow[PipelineState]):
         results, before the architect creates the implementation plan.
         """
         if self.state.clarifications and not self.state.from_scratch:
-            logger.info("Flow step: clarify (resumed, cached)")
+            logger.info("PIPELINE step=clarify | resumed (cached)")
             return self.state.clarifications
-        _log_with_context(logger, "INFO", "Flow step: clarify", step="clarify")
+        logger.info("PIPELINE step=clarify crew=ClarifyCrew | start")
         return self._run_crew(
             ClarifyCrew,
             {
@@ -1031,9 +990,9 @@ class CodePipelineFlow(Flow[PipelineState]):
     def plan(self):
         """Run ArchitectCrew to produce file-level plan."""
         if self.state.plan and not self.state.from_scratch:
-            logger.info("Flow step: plan (resumed, cached)")
+            logger.info("PIPELINE step=plan | resumed (cached)")
             return self.state.plan
-        _log_with_context(logger, "INFO", "Flow step: plan", step="plan")
+        logger.info("PIPELINE step=plan crew=ArchitectCrew | start")
         return self._run_crew(
             ArchitectCrew,
             {
@@ -1064,11 +1023,9 @@ class CodePipelineFlow(Flow[PipelineState]):
 
     def _run_implement(self):
         """Shared implementation logic for initial run and retries."""
-        _log_with_context(
-            logger,
-            "INFO",
-            f"Flow step: implement (retry_count={self.state.retry_count})",
-            step="implement",
+        logger.info(
+            "PIPELINE step=implement crew=ImplementerCrew | start (retry_count=%d)",
+            self.state.retry_count,
         )
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
         return self._run_crew(
@@ -1090,12 +1047,10 @@ class CodePipelineFlow(Flow[PipelineState]):
     def validate_tests(self):
         """Run TestValidatorCrew to write and validate tests."""
         if not self.state.test_command:
-            logger.info("Test validation skipped (no test_command)")
+            logger.info("PIPELINE step=validate_tests | skipped (no test_command)")
             return "quality_gate"
 
-        _log_with_context(
-            logger, "INFO", "Flow step: validate_tests", step="validate_tests"
-        )
+        logger.info("PIPELINE step=validate_tests crew=TestValidatorCrew | start")
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
 
         return self._run_crew(
@@ -1123,12 +1078,7 @@ class CodePipelineFlow(Flow[PipelineState]):
             logger.info("Test validation skipped (no test_command)")
             return "quality_gate_retry"
 
-        _log_with_context(
-            logger,
-            "INFO",
-            "Flow step: validate_tests_retry",
-            step="validate_tests_retry",
-        )
+        logger.info("PIPELINE step=validate_tests_retry crew=TestValidatorCrew | start")
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
 
         return self._run_crew(
@@ -1175,9 +1125,7 @@ class CodePipelineFlow(Flow[PipelineState]):
 
     def _run_quality_gate(self):
         """Shared quality gate logic. Fails if no file changes detected."""
-        _log_with_context(
-            logger, "INFO", "Flow step: quality_gate", step="quality_gate"
-        )
+        logger.info("PIPELINE step=quality_gate | start")
         has_changes, status_out = self._repo_has_changes()
         if not has_changes:
             msg = (
@@ -1198,7 +1146,7 @@ class CodePipelineFlow(Flow[PipelineState]):
     def route_after_implement(self):
         """Route to review or retry based on quality gate."""
         logger.info(
-            "Flow step: route_after_implement (quality_gate_passed=%s)",
+            "PIPELINE step=route_after_implement | quality_gate_passed=%s",
             self.state.quality_gate_passed,
         )
         if not self.state.test_command:
@@ -1218,21 +1166,10 @@ class CodePipelineFlow(Flow[PipelineState]):
         Named run_review to avoid collision: method name must differ from listen('review')
         or CrewAI re-triggers this step when it completes (infinite loop)."""
         if self.state.review_verdict and not self.state.from_scratch:
-            logger.info("Flow step: review (resumed, cached)")
+            logger.info("PIPELINE step=review | resumed (cached)")
             return self.state.review_verdict
-        _log_with_context(logger, "INFO", "Flow step: review", step="review")
+        logger.info("PIPELINE step=review crew=ReviewerCrew | start")
         repo_path = os.path.abspath(self.state.repo_path or os.getcwd())
-        _log_crew_context(
-            "ReviewerCrew",
-            {
-                "task": (self.state.task or "")[:80]
-                + ("..." if len(self.state.task or "") > 80 else ""),
-                "plan_len": len(self.state.plan or ""),
-                "implementation_len": len(self.state.implementation or ""),
-                "repo_path": repo_path,
-            },
-            exclude_keys=(),
-        )
         inputs = {
             "task": self.state.task,
             "plan": self.state.plan,
@@ -1262,7 +1199,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         """Route based on verdict: commit, retry, or abort. Run verification when APPROVED."""
         verdict = self.state.review_verdict.strip()
         logger.info(
-            "Flow step: route_verdict (verdict_prefix=%s)",
+            "PIPELINE step=route_verdict | verdict_prefix=%s",
             verdict[:50] if verdict else "(empty)",
         )
         if verdict.upper().startswith("APPROVED"):
@@ -1307,7 +1244,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         Present the final review verdict to the human.
         The method output is what gets shown — include all context the human needs.
         """
-        logger.info("Flow step: human_gate (awaiting commit/replan)")
+        logger.info("PIPELINE step=human_gate | awaiting commit/replan")
         return (
             f"## Task\n{self.state.task}\n\n"
             f"## Review Verdict\n{self.state.review_verdict}\n\n"
@@ -1322,7 +1259,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         and restart from the plan step.
         """
         logger.info(
-            "Flow step: handle_human_replan (feedback_len=%d)",
+            "PIPELINE step=handle_human_replan | feedback_len=%d",
             len(result.feedback or ""),
         )
         if self.state.replan_count >= self.state.max_replans:
