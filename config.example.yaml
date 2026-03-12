@@ -58,7 +58,7 @@ models:
     primary: "openrouter/deepseek/deepseek-chat"
     fallbacks:
       - "openrouter/meta-llama/llama-3.3-70b-instruct"
-      - "openrouter/qwen/qwen2.5-coder-32b"
+      - "openrouter/qwen/qwen-2.5-coder-32b-instruct"
     # Optional: agent-level overrides
     # agents:
     #   issue_analyst:
@@ -67,7 +67,7 @@ models:
   
   # Explorer Crew: Needs code understanding + tech stack analysis
   explore:
-    primary: "openrouter/qwen/qwen2.5-coder-32b"
+    primary: "openrouter/qwen/qwen-2.5-coder-32b-instruct"
     fallbacks:
       - "openrouter/deepseek/deepseek-chat"
       - "openrouter/meta-llama/llama-3.3-70b-instruct"
@@ -81,7 +81,7 @@ models:
   
   # Implementer Crew: Needs coding excellence + precision
   implement:
-    primary: "openrouter/qwen/qwen2.5-coder-32b"
+    primary: "openrouter/qwen/qwen-2.5-coder-32b-instruct"
     fallbacks:
       - "openrouter/deepseek/deepseek-chat"
       - "openrouter/meta-llama/llama-3.3-70b-instruct"
@@ -91,7 +91,7 @@ models:
     primary: "openrouter/deepseek/deepseek-chat"
     fallbacks:
       - "openrouter/meta-llama/llama-3.3-70b-instruct"
-      - "openrouter/qwen/qwen2.5-coder-32b"
+      - "openrouter/qwen/qwen-2.5-coder-32b-instruct"
   
   # Commit Crew: Needs concise, clear writing for commit messages
   commit:
@@ -119,7 +119,7 @@ models:
     primary: "openrouter/meta-llama/llama-3.3-70b-instruct"
     fallbacks:
       - "openrouter/deepseek/deepseek-chat"
-      - "openrouter/qwen/qwen2.5-coder-32b"
+      - "openrouter/qwen/qwen-2.5-coder-32b-instruct"
 
 # Tool Configuration
 # ------------------

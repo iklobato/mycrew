@@ -55,7 +55,7 @@ class OpenRouterModel(StrEnum):
     # Cheaper alternatives (primary recommendations)
     DEEPSEEK_CHAT = "openrouter/deepseek/deepseek-chat"  # ~70% cheaper than v3.2
     GEMINI_2_FLASH = "openrouter/google/gemini-2.0-flash-exp"  # Cheaper than gemini-3
-    QWEN2_5_CODER = "openrouter/qwen/qwen2.5-coder-32b"  # ~60% cheaper than qwen3-coder
+    QWEN2_5_CODER = "openrouter/qwen/qwen-2.5-coder-32b-instruct"  # ~60% cheaper than qwen3-coder
     MISTRAL_SMALL = "openrouter/deepseek/deepseek-chat"  # Replaced invalid mistral-small with deepseek-chat
     LLAMA_3_3_70B = (
         "openrouter/meta-llama/llama-3.3-70b-instruct"  # Good for complex tasks
