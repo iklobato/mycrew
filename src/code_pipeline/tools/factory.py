@@ -179,17 +179,17 @@ def get_tools_for_stage(
     return []
 
 
-@log_exceptions("GithubSearchTool")
+@log_exceptions("GitHubAPISearchTool")
 def get_github_search_tool(github_repo: str | None) -> BaseTool | None:
-    """Return GithubSearchTool if GITHUB_TOKEN and github_repo are set."""
+    """Return GitHubAPISearchTool (REST API, no LLM) if GITHUB_TOKEN and github_repo are set."""
     if not github_repo or not github_repo.strip():
         return None
     token = get_settings().github_token.strip()
     if not token:
         return None
-    from crewai_tools import GithubSearchTool
+    from code_pipeline.tools.github_api_search_tool import GitHubAPISearchTool
 
-    return GithubSearchTool(gh_token=token, github_repo=github_repo.strip())
+    return GitHubAPISearchTool(github_token=token, github_repo=github_repo.strip())
 
 
 @log_exceptions("ScrapeWebsiteTool")
