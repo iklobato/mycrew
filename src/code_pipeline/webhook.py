@@ -9,11 +9,62 @@ from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from code_pipeline.main import kickoff
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="Code Pipeline Webhook", version="1.0")
+
+# Headers to redact in logs (CS-30: no tokens/secrets)
+_REDACT_HEADERS = frozenset({"authorization", "x-hub-signature-256"})
+
+
+def _sanitize_headers(headers: dict[str, str]) -> dict[str, str]:
+    """Redact sensitive headers for logging."""
+    return {k: "(redacted)" if k in _REDACT_HEADERS else v for k, v in headers.items()}
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Log all incoming requests with method, host, path, params, and body."""
+
+    async def dispatch(self, request: Request, call_next):
+        body = await request.body()
+        headers = {k.lower(): v for k, v in request.headers.items()}
+        client = request.client
+        client_str = f"{client.host}:{client.port}" if client else "(unknown)"
+
+        # Parse body for logging (truncate if large)
+        body_preview: str | dict[str, Any] = ""
+        if body:
+            try:
+                parsed = json.loads(body)
+                body_str = json.dumps(parsed)
+                body_preview = parsed if len(body_str) <= 2000 else body_str[:2000] + "..."
+            except json.JSONDecodeError:
+                body_preview = body[:500].decode("utf-8", errors="replace")
+                if len(body) > 500:
+                    body_preview += "..."
+
+        url = str(request.url)
+        logger.info(
+            "Request: method=%s url=%s client=%s query=%s headers=%s body=%s",
+            request.method,
+            url,
+            client_str,
+            dict(request.query_params),
+            _sanitize_headers(headers),
+            body_preview,
+        )
+
+        async def receive():
+            return {"type": "http.request", "body": body}
+
+        request = Request(request.scope, receive)
+        return await call_next(request)
+
+
+app.add_middleware(RequestLoggingMiddleware)
 
 
 # Event/action -> path to issue_url in payload
