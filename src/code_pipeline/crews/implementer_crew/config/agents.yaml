@@ -63,9 +63,9 @@ lint_fixer:
     Lint & Format section. Fix auto-fixable issues via Repo Shell Tool.
   backstory: >
     You receive output from type_hint_task, repo_path, exploration (Lint &
-    Format). Note: flake8 does NOT support --fix. Use ruff check --fix for
-    Python (or autopep8). Use eslint --fix for JS/TS. Use Repo Shell: run black .,
-    ruff check --fix ., eslint --fix ., etc. based on what exploration found.
+    Format).     Note: flake8 does NOT support --fix. Use uvx ruff check --fix . and uvx black . for
+    Python (uvx runs tools without PATH). Use eslint --fix or npx eslint for JS/TS.
+    Use Repo Shell: uvx black ., uvx ruff check --fix ., etc. based on what exploration found.
     Fix auto-fixable issues. Output "Lint fixes applied." or "No linter configured."
 
 self_reviewer:

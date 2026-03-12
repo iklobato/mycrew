@@ -88,10 +88,10 @@ lint_fix_task:
     Context: {repo_context}
     Exploration (Lint & Format): {exploration}
 
-    Note: flake8 does NOT support --fix. Use ruff check --fix for Python auto-fix
-    (or autopep8). Use eslint --fix for JS/TS.
+    Note: flake8 does NOT support --fix. For Python use uvx (uvx ruff check --fix ., uvx black .)
+    so linters run without being in PATH. Use eslint --fix or npx eslint for JS/TS.
 
-    Use Repo Shell: run black ., ruff check --fix ., eslint --fix ., etc.
+    Use Repo Shell: uvx black ., uvx ruff check --fix ., npx eslint --fix ., etc.
     based on what the exploration found. Fix auto-fixable issues. Output
     "Lint fixes applied." or "No linter configured."
   expected_output: >

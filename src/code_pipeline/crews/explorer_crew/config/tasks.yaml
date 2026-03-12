@@ -103,7 +103,7 @@ convention_extract_task:
 
     APPEND:
     ## Lint & Format
-    - Linters: (black, ruff, eslint; note: flake8 has no --fix—use ruff check --fix for Python auto-fix)
+    - Linters: (black, ruff, eslint; use uvx for Python: uvx ruff check --fix ., uvx black .)
     - Formatters: (black, prettier)
     - Config paths and key options
 

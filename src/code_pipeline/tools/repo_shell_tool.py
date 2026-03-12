@@ -56,6 +56,7 @@ class RepoShellTool(BaseTool):
     description: str = (
         "Run shell commands in the repository. Use relative paths. "
         "Examples: 'ls -la', 'cat path/to/file', 'grep -r \"pattern\" src/', 'pytest', 'npm test'. "
+        "Python: use uvx for linters (uvx ruff check --fix ., uvx black .) when ruff/black not on PATH. "
         "grep: use 'grep PATTERN file' or 'cmd | grep PATTERN'; "
         "for patterns with '-' or '>' use 'grep -e \"pattern\" file' or 'grep -- \"->\" file'. "
         "gh: issue list --state= accepts only open|closed|all; for merged PRs use 'gh pr list --state=merged'. "
