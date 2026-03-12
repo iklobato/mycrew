@@ -1,15 +1,20 @@
 """Unit tests for code_pipeline.utils."""
 
+import os
+import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from code_pipeline.utils import (
     build_repo_context,
+    clone_repo_for_issue,
+    delete_cloned_repo,
     derive_issue_url,
     detect_github_repo,
     detect_repo_path,
     enrich_repo_context,
+    is_git_repo,
     log_exceptions,
     resolve_issue_url,
 )
@@ -252,6 +257,101 @@ def test_detect_repo_path_timeout_returns_cwd(mock_run):
     mock_run.side_effect = subprocess.TimeoutExpired("git", 5)
     result = detect_repo_path("/my/cwd")
     assert result == "/my/cwd"
+
+
+# ---------------------------------------------------------------------------
+# is_git_repo
+# ---------------------------------------------------------------------------
+
+
+@patch("code_pipeline.utils.subprocess.run")
+def test_is_git_repo_true(mock_run, tmp_path):
+    """When git rev-parse succeeds, returns True."""
+    mock_run.return_value = MagicMock(returncode=0, stdout=f"{tmp_path}\n")
+    assert is_git_repo(str(tmp_path)) is True
+
+
+@patch("code_pipeline.utils.subprocess.run")
+def test_is_git_repo_false_empty_dir(tmp_path):
+    """Empty temp dir is not a git repo."""
+    assert is_git_repo(str(tmp_path)) is False
+
+
+@patch("code_pipeline.utils.subprocess.run")
+def test_is_git_repo_false_git_fails(mock_run, tmp_path):
+    """When git fails, returns False."""
+    mock_run.return_value = MagicMock(returncode=1, stdout="")
+    assert is_git_repo(str(tmp_path)) is False
+
+
+def test_is_git_repo_nonexistent():
+    """Nonexistent path returns False."""
+    assert is_git_repo("/nonexistent/path/xyz") is False
+
+
+# ---------------------------------------------------------------------------
+# clone_repo_for_issue
+# ---------------------------------------------------------------------------
+
+
+@patch("subprocess.run")
+def test_clone_repo_for_issue_success(mock_run, tmp_path):
+    """clone_repo_for_issue clones and returns absolute path."""
+    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+    parent = str(tmp_path / "workspace")
+    result = clone_repo_for_issue("owner/repo", parent, "main", "token123")
+    assert result == str(tmp_path / "workspace" / "owner-repo")
+    mock_run.assert_called_once()
+    call_args = mock_run.call_args[0][0]
+    assert "clone" in call_args
+    assert "--branch" in call_args
+    assert "main" in call_args
+    assert "--depth" in call_args
+    assert "1" in call_args
+
+
+def test_clone_repo_for_issue_no_token_raises():
+    """Empty token raises ValueError."""
+    with pytest.raises(ValueError, match="GITHUB_TOKEN is required"):
+        clone_repo_for_issue("owner/repo", "/tmp/x", "main", "")
+
+
+def test_clone_repo_for_issue_invalid_github_repo_raises():
+    """Invalid github_repo format raises ValueError."""
+    with pytest.raises(ValueError, match="owner/repo format"):
+        clone_repo_for_issue("invalid", "/tmp/x", "main", "token")
+
+
+# ---------------------------------------------------------------------------
+# delete_cloned_repo
+# ---------------------------------------------------------------------------
+
+
+def test_delete_cloned_repo_removes_dir():
+    """delete_cloned_repo removes directory under /tmp."""
+    with tempfile.TemporaryDirectory(dir="/tmp", prefix="code_pipeline_test_") as td:
+        subdir = os.path.join(td, "subdir")
+        os.makedirs(subdir)
+        assert os.path.exists(subdir)
+        delete_cloned_repo(td)
+        assert not os.path.exists(td)
+
+
+def test_delete_cloned_repo_refuses_non_tmp(tmp_path):
+    """delete_cloned_repo does not delete when path is outside /tmp."""
+    out_of_tmp = str(tmp_path.resolve())
+    if "/tmp" in out_of_tmp or out_of_tmp.startswith("/var/folders"):
+        pytest.skip("tmp_path may be under /tmp on this system")
+    if not os.path.exists(out_of_tmp):
+        os.makedirs(out_of_tmp)
+    delete_cloned_repo(out_of_tmp)
+    assert os.path.exists(out_of_tmp)
+
+
+def test_delete_cloned_repo_empty_path_noop():
+    """Empty path does nothing."""
+    delete_cloned_repo("")
+    delete_cloned_repo("   ")
 
 
 # ---------------------------------------------------------------------------

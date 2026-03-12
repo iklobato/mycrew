@@ -18,6 +18,7 @@ import re
 import subprocess
 import sys
 import time
+import uuid
 from dataclasses import asdict, dataclass
 
 from pydantic import BaseModel
@@ -58,7 +59,10 @@ from code_pipeline.settings import (
 )
 from code_pipeline.utils import (
     build_repo_context,
+    clone_repo_for_issue,
+    delete_cloned_repo,
     enrich_repo_context,
+    is_git_repo,
     log_exceptions,
     resolve_issue_url,
 )
@@ -1584,6 +1588,26 @@ def kickoff(
     else:
         flow_inputs_base = {}
     flow_inputs = flow_inputs_base | args.to_flow_inputs()
+    # Clone repo if cwd is not a git repo (e.g. remote webhook)
+    clone_path_to_cleanup: str | None = None
+    repo_path_val = flow_inputs.get("repo_path", "")
+    if repo_path_val is None:
+        repo_path_val = ""
+    repo_path_resolved = (
+        os.path.abspath(repo_path_val) if repo_path_val else os.getcwd()
+    )
+    if repo_path_val == ".":
+        repo_path_resolved = os.getcwd()
+    github_repo_val = flow_inputs.get("github_repo", "")
+    if github_repo_val and not is_git_repo(repo_path_resolved):
+        parent_dir = os.path.join("/tmp", f"code_pipeline_{uuid.uuid4().hex}")
+        branch_val = flow_inputs.get("branch", "main")
+        token = get_settings().github_token.strip()
+        clone_path = clone_repo_for_issue(
+            github_repo_val, parent_dir, branch_val, token
+        )
+        flow_inputs["repo_path"] = clone_path
+        clone_path_to_cleanup = parent_dir
     # Enrich repo_path when it's "." (resolve to git root)
     enriched = enrich_repo_context(
         flow_inputs.get("repo_path", ""),
@@ -1616,7 +1640,11 @@ def kickoff(
         flow_inputs.get("task", "")[:80],
         flow_inputs.get("repo_path", ""),
     )
-    return _execute_flow(flow_inputs)
+    try:
+        return _execute_flow(flow_inputs)
+    finally:
+        if clone_path_to_cleanup:
+            delete_cloned_repo(clone_path_to_cleanup)
 
 
 @log_exceptions("Pipeline kickoff")
