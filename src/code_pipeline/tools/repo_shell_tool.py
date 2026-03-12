@@ -41,7 +41,9 @@ class RepoShellToolInput(BaseModel):
         ...,
         description=(
             "Single shell command. Use relative paths. Read-only preferred "
-            "(ls, find, cat, head, grep). For tests use project's test runner."
+            "(ls, find, cat, head, grep). For tests use project's test runner. "
+            "grep: use 'grep PATTERN file' or 'cmd | grep PATTERN'; "
+            "never pass '>' as an option—use 'grep -- \"->\" file' for patterns with dashes."
         ),
     )
 
@@ -52,7 +54,9 @@ class RepoShellTool(BaseTool):
     name: str = "Repo Shell Tool"
     description: str = (
         "Run shell commands in the repository. Use relative paths. "
-        "Examples: 'ls -la', 'cat path/to/file', 'pytest', 'npm test'. "
+        "Examples: 'ls -la', 'cat path/to/file', 'grep -r \"pattern\" src/', 'pytest', 'npm test'. "
+        "grep: use 'grep PATTERN file' or 'cmd | grep PATTERN'; "
+        "for patterns with '-' or '>' use 'grep -e \"pattern\" file' or 'grep -- \"->\" file'. "
         "Commands run with cwd=repo_path. Output is truncated at 8000 chars. "
         "Dangerous commands (rm -rf /, mkfs, etc.) are blocked."
     )

@@ -27,7 +27,7 @@ test_quality_check_task:
     
     Context: {repo_context}
     
-    Test files written: {test_implementation}
+    Use the output from the previous task (test_implement_task) for test files written.
     Implementation: {implementation}
     
     CRITICAL: You MUST validate tests catch bugs:
@@ -51,7 +51,7 @@ test_coverage_check_task:
     
     Context: {repo_context}
     
-    Test validation: {test_validation}
+    Use the output from the previous task (test_quality_check_task) for test validation status.
     
     Optional: Check for coverage tools and run them.
     

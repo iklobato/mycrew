@@ -158,6 +158,11 @@ tasks:
     cmds:
       - uv run plot
 
+  logs:
+    desc: Tail live App Platform runtime logs (mycrew on DigitalOcean)
+    cmds:
+      - doctl apps logs 5a45a942-e0c3-4648-aad0-6b45ae0efbcd mycrew --tail 50 --follow
+
   help:
     desc: Show pipeline CLI help
     cmds:
