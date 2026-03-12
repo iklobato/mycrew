@@ -60,7 +60,8 @@ class RepoShellTool(BaseTool):
         "grep: use 'grep PATTERN file' or 'cmd | grep PATTERN'; "
         "for patterns with '-' or '>' use 'grep -e \"pattern\" file' or 'grep -- \"->\" file'. "
         "gh: issue list --state= accepts only open|closed|all; for merged PRs use 'gh pr list --state=merged'. "
-        "Commands run with cwd=repo_path. Output is truncated at 8000 chars. "
+        "Commands run with cwd=repo_path. Output is limited to 65536 chars (64KB) to prevent memory exhaustion. "
+        'For large repositories, use focused searches: \'grep -r "pattern" src --include="*.py" --exclude-dir=node_modules --exclude-dir=.git | head -100\'. '
         "Dangerous commands (rm -rf /, mkfs, etc.) are blocked."
     )
     args_schema: Type[BaseModel] = RepoShellToolInput
@@ -115,28 +116,109 @@ class RepoShellTool(BaseTool):
                     return f"Error: path outside repo is not allowed: {part_clean}"
 
         try:
-            result = subprocess.run(
+            # Use Popen with streaming to limit memory usage
+            process = subprocess.Popen(
                 command,
                 shell=True,
                 cwd=repo_path,
-                timeout=120,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
+                bufsize=1,  # Line buffered
             )
-            stdout = result.stdout if result.stdout is not None else ""
-            stderr = result.stderr if result.stderr is not None else ""
+
+            # Maximum output size (64KB)
+            MAX_OUTPUT_SIZE = 65536
+            stdout_chunks = []
+            stderr_chunks = []
+            total_size = 0
+            truncated = False
+
+            # Read output with timeout
+            import select
+            import time
+
+            start_time = time.time()
+            TIMEOUT = 120
+
+            while process.poll() is None:
+                # Check timeout
+                if time.time() - start_time > TIMEOUT:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                    raise subprocess.TimeoutExpired(command, TIMEOUT)
+
+                # Check for output
+                ready, _, _ = select.select(
+                    [process.stdout, process.stderr], [], [], 1.0
+                )
+
+                for stream in ready:
+                    if stream is process.stdout:
+                        chunk = stream.readline()
+                        if chunk:
+                            if total_size + len(chunk) > MAX_OUTPUT_SIZE:
+                                truncated = True
+                                break
+                            stdout_chunks.append(chunk)
+                            total_size += len(chunk)
+                    elif stream is process.stderr:
+                        chunk = stream.readline()
+                        if chunk:
+                            if total_size + len(chunk) > MAX_OUTPUT_SIZE:
+                                truncated = True
+                                break
+                            stderr_chunks.append(chunk)
+                            total_size += len(chunk)
+
+                if truncated:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                    break
+
+            # Get any remaining output if process finished
+            if not truncated:
+                stdout_remain, stderr_remain = process.communicate(timeout=5)
+                if stdout_remain:
+                    if total_size + len(stdout_remain) > MAX_OUTPUT_SIZE:
+                        truncated = True
+                        stdout_remain = stdout_remain[: MAX_OUTPUT_SIZE - total_size]
+                    stdout_chunks.append(stdout_remain)
+                    total_size += len(stdout_remain)
+                if stderr_remain and not truncated:
+                    if total_size + len(stderr_remain) > MAX_OUTPUT_SIZE:
+                        truncated = True
+                        stderr_remain = stderr_remain[: MAX_OUTPUT_SIZE - total_size]
+                    stderr_chunks.append(stderr_remain)
+                    total_size += len(stderr_remain)
+
+            returncode = process.returncode or 0
+
+            # Combine output
+            stdout = "".join(stdout_chunks)
+            stderr = "".join(stderr_chunks)
             output = stdout + stderr
             output_len = len(output)
 
-            # Truncate if too long
-            if output_len > 8000:
-                output = output[:8000] + "\n... (truncated)"
+            # Add truncation notice if needed
+            if truncated:
+                output = (
+                    output[:MAX_OUTPUT_SIZE] + "\n... (output truncated at 64KB limit)"
+                )
+                output_len = len(output)
 
             # Log completion with output preview
             logger.info(
-                "│ Exit code: %d, Output length: %d chars",
-                result.returncode,
+                "│ Exit code: %d, Output length: %d chars%s",
+                returncode,
                 output_len,
+                " (truncated)" if truncated else "",
             )
 
             # Show preview of output (first 3 lines as single line)

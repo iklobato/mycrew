@@ -13,6 +13,12 @@ explore_task:
     prioritize exploring those paths. When exclude_paths is set, avoid spending
     time on them. Do not exhaustively document the entire codebase—only what is
     needed for the plan.
+    
+    **IMPORTANT: Avoid memory-intensive commands on large repositories.**
+    - Use `--include` and `--exclude-dir` flags with grep
+    - Limit output with `| head -N`
+    - Search specific directories (src/, app/) not entire repository (.)
+    - Output is limited to 64KB - excessive output will be truncated
 
     Run `git log -5 --name-only` to identify recently changed files; include them
     in Key Files when relevant. When test_command is set, document the test
@@ -25,6 +31,12 @@ explore_task:
     - **Repo Shell Tool** — Param: command. Runs shell in repo. Use: ls -la,
       find src -name "*.py", cat pyproject.toml, head -50 path/to/file, grep -r "pattern" src,
       git log -5 --name-only. Read-only preferred.
+      
+      **For large repositories, use focused commands to avoid memory issues:**
+      - `grep -r "pattern" src --include="*.py" --exclude-dir=node_modules --exclude-dir=.git | head -100`
+      - `find . -maxdepth 3 -name "*.py" -exec grep -l "pattern" {} \; | head -50`
+      - `grep -r "def " src --include="*.py" | head -50` (not `grep -r 'def ' .`)
+      - Avoid scanning entire repository with `.` - use specific directories like `src/`, `app/`, etc.
 
     - **CodeDocsSearchTool** — Param: search_query. Semantic search over docs_url.
       Use for framework conventions, architecture docs, coding standards.
