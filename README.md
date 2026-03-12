@@ -168,9 +168,14 @@ models:
 ### Environment Variables (Alternative to config.yaml)
 - `OPENROUTER_API_KEY` - LLM API access (required)
 - `SERPER_API_KEY` - Serper API key for web search integration (optional)
-- `GITHUB_TOKEN` - For GitHub API integration (optional)
+- `GITHUB_TOKEN` - For GitHub API integration (required for issue_url; clone, fetch issue, create PR)
+- `GITHUB_WEBHOOK_SECRET` - For GitHub webhook signature verification (required when using webhooks)
 - `CODE_PIPELINE_LOG_LEVEL` - Logging level (DEBUG, INFO, WARNING, ERROR)
 - `CREWAI_TRACING_ENABLED` - CrewAI telemetry (set to "false" to disable)
+
+### GitHub Webhook (issues assigned, PR review comments)
+
+To trigger the pipeline from GitHub (e.g. when an issue is assigned or a PR review comment is created), register a webhook and set `GITHUB_WEBHOOK_SECRET`. See [docs/WEBHOOK_REGISTRATION.md](docs/WEBHOOK_REGISTRATION.md) for URL, events, GITHUB_TOKEN scopes, and step-by-step registration.
 
 ### Web Search Integration (SerperDevTool)
 

@@ -12,6 +12,7 @@ dependencies = [
     "httpx>=0.25.0,<1.0.0",
     "psutil>=7.2.2",
     "types-psutil>=7.2.2.20260130",
+    "pydantic-settings>=2.10.1,<2.11",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +28,7 @@ run_crew = "code_pipeline.main:kickoff"
 plot = "code_pipeline.main:plot"
 run_with_trigger = "code_pipeline.main:run_with_trigger"
 webhook = "code_pipeline.webhook:main"
+register_webhook = "code_pipeline.register_webhook:main"
 
 [build-system]
 requires = ["hatchling"]

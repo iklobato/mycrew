@@ -177,3 +177,8 @@ tasks:
     desc: Show pipeline CLI help
     cmds:
       - uv run kickoff --help
+
+  configure:webhook:
+    desc: Configure GitHub webhook + DO App Platform (needs GITHUB_TOKEN, GITHUB_WEBHOOK_SECRET, DO_TOKEN)
+    cmds:
+      - python scripts/configure_webhook_remote.py
