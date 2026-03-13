@@ -16,50 +16,6 @@ from code_pipeline.utils import log_exceptions
 logger = logging.getLogger(__name__)
 
 
-def _estimate_context_size(text: str, tokens_per_char: float = 0.25) -> int:
-    """Estimate token count for text using average token-to-character ratio."""
-    if not text:
-        return 0
-    return int(len(text) * tokens_per_char)
-
-
-def _calculate_optimal_max_tokens(
-    context_text: str,
-    max_context_tokens: int = 8000,
-    min_output_tokens: int = 512,
-    safety_margin: float = 0.2,
-) -> int:
-    """Calculate optimal max_tokens based on context size with safety margin."""
-    estimated_context_tokens = _estimate_context_size(context_text)
-    available_for_output = max_context_tokens - estimated_context_tokens
-    safe_available = int(available_for_output * (1.0 - safety_margin))
-    if safe_available < min_output_tokens:
-        if available_for_output < min_output_tokens:
-            logger.warning(
-                "Context too large: %d tokens estimated, only %d available (min: %d)",
-                estimated_context_tokens,
-                available_for_output,
-                min_output_tokens,
-            )
-            return min_output_tokens
-        return max(min_output_tokens, available_for_output)
-    return min(safe_available, 4096)
-
-
-def _get_stage_max_tokens(
-    stage_name: str, context_text: str, base_max_tokens: int = 2048
-) -> int:
-    """Get stage-specific max_tokens with dynamic adjustment for large contexts."""
-    large_context_stages = {"explore", "plan", "implement", "review"}
-    if stage_name in large_context_stages:
-        context_tokens = _estimate_context_size(context_text)
-        if context_tokens > 4000:
-            return max(1024, base_max_tokens - 1024)
-        if context_tokens > 2000:
-            return max(1536, base_max_tokens - 512)
-    return base_max_tokens
-
-
 # LiteLLM: when True, inserts user continue message if last message is assistant
 # (fixes Anthropic "assistant message prefill" error when using OpenRouter/Claude)
 try:
@@ -559,33 +515,13 @@ def llm_with_fallback(
         ", ".join(str(m) for m in models),
     )
 
-    # Calculate optimal max_tokens based on context
-    if estimated_context_tokens <= 0 and context_text:
-        estimated_context_tokens = _estimate_context_size(context_text)
+    # Conservative default max_tokens - OpenRouter middle-out handles context overflow
+    max_tokens = 2048
 
-    max_tokens = 2048  # Default base value
-
-    if context_text or estimated_context_tokens > 0:
-        if stage_name:
-            # Use stage-specific adjustment
-            max_tokens = _get_stage_max_tokens(
-                stage_name, context_text, base_max_tokens=2048
-            )
-        else:
-            # Use general optimal calculation
-            max_tokens = _calculate_optimal_max_tokens(
-                context_text,
-                max_context_tokens=8000,
-                min_output_tokens=512,
-                safety_margin=0.2,
-            )
-
-        logger.info(
-            "│ Context-aware max_tokens: %d (stage: %s, estimated context: %d tokens)",
-            max_tokens,
-            stage_name or "general",
-            estimated_context_tokens,
-        )
+    logger.info(
+        "│ Using conservative max_tokens: %d (OpenRouter middle-out handles context overflow)",
+        max_tokens,
+    )
 
     last_error = None
     for idx, model in enumerate(models):
@@ -599,16 +535,19 @@ def llm_with_fallback(
             # Configure retry strategy based on model type
             retry_config = _get_retry_config_for_model(model_str)
 
-            # Configure LLM for OpenRouter with memory optimizations
+            # Configure LLM for OpenRouter with conservative defaults
             llm_config = {
                 "model": model_str,
                 "num_retries": retry_config["num_retries"],
                 "time_between_retries": retry_config["time_between_retries"],
                 "timeout": 90,  # Reduced timeout
-                "max_tokens": max_tokens,  # Dynamically adjusted based on context
+                "max_tokens": max_tokens,  # Conservative default
                 "stream": False,  # Avoid empty responses from streaming with some OpenRouter models
                 # LiteLLM: ensure last message is user (fixes Anthropic assistant prefill error)
                 "additional_params": {
+                    "transforms": [
+                        "middle-out"
+                    ],  # OpenRouter automatic context compression
                     "user_continue_message": {
                         "role": "user",
                         "content": "Continue.",

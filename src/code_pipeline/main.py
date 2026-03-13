@@ -859,96 +859,6 @@ class CodePipelineFlow(Flow[PipelineState]):
             logger.error("Quality gate failed: %s", e, exc_info=True)
             return False, str(e)
 
-    def _truncate_exploration(self, exploration: str, max_chars: int = 6000) -> str:
-        """Truncate exploration document to prevent token overflow in LLM context.
-
-        Keeps essential sections but limits total size. Prioritizes:
-        1. Tech Stack
-        2. Directory Layout
-        3. Dependency Map
-        4. Test Layout
-        5. Lint & Format
-        """
-        if not exploration or len(exploration) <= max_chars:
-            return exploration
-
-        logger.warning(
-            "Truncating exploration from %d to %d chars (aggressive memory reduction)",
-            len(exploration),
-            max_chars,
-        )
-
-        # Split by sections
-        sections = []
-        current_section = []
-        current_title = None
-
-        lines = exploration.split("\n")
-        for line in lines:
-            if line.startswith("## "):
-                # Save previous section
-                if current_title and current_section:
-                    sections.append((current_title, "\n".join(current_section)))
-                # Start new section
-                current_title = line[3:].strip()
-                current_section = [line]
-            elif current_title:
-                current_section.append(line)
-
-        # Add last section
-        if current_title and current_section:
-            sections.append((current_title, "\n".join(current_section)))
-
-        # Priority order of sections to keep with aggressive size limits
-        # Downstream stages (plan, implement) need these most:
-        priority_sections = [
-            ("Tech Stack", 1000),  # Max 1000 chars
-            ("Directory Layout", 1500),  # Max 1500 chars
-            ("Dependency Map", 800),  # Max 800 chars
-            ("Test Layout", 1000),  # Max 1000 chars
-            ("Lint & Format", 500),  # Max 500 chars
-            ("Conventions", 800),  # Max 800 chars
-            ("API Boundary", 600),  # Max 600 chars
-        ]
-
-        # Build truncated exploration with per-section limits
-        truncated = []
-        total_chars = 0
-
-        for title, max_section_chars in priority_sections:
-            if total_chars >= max_chars:
-                break
-
-            for section_title, section_content in sections:
-                if section_title.lower() == title.lower():
-                    # Apply per-section limit
-                    if len(section_content) > max_section_chars:
-                        # Truncate this section to its limit
-                        section_content = (
-                            section_content[:max_section_chars]
-                            + "\n... (section truncated)"
-                        )
-
-                    if total_chars + len(section_content) > max_chars:
-                        # Truncate this section to fit remaining space
-                        remaining = max_chars - total_chars
-                        if remaining > 100:  # Only include if we have meaningful space
-                            truncated.append(
-                                section_content[:remaining] + "\n... (truncated)"
-                            )
-                            total_chars = max_chars
-                        break
-                    else:
-                        truncated.append(section_content)
-                        total_chars += len(section_content)
-                    break
-
-        if not truncated:
-            # Fallback: just take the beginning
-            return exploration[:max_chars] + "\n... (truncated)"
-
-        return "\n\n".join(truncated)
-
     VALKEY_THRESHOLD_BYTES = 5120
 
     def _get_flow_id(self) -> str:
@@ -960,7 +870,10 @@ class CodePipelineFlow(Flow[PipelineState]):
         )
 
     def _maybe_offload_to_valkey(self, field: str, value: str) -> str:
-        """If value exceeds threshold and Valkey available, store and return key ref."""
+        """If value exceeds threshold and Valkey available, store and return key ref.
+
+        Offloads all state fields that exceed threshold to keep app memory minimal.
+        """
         if not value or len(value.encode("utf-8")) < self.VALKEY_THRESHOLD_BYTES:
             return value
         cache = get_valkey_cache()
@@ -971,7 +884,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         if cache.store(key, value):
             ref = f"__valkey:{flow_id}:{field}"
             logger.info(
-                "Offloaded %s to Valkey (key=%s, size=%d)", field, key, len(value)
+                "Offloaded %s to Valkey (key=%s, size=%d bytes)", field, key, len(value)
             )
             return ref
         return value
@@ -995,20 +908,39 @@ class CodePipelineFlow(Flow[PipelineState]):
             return retrieved
         return value[:200] + "\n... (Valkey fetch failed)"
 
+    def _delete_from_valkey(self, field: str) -> None:
+        """Delete field from Valkey if it was offloaded."""
+        value = getattr(self.state, field, "")
+        if value and value.startswith("__valkey:"):
+            # Parse ref: __valkey:flow_id:field
+            parts = value.split(":", 2)
+            if len(parts) == 3:
+                cache = get_valkey_cache()
+                if cache is not None:
+                    key = f"{parts[1]}:{parts[2]}"
+                    cache.delete(key)
+                    logger.debug("Deleted %s from Valkey (key=%s)", field, key)
+
     def _cleanup_after_plan(self) -> None:
         """Clear exploration field after plan stage (already used for planning)."""
         logger.info("Memory cleanup after plan stage")
+        self._delete_from_valkey("exploration")
         self.state.exploration = ""
 
     def _cleanup_after_implement(self) -> None:
         """Clear plan and exploration fields after implement (no longer needed for review)."""
         logger.info("Memory cleanup after implement stage")
+        self._delete_from_valkey("plan")
+        self._delete_from_valkey("exploration")
         self.state.plan = ""
         self.state.exploration = ""
 
     def _cleanup_after_review(self) -> None:
         """Clear implementation details before commit stage."""
         logger.info("Memory cleanup after review stage")
+        self._delete_from_valkey("implementation")
+        self._delete_from_valkey("plan")
+        self._delete_from_valkey("exploration")
         self.state.implementation = ""
         self.state.plan = ""
         self.state.exploration = ""
@@ -1107,11 +1039,9 @@ class CodePipelineFlow(Flow[PipelineState]):
             raw = str(result)
 
         if state_attr:
-            offloaded = (
-                self._maybe_offload_to_valkey(state_attr, raw)
-                if state_attr in ("plan", "implementation")
-                else raw
-            )
+            # Offload ALL state fields to Valkey if they exceed threshold
+            # This keeps app memory minimal by delegating storage to Valkey
+            offloaded = self._maybe_offload_to_valkey(state_attr, raw)
             setattr(self.state, state_attr, offloaded)
             if state_attr == "implementation":
                 _log_implementer_summary(raw)
@@ -1235,15 +1165,14 @@ class CodePipelineFlow(Flow[PipelineState]):
             return self._get_field_from_state_or_valkey("plan")
         logger.info("PIPELINE step=plan crew=ArchitectCrew | start")
 
-        # Truncate exploration to prevent token overflow
+        # Use full exploration - OpenRouter middle-out handles context overflow
         exploration = self._get_field_from_state_or_valkey("exploration")
-        truncated_exploration = self._truncate_exploration(exploration)
 
         result = self._run_crew(
             ArchitectCrew,
             {
                 "task": self.state.task,
-                "exploration": truncated_exploration,
+                "exploration": exploration,  # Use full exploration
                 "issue_analysis": self.state.issue_analysis,
                 "prior_issues": self.state.prior_issues,
                 "clarifications": self.state.clarifications,
@@ -1698,7 +1627,7 @@ class CodePipelineFlow(Flow[PipelineState]):
             gh_val = self.state.github_repo
         else:
             gh_val = ""
-        return self._run_crew(
+        result = self._run_crew(
             CommitCrew,
             {
                 "repo_path": self.state.repo_path,
@@ -1716,6 +1645,45 @@ class CodePipelineFlow(Flow[PipelineState]):
             state_attr=None,
         )
 
+        # Clean up all Valkey entries after successful pipeline completion
+        self._cleanup_all_valkey_entries()
+        logger.info("Pipeline completed successfully, all Valkey entries cleaned up")
+
+        return result
+
+    def _cleanup_all_valkey_entries(self) -> None:
+        """Clean up all Valkey entries for this flow to prevent memory leaks."""
+        cache = get_valkey_cache()
+        if cache is None:
+            return
+
+        flow_id = self._get_flow_id()
+        # List of all state fields that might be offloaded to Valkey
+        state_fields = [
+            "issue_analysis",
+            "exploration",
+            "plan",
+            "implementation",
+            "review_verdict",
+            "test_validation",
+            "quality_gate_output",
+            "verification_output",
+            "prior_issues",
+            "clarifications",
+        ]
+
+        for field in state_fields:
+            value = getattr(self.state, field, "")
+            if value and value.startswith("__valkey:"):
+                # Parse ref and delete
+                parts = value.split(":", 2)
+                if len(parts) == 3:
+                    key = f"{parts[1]}:{parts[2]}"
+                    cache.delete(key)
+                    logger.debug("Cleaned up Valkey entry: %s", key)
+
+        logger.info("Cleaned up all Valkey entries for flow %s", flow_id)
+
     @listen("pipeline_aborted")
     def handle_abort(self):
         """Terminal: return message with retry count and last verdict. Uses distinct
@@ -1723,6 +1691,10 @@ class CodePipelineFlow(Flow[PipelineState]):
         global _pipeline_aborted
         _pipeline_aborted = True
         logger.warning("Flow step: handle_abort (pipeline aborted)")
+
+        # Clean up Valkey entries before returning
+        self._cleanup_all_valkey_entries()
+
         msg = (
             f"Pipeline aborted after {self.state.retry_count} retries. "
             f"Last verdict:\n\n{self.state.review_verdict}"

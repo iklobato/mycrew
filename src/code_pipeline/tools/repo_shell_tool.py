@@ -81,9 +81,8 @@ class RepoShellTool(BaseTool):
 
     repo_path: str = ""
 
-    # LRU cache for command outputs (max 32 entries to limit memory)
-    _command_cache: dict[str, tuple[str, float]] = {}
-    _CACHE_MAX_SIZE = 32
+    # No in-memory cache - all caching delegated to Valkey when REDIS_URL is set
+    # This keeps app memory minimal by avoiding local caching
 
     def _run(self, command: str) -> str:
         """Execute a shell command in the repo with safety checks."""
@@ -101,7 +100,8 @@ class RepoShellTool(BaseTool):
         if not command:
             return "Error: empty command."
 
-        # Check cache first (cache key includes repo_path for safety)
+        # Check Valkey cache first (cache key includes repo_path for safety)
+        # No in-memory caching to keep app memory minimal
         cache_key = f"{repo_path}:{command}"
         valkey_cache = _get_valkey_cache_safe()
         if valkey_cache is not None:
@@ -112,20 +112,6 @@ class RepoShellTool(BaseTool):
             if cached is not None:
                 logger.info("│ Using Valkey cached output")
                 return cached
-        elif cache_key in self._command_cache:
-            cached_output, timestamp = self._command_cache[cache_key]
-            # Cache valid for 5 minutes (300 seconds)
-            if time.time() - timestamp < 300:
-                logger.info(
-                    "│ Using cached output (age: %.1fs)", time.time() - timestamp
-                )
-                # Move to end (most recently used)
-                del self._command_cache[cache_key]
-                self._command_cache[cache_key] = (cached_output, time.time())
-                return cached_output
-            else:
-                # Expired cache entry
-                del self._command_cache[cache_key]
 
         # Block dangerous patterns
         cmd_lower = command.lower()
@@ -334,23 +320,15 @@ class RepoShellTool(BaseTool):
 
             logger.info("└─[ RepoShellTool COMPLETE ]─")
 
-            # Cache the result (only cache successful commands with return code 0)
-            if returncode == 0:
+            # Cache the result in Valkey (only cache successful commands with return code 0)
+            # No in-memory caching to keep app memory minimal
+            if returncode == 0 and valkey_cache is not None:
                 cache_key = f"{repo_path}:{command}"
-                if valkey_cache is not None:
-                    valkey_key = f"reposhell:{hashlib.sha256(cache_key.encode()).hexdigest()[:32]}"
-                    if valkey_cache.store(valkey_key, output, ttl_seconds=300):
-                        logger.debug("│ Cached output in Valkey")
-                else:
-                    # Apply LRU eviction if cache is full
-                    if len(self._command_cache) >= self._CACHE_MAX_SIZE:
-                        oldest_key = next(iter(self._command_cache))
-                        del self._command_cache[oldest_key]
-                        logger.debug("│ Cache evicted oldest entry")
-                    self._command_cache[cache_key] = (output, time.time())
-                    logger.debug(
-                        "│ Cached output (cache size: %d)", len(self._command_cache)
-                    )
+                valkey_key = (
+                    f"reposhell:{hashlib.sha256(cache_key.encode()).hexdigest()[:32]}"
+                )
+                if valkey_cache.store(valkey_key, output, ttl_seconds=300):
+                    logger.debug("│ Cached output in Valkey")
 
             return output
 
