@@ -71,14 +71,12 @@ class RepoShellTool(BaseTool):
 
     def _run(self, command: str) -> str:
         """Execute a shell command in the repo with safety checks."""
-        logger.info("┌─[ RepoShellTool EXECUTE ]─ Command: %s", command)
+        logger.info(f"Shell: {command}")
         if not self.repo_path:
-            logger.warning("RepoShellTool: repo_path not set")
             return "Error: repo_path is not set."
 
         repo_path = os.path.abspath(self.repo_path)
         if not os.path.isdir(repo_path):
-            logger.warning("RepoShellTool: repo_path not found: %s", repo_path)
             return f"Error: repo_path does not exist or is not a directory: {repo_path}"
 
         command = command.strip()
@@ -89,9 +87,6 @@ class RepoShellTool(BaseTool):
         cmd_lower = command.lower()
         for pattern in _DANGEROUS_PATTERNS:
             if re.search(pattern, cmd_lower, re.IGNORECASE):
-                logger.warning(
-                    "RepoShellTool: blocked dangerous command (pattern=%s)", pattern
-                )
                 return f"Error: command blocked for safety (pattern: {pattern})"
 
         # Reject absolute paths escaping repo_path
@@ -107,13 +102,7 @@ class RepoShellTool(BaseTool):
                     common = os.path.commonpath([resolved, repo_norm])
                     if common != repo_norm:
                         return f"Error: absolute path outside repo is not allowed: {part_clean}"
-                except (ValueError, OSError) as e:
-                    logger.error(
-                        "RepoShellTool: path validation failed for %s: %s",
-                        part_clean,
-                        e,
-                        exc_info=True,
-                    )
+                except (ValueError, OSError):
                     return f"Error: path outside repo is not allowed: {part_clean}"
 
         try:

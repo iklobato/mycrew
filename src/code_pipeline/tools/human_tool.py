@@ -46,8 +46,7 @@ def _is_interactive() -> bool:
     """True if stdin is attached to a TTY and we can safely use input()."""
     try:
         return sys.stdin.isatty()
-    except Exception as e:
-        logger.error("sys.stdin.isatty() failed: %s", e, exc_info=True)
+    except Exception:
         return False
 
 
@@ -67,7 +66,7 @@ def ask_human(question: str) -> str:
     from code_pipeline.settings import get_pipeline_context
 
     if get_pipeline_context().programmatic:
-        logger.info("ask_human: programmatic mode, auto-selecting recommended option")
+        logger.info(f"Asking human: {question[:50]}...")
 
         # Parse the question to find the recommended option
         # Look for "Option A (recommended):" pattern

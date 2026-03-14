@@ -118,30 +118,8 @@ class CreatePRTool(BaseTool):
         else:
             github_repo = ""
         if not github_repo:
-            logger.info("└─[ CreatePRTool FAILED ]─ github_repo is required")
             return "Error: github_repo is required to create a PR"
 
-        logger.info("┌─[ CreatePRTool EXECUTE ]─")
-        logger.info("│ Input:")
-        logger.info("│   Feature branch: %s", feature_branch)
-        logger.info("│   Base branch: %s", base_branch)
-        logger.info("│   GitHub repo: %s", github_repo)
-        if len(task) > 100:
-            task_preview = task[:100] + "..."
-        else:
-            task_preview = task
-        logger.info("│   Task: %s", task_preview)
-        if issue_id:
-            issue_id_display = issue_id
-        else:
-            issue_id_display = "(none)"
-        logger.info("│   Issue ID: %s", issue_id_display)
-        if labels:
-            labels_display = labels
-        else:
-            labels_display = "(none)"
-        logger.info("│   Labels: %s", labels_display)
-        logger.info("│ Publishing branch %s to origin", feature_branch)
         try:
             push = subprocess.run(
                 ["git", "push", "-u", "origin", feature_branch],
@@ -152,12 +130,6 @@ class CreatePRTool(BaseTool):
             )
             push_err = push.stderr if push.stderr is not None else ""
             if push.returncode != 0 and "already exists" not in push_err:
-                if push.stderr:
-                    log_msg = push.stderr
-                else:
-                    log_msg = push.stdout if push.stdout is not None else ""
-                logger.warning("git push failed: %s", log_msg)
-                logger.info("└─[ CreatePRTool FAILED ]─ git push failed")
                 if push.stderr is not None and push.stderr != "":
                     err_display = push.stderr
                 elif push.stdout is not None:
@@ -166,8 +138,6 @@ class CreatePRTool(BaseTool):
                     err_display = ""
                 return f"Branch not pushed: {err_display}"
         except Exception as e:
-            logger.error("git push failed: %s", e, exc_info=True)
-            logger.info("└─[ CreatePRTool FAILED ]─ git push failed")
             return f"Failed to push: {e}"
 
         if task:
@@ -207,8 +177,6 @@ class CreatePRTool(BaseTool):
                         err_msg = result.stderr
                     else:
                         err_msg = result.stdout if result.stdout is not None else ""
-                    logger.warning("gh pr create failed: %s", err_msg)
-                    logger.info("└─[ CreatePRTool FAILED ]─ gh pr create failed")
                     return f"PR creation failed: {err_msg}"
                 stdout_val = result.stdout
                 if stdout_val is not None:
@@ -217,7 +185,6 @@ class CreatePRTool(BaseTool):
                     pr_url = ""
                 if pr_url:
                     print(f"\n🔗 PR opened: {pr_url}\n")
-                    logger.info("│ PR URL: %s", pr_url)
 
                 # Add labels if provided
                 labels_val = labels if labels is not None else ""
@@ -227,7 +194,6 @@ class CreatePRTool(BaseTool):
                         match = re.search(r"/pull/(\d+)", pr_url)
                         if match:
                             pr_number = match.group(1)
-                            logger.info("│ Adding labels: %s", ", ".join(label_list))
                             for lbl in label_list:
                                 subprocess.run(
                                     ["gh", "pr", "edit", pr_number, "--add-label", lbl],
@@ -237,19 +203,14 @@ class CreatePRTool(BaseTool):
                                     timeout=15,
                                     env={**os.environ, "GH_REPO": github_repo},
                                 )
-                            logger.info("│ Labels added successfully")
                     except Exception as e:
-                        logger.warning("Failed to add labels: %s", e)
+                        logger.error(f"Failed to add labels: {e}", exc_info=True)
 
-                logger.info("└─[ CreatePRTool COMPLETE ]─")
+                logger.info(f"PR created: {pr_url}")
                 return pr_url or "PR created"
             finally:
                 os.unlink(body_file)
         except FileNotFoundError:
-            logger.warning("gh CLI not found; install from https://cli.github.com")
-            logger.info("└─[ CreatePRTool FAILED ]─ gh CLI not found")
             return "gh CLI not found; install to create PRs"
         except Exception as e:
-            logger.error("gh pr create failed: %s", e, exc_info=True)
-            logger.info("└─[ CreatePRTool FAILED ]─")
             return f"PR creation failed: {e}"

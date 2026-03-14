@@ -62,11 +62,6 @@ class GitHubAPISearchTool(BaseTool):
 
     def _run(self, search_query: str, content_types: str = "code") -> str:
         """Execute GitHub search using REST API."""
-        logger.info(
-            "GitHubAPISearchTool: query=%s types=%s",
-            search_query[:80],
-            content_types,
-        )
         try:
             # Build search query with repository filter
             repo_filter = f"repo:{self.owner}/{self.repo}"
@@ -102,7 +97,7 @@ class GitHubAPISearchTool(BaseTool):
             if not results:
                 return f"No results found for query: {search_query}"
 
-            logger.info("GitHubAPISearchTool: found %d results", len(results))
+            logger.info(f"GitHub search found {len(results)} results")
 
             # Format results
             formatted_results = []
@@ -112,7 +107,7 @@ class GitHubAPISearchTool(BaseTool):
             return "\n\n".join(formatted_results)
 
         except Exception as e:
-            logger.error("GitHub API search failed: %s", e)
+            logger.error(f"GitHub API search failed: {e}")
             return f"GitHub search failed: {str(e)}"
 
     def _search_code(self, query: str) -> list[dict[str, Any]]:
