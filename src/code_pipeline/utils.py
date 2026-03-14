@@ -201,7 +201,7 @@ def clone_repo_for_issue(
     if not abs_target.startswith(abs_parent):
         raise ValueError("Target path escapes parent_dir")
     os.makedirs(parent_dir, exist_ok=True)
-    logger.info("Cloning %s branch=%s into %s", github_repo, branch, target_dir)
+    logger.info(f"Cloning {github_repo}")
     result = subprocess.run(
         ["git", "clone", "--branch", branch, "--depth", "1", url, target_dir],
         capture_output=True,
@@ -211,7 +211,6 @@ def clone_repo_for_issue(
     if result.returncode != 0:
         stderr = result.stderr if result.stderr else ""
         raise ValueError(f"git clone failed: {stderr.strip() or 'unknown error'}")
-    logger.info("Clone complete: %s -> %s", github_repo, abs_target)
     return abs_target
 
 
@@ -228,14 +227,13 @@ def delete_cloned_repo(path: str) -> None:
     tmp_real = os.path.realpath("/tmp")
     path_real = os.path.realpath(abs_path) if os.path.exists(abs_path) else abs_path
     if not path_real.startswith(tmp_real + os.sep) and path_real != tmp_real:
-        logger.warning("delete_cloned_repo: path outside /tmp refused: %s", abs_path)
         return
     try:
         if os.path.exists(abs_path):
             shutil.rmtree(abs_path)
-            logger.info("Deleted cloned repo: %s", abs_path)
-    except Exception as e:
-        logger.warning("delete_cloned_repo failed for %s: %s", abs_path, e)
+            logger.info(f"Deleted cloned repo")
+    except Exception:
+        pass
 
 
 def detect_github_repo(repo_path: str) -> str:

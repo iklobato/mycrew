@@ -573,7 +573,7 @@ def llm_with_fallback(
         attempt = idx + 1
         total = len(models)
 
-        logger.info("│ Attempt %d/%d: %s", attempt, total, model_str)
+        logger.info(f"LLM request: {model_str}")
 
         try:
             # Create LLM using provider
@@ -581,36 +581,24 @@ def llm_with_fallback(
                 model=model_str,
                 max_tokens=max_tokens,
             )
-            logger.info(
-                "└─[ LLM SUCCESS ]─ Selected: %s (attempt %d/%d, max_tokens: %d)",
-                model_str,
-                attempt,
-                total,
-                max_tokens,
-            )
             return llm
         except Exception as e:
             last_error = e
             error_msg = str(e)
             if "429" in error_msg or "RateLimitError" in error_msg:
-                logger.info("│ Model %s rate limited, trying next...", model_str)
+                logger.warning(f"Rate limited")
                 if "free" in model_str.lower():
-                    logger.info(
-                        "│ Free model rate limited, waiting 30s before next attempt..."
-                    )
                     import time
 
                     time.sleep(30)
             elif "None or empty" in error_msg or "Invalid response" in error_msg:
-                logger.info(
-                    "│ Model %s returned empty response, trying next...", model_str
-                )
+                pass
             else:
-                logger.info("│ Model %s failed: %s", model_str, error_msg[:100])
+                logger.error(f"LLM failed: {error_msg[:100]}")
             continue
 
     if last_error is not None:
-        logger.info("└─[ LLM FAILED ]─ All models failed")
+        logger.error(f"LLM failed: {last_error}")
         raise Exception("All models failed") from last_error
     raise Exception("All models failed")
 

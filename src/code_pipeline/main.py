@@ -27,7 +27,7 @@ from code_pipeline.crews.tactiq_research_crew.tactiq_research_crew import (
     TactiqResearchCrew,
 )  # noqa: E402
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("code_pipeline.main")
 
 
 class PipelineState(BaseModel):
@@ -68,10 +68,6 @@ class CodePipelineFlow(Flow[PipelineState]):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def _log_step(self, step: str, message: str, **kwargs):
-        """Consolidated logging helper."""
-        logger.info(f"PIPELINE step={step} {message}", extra=kwargs)
-
     def _get_field_from_state(self, field_name: str, default=None):
         """Get field from state with fallback."""
         return getattr(self.state, field_name, default)
@@ -79,16 +75,17 @@ class CodePipelineFlow(Flow[PipelineState]):
     def _run_crew(self, crew_class, crew_name: str, input_data: dict | None = None):
         """Run a crew with simplified error handling."""
         if not crew_class:
-            self._log_step(crew_name, "crew_class is None, skipping")
+            logger.info(f"Skipping {crew_name}: crew_class is None")
             return None
 
+        logger.info(f"Starting {crew_name} crew")
         try:
             crew = crew_class()
             result = crew.kickoff(inputs=input_data)
-            self._log_step(crew_name, "completed successfully")
+            logger.info(f"Completed {crew_name} crew")
             return result.raw
         except Exception as e:
-            self._log_step(crew_name, f"failed: {e}")
+            logger.error(f"Failed {crew_name} crew: {e}")
             return None
 
     def _run_validate_tests(self, test_command: str | None = None):
@@ -97,7 +94,7 @@ class CodePipelineFlow(Flow[PipelineState]):
             test_command = self._get_field_from_state("test_command")
 
         if not test_command:
-            self._log_step("validate_tests", "no test command provided")
+            logger.info("validate_tests: no test command provided")
             return {"passed": False, "output": "No test command provided"}
 
         try:
@@ -109,18 +106,16 @@ class CodePipelineFlow(Flow[PipelineState]):
                 text=True,
             )
             passed = result.returncode == 0
-            self._log_step(
-                "validate_tests", f"tests {'passed' if passed else 'failed'}"
-            )
+            logger.info(f"validate_tests: tests {'passed' if passed else 'failed'}")
             return {"passed": passed, "output": result.stdout}
         except Exception as e:
-            self._log_step("validate_tests", f"error running tests: {e}")
+            logger.error(f"validate_tests: error running tests: {e}")
             return {"passed": False, "output": str(e)}
 
     @start()
     def start(self):
         """Start the pipeline."""
-        self._log_step("start", f"starting pipeline for {self.state.issue_url}")
+        logger.info(f"Starting pipeline: {self.state.issue_url}")
         return self.explore
 
     @listen(start)
@@ -138,7 +133,7 @@ class CodePipelineFlow(Flow[PipelineState]):
             re.IGNORECASE,
         )
         if not m:
-            self._log_step("explore", f"invalid issue URL: {self.state.issue_url}")
+            logger.error(f"explore: invalid issue URL: {self.state.issue_url}")
             return self.end
 
         owner, repo_name, kind, number = (
@@ -172,7 +167,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         )
 
         if not result:
-            self._log_step("explore", "exploration failed")
+            logger.error("explore: exploration failed")
             return self.end
 
         self.state.exploration_result = result
@@ -194,7 +189,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         )
 
         if not result:
-            self._log_step("analyze_issue", "issue analysis failed")
+            logger.error("analyze_issue: issue analysis failed")
             return self.end
 
         # If tactiq_meeting_id is provided, run tactiq_research
@@ -222,7 +217,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         )
 
         if not result:
-            self._log_step("tactiq_research", "failed, falling back to clarify")
+            logger.info("tactiq_research: failed, falling back to clarify")
             return self.clarify
 
         self.state.tactiq_result = result
@@ -230,10 +225,10 @@ class CodePipelineFlow(Flow[PipelineState]):
         # Check if clarification is still needed based on result
         # If "sufficient_info: true" is in the result, skip clarification
         if isinstance(result, str) and "sufficient_info: true" in result.lower():
-            self._log_step("tactiq_research", "sufficient info found, skipping clarify")
+            logger.info("tactiq_research: sufficient info found, skipping clarify")
             return self.architect
 
-        self._log_step("tactiq_research", "clarification still needed")
+            logger.info("tactiq_research: clarification still needed")
         return self.clarify
 
     @listen(analyze_issue)
@@ -252,7 +247,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         )
 
         if not result:
-            self._log_step("clarify", "clarification failed")
+            logger.error("clarify: clarification failed")
             return self.end
 
         return self.architect
@@ -273,7 +268,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         )
 
         if not result:
-            self._log_step("architect", "architecture failed")
+            logger.error("architect: architecture failed")
             return self.end
 
         self.state.architecture_result = result
@@ -296,7 +291,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         )
 
         if not result:
-            self._log_step("implement", "implementation failed")
+            logger.error("implement: implementation failed")
             return self.retry_implement
 
         self.state.implementation_result = result
@@ -320,7 +315,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         )
 
         if not result:
-            self._log_step("review", "review failed")
+            logger.error("review: review failed")
             return self.retry_implement
 
         self.state.review_result = result
@@ -328,10 +323,10 @@ class CodePipelineFlow(Flow[PipelineState]):
         # Check review verdict
         verdict = result.get("verdict", {}).get("verdict", "ISSUES")
         if verdict == "ISSUES":
-            self._log_step("review", "implementation has issues")
+            logger.warning("review: implementation has issues")
             return self.retry_implement
         else:  # APPROVED
-            self._log_step("review", "implementation approved")
+            logger.info("review: implementation approved")
             return self.validate_tests
 
     @listen(review)
@@ -343,10 +338,10 @@ class CodePipelineFlow(Flow[PipelineState]):
         self.state.validation_result = result
 
         if result.get("passed", False):
-            self._log_step("validate_tests", "tests passed")
+            logger.info("validate_tests: tests passed")
             return self.commit
         else:
-            self._log_step("validate_tests", "tests failed")
+            logger.warning("validate_tests: tests failed")
             return self.retry_implement
 
     @listen(validate_tests)
@@ -368,7 +363,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         )
 
         if not result:
-            self._log_step("commit", "commit failed")
+            logger.error("commit: commit failed")
             return self.end
 
         self.state.commit_result = result
@@ -381,15 +376,14 @@ class CodePipelineFlow(Flow[PipelineState]):
         self.state.retry_count += 1
 
         if self.state.retry_count > self.state.max_retries:
-            self._log_step(
-                "retry_implement", f"max retries exceeded ({self.state.max_retries})"
+            logger.error(
+                f"retry_implement: max retries exceeded ({self.state.max_retries})"
             )
             return self.end
 
-        self._log_step(
-            "retry_implement",
-            f"retry {self.state.retry_count}/{self.state.max_retries}",
-        )
+            logger.info(
+                f"retry_implement: retry {self.state.retry_count}/{self.state.max_retries}"
+            )
         return self.implement
 
     @listen(explore)
@@ -403,7 +397,7 @@ class CodePipelineFlow(Flow[PipelineState]):
     @listen(retry_implement)
     def end(self):
         """End the pipeline."""
-        self._log_step("end", f"pipeline completed for {self.state.issue_url}")
+        logger.info(f"Pipeline completed: {self.state.issue_url}")
         return None
 
 
@@ -414,7 +408,7 @@ def _configure_logging(level: int | str | None = None):
 
     logging.basicConfig(
         level=level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        format="%(asctime)s | %(levelname)-8s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
