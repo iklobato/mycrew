@@ -13,7 +13,7 @@ from code_pipeline.settings import get_settings
 logger = logging.getLogger(__name__)
 
 GRAPHQL_URL = "https://api2.tactiq.io/api/2/graphql"
-USER_AGENT = "code_pipeline (https://github.com/iklobato/mycrew)"
+USER_AGENT = "mycrew (https://github.com/iklobato/mycrew)"
 POLL_INTERVAL = 2  # seconds
 MAX_POLL_ATTEMPTS = 30
 

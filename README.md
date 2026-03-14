@@ -27,16 +27,16 @@ cp config.example.yaml config.yaml
 ### Run the Pipeline
 
 ```bash
-# Using Task (recommended)
-task run TASK_DESC="Add a hello world function"
+# Using the kickoff client (recommended)
+kickoff-client "https://github.com/owner/repo/issues/123"
 
-# Or with uv directly
-uv run kickoff -t "Add a hello world function" -r .
+# Or with Python directly
+python -m code_pipeline "https://github.com/owner/repo/issues/123"
 
 # Docker
 docker run -it --rm -v $(pwd):/workspace -w /workspace \
   -e OPENROUTER_API_KEY=your_key \
-  iklobato/mycrew -t "Add feature" -r .
+  iklobato/mycrew "https://github.com/owner/repo/issues/123"
 ```
 
 ---
@@ -63,10 +63,12 @@ Copy `config.example.yaml` to `config.yaml` and customize:
 
 ```yaml
 pipeline:
-  task: "Your development task"
-  repo_path: "."
+  issue_url: "https://github.com/owner/repo/issues/123"
   branch: "main"
+  from_scratch: false
+  max_retries: 3
   dry_run: false
+  programmatic: false
 
 api_keys:
   openrouter_api_key: "${OPENROUTER_API_KEY}"  # Or paste key directly
@@ -258,13 +260,11 @@ curl -X POST http://localhost:8000/webhook \
 |-----|-------------|
 | `issue_url` (positional) | GitHub issue URL. The pipeline will implement the feature/fix described in this issue. Format: `https://github.com/owner/repo/issues/123` |
 | `-c, --config` | Path to config.yaml file. Contains pipeline configuration including model settings |
-| `-t, --task` | Task description. Alternative to issue_url - describes what to build |
 | `-r, --repo-path` | Path to the repository where changes will be made. Default: current directory (`.`) |
 | `-b, --branch` | Base branch name. The branch to create feature branches from. Default: `main` |
 | `-n, --max-retries` | Maximum retry attempts if implementation fails. The pipeline will retry the implementer crew up to this many times. Default: `3` |
 | `-f, --from-scratch` | Ignore all previous checkpoints and run the entire pipeline from the start. Use when you want a fresh start |
 | `--dry-run` | Run pipeline without making git commits or creating PRs. Changes exist locally but aren't pushed |
-| `--test-command` | Command to run tests after implementation. Examples: `pytest`, `npm test`, `go test ./...`. Used by Test Validator crew |
 | `--programmatic` | Disable all human-in-the-loop interactions. Agents won't ask questions - they'll make their best guess |
 | `-v, --verbose` | Enable verbose logging. Shows more detailed output about what agents are doing |
 | `--debug` | Enable debug logging. Shows all internal details including API calls |
@@ -277,55 +277,45 @@ curl -X POST http://localhost:8000/webhook \
 
 ```bash
 # Minimal run (uses current directory)
-task run TASK_DESC="Add dark mode"
+kickoff-client "https://github.com/owner/repo/issues/123"
 
 # With repository path
-task run TASK_DESC="Fix login bug" R=/path/to/repo
+kickoff-client "https://github.com/owner/repo/issues/123" --branch feature-branch
 
-# With test command
-task run TASK_DESC="Add feature" TEST="pytest"
+# With custom max retries
+kickoff-client "https://github.com/owner/repo/issues/123" --max-retries 5
 
 # Dry run (skip git commit/PR)
-task run TASK_DESC="Add feature" DRY_RUN=1
+kickoff-client "https://github.com/owner/repo/issues/123" --dry-run
 ```
 
 ### Advanced Usage
 
 ```bash
 # Full options via CLI
-uv run kickoff \
-  -t "Add user authentication" \
-  -r ./my-app \
-  -b main \
-  -n 3 \
-  --test-command "pytest" \
+python -m code_pipeline "https://github.com/owner/repo/issues/123" \
+  --branch main \
+  --max-retries 3 \
   --dry-run
 
 # Run from scratch (ignore checkpoints)
-task run TASK_DESC="Add feature" F=1
+kickoff-client "https://github.com/owner/repo/issues/123" --from-scratch
 
-# With GitHub repo for search
-task run TASK_DESC="Fix bug" GITHUB_REPO=owner/repo
-
-# With issue URL for context
-task run TASK_DESC="Implement feature" ISSUE_URL="https://github.com/owner/repo/issues/123"
+# With custom webhook URL
+kickoff-client "https://github.com/owner/repo/issues/123" --url http://localhost:8000
 ```
 
-### Task Variables
+### CLI Options
 
-| Variable | Short | Description | Default |
-|----------|-------|-------------|---------|
-| `TASK_DESC` | - | Task description | (required) |
-| `R` | - | Repository path | `.` |
-| `B` | - | Git branch | `main` |
-| `F` | - | From scratch (1/0) | `1` |
-| `DRY_RUN` | - | Skip commit (1/0) | `0` |
-| `N` | - | Max retries | `3` |
-| `TEST` | - | Test command | - |
-| `V` | - | Verbose logging (1/0) | `0` |
-| `GITHUB_REPO` | - | GitHub owner/repo | - |
-| `ISSUE_URL` | - | GitHub issue URL | - |
-| `TACTIQ_MEETING_ID` | - | Tactiq meeting ID for context | - |
+| Option | Description | Default |
+|--------|-------------|---------|
+| `issue_url` | GitHub issue URL (required) | - |
+| `--branch` | Git branch | `main` |
+| `--from-scratch` | Start from scratch ignoring checkpoints | `false` |
+| `--max-retries` | Maximum retry attempts | `3` |
+| `--dry-run` | Skip git commit/PR | `false` |
+| `--programmatic` | No human interaction | `false` |
+| `--url` | Webhook URL | `http://localhost:8000` |
 
 ---
 
@@ -385,11 +375,11 @@ When a Tactiq meeting ID is provided:
 ### Usage
 
 ```bash
-# With Tactiq meeting ID (skips clarification if meeting resolves all questions)
-task run TASK_DESC="Add feature" TACTIQ_MEETING_ID=abc123
+# Standard run with issue URL
+kickoff-client "https://github.com/owner/repo/issues/123"
 
-# Without Tactiq - standard clarification flow
-task run TASK_DESC="Add feature"
+# Without issue - specify task description via config
+# (set issue_url in config.yaml or pass via environment)
 ```
 
 ### Configuration
@@ -397,10 +387,12 @@ task run TASK_DESC="Add feature"
 ```yaml
 # config.yaml
 pipeline:
-  tactiq_meeting_id: "abc123"  # Optional: Tactiq meeting ID
+  issue_url: "https://github.com/owner/repo/issues/123"
+  branch: "main"
+  dry_run: false
 
 api_keys:
-  tactiq_token: "${TACTIQ_TOKEN}"  # From Tactiq settings
+  github_token: "${GITHUB_TOKEN}"
 ```
 
 ---
@@ -438,7 +430,6 @@ positional arguments:
 
 optional arguments:
   -c, --config CONFIG   Path to config.yaml
-  -t, --task TASK       Task description
   -r, --repo-path REPO_PATH
                         Repository path (default: .)
   -b, --branch BRANCH   Base branch (default: main)
@@ -446,8 +437,6 @@ optional arguments:
                         Max retries (default: 3)
   -f, --from-scratch    Start from scratch, ignoring checkpoints
   --dry-run             Skip git commit and PR
-  --test-command TEST_COMMAND
-                        Test command (e.g., pytest, npm test)
   --programmatic        Programmatic mode (no human interaction)
   -v, --verbose         Verbose logging
   --debug               Debug logging
@@ -509,9 +498,10 @@ The pipeline automatically retries with fallback models. If you hit rate limits 
 
 ### Context Length Errors
 
-Reduce task scope or focus on specific files:
+Reduce task scope or focus on specific files by creating a more focused issue:
 ```bash
-task run TASK_DESC="Fix login in auth.py only" R=. FOCUS_PATHS=auth.py
+# Create a focused issue for a specific file
+kickoff-client "https://github.com/owner/repo/issues/456"  # Issue: Fix login in auth.py
 ```
 
 ### Webhook Not Triggering

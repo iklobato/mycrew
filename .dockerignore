@@ -8,7 +8,6 @@ __pycache__
 *.md
 .env
 .env.example
-Taskfile.yml
 logs/
 *.log
 *.tmp
