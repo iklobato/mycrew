@@ -6,7 +6,10 @@ __pycache__
 .pytest_cache
 .cursor
 *.md
-config.yaml
 .env
 .env.example
 Taskfile.yml
+logs/
+*.log
+*.tmp
+.DS_Store

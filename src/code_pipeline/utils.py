@@ -105,7 +105,6 @@ def build_repo_context(
     repo_path: str = "",
     github_repo: str = "",
     issue_url: str = "",
-    test_command: str = "",
 ) -> str:
     """
     Build a shared context string for agents. Reduces repetition of repo_path,
@@ -132,12 +131,6 @@ def build_repo_context(
         iu = ""
     if iu:
         lines.append(f"- Issue URL: {iu}")
-    if test_command is not None:
-        tc = test_command.strip()
-    else:
-        tc = ""
-    if tc:
-        lines.append(f"- Test command: {tc}")
     if not lines:
         return "(no context)"
     return "\n".join(lines)

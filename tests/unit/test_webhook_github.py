@@ -8,6 +8,8 @@ import pytest
 from fastapi import HTTPException
 
 from code_pipeline.webhook import (
+    _accepted_response,
+    _default_params,
     _extract_github_params,
     _get_nested,
     _run_kickoff_background,
@@ -176,3 +178,70 @@ def test_run_kickoff_background_logs_on_exception():
             _run_kickoff_background(issue_url="https://x")
             mock_logger.error.assert_called_once()
             assert "oops" in str(mock_logger.error.call_args)
+
+
+def test_default_params_returns_settings_values():
+    """_default_params returns branch and dry_run from settings."""
+    with patch("code_pipeline.settings.get_settings") as mock_get:
+        mock_get.return_value.default_branch = "develop"
+        mock_get.return_value.default_dry_run = True
+        params = _default_params()
+        assert params["branch"] == "develop"
+        assert params["dry_run"] is True
+        assert params["programmatic"] is False
+
+
+def test_default_params_defaults():
+    """_default_params uses sensible defaults when settings not set."""
+    with patch("code_pipeline.settings.get_settings") as mock_get:
+        mock_get.return_value.default_branch = ""
+        mock_get.return_value.default_dry_run = False
+        params = _default_params()
+        assert params["branch"] == ""
+        assert params["dry_run"] is False
+
+
+def test_accepted_response_returns_202():
+    """_accepted_response returns correct 202 response."""
+    response = _accepted_response("https://github.com/owner/repo/issues/123")
+    assert response.status_code == 202
+    from starlette.responses import JSONResponse
+
+    assert isinstance(response, JSONResponse)
+    assert b"123" in response.body
+    assert b'"status"' in response.body
+    assert b'"accepted"' in response.body
+    assert b'"Pipeline queued"' in response.body
+
+
+@patch("code_pipeline.webhook._send_callback")
+def test_run_kickoff_background_with_callback_url(mock_send_callback):
+    """_run_kickoff_background extracts callback_url and sends on completion."""
+    with patch("code_pipeline.webhook.kickoff") as mock_kickoff:
+        mock_kickoff.return_value = "success"
+        _run_kickoff_background(
+            issue_url="https://github.com/o/r/issues/1",
+            callback_url="https://callback.example.com/notify",
+        )
+        mock_kickoff.assert_called_once_with(
+            issue_url="https://github.com/o/r/issues/1"
+        )
+        mock_send_callback.assert_called_once()
+        call_args = mock_send_callback.call_args[0]
+        assert call_args[0] == "https://callback.example.com/notify"
+        assert call_args[1] == "completed"
+
+
+@patch("code_pipeline.webhook._send_callback")
+def test_run_kickoff_background_sends_error_callback(mock_send_callback):
+    """_run_kickoff_background sends error callback when kickoff fails."""
+    with patch("code_pipeline.webhook.kickoff", side_effect=RuntimeError("boom")):
+        _run_kickoff_background(
+            issue_url="https://github.com/o/r/issues/1",
+            callback_url="https://callback.example.com/notify",
+        )
+        mock_send_callback.assert_called_once()
+        call_args = mock_send_callback.call_args[0]
+        assert call_args[0] == "https://callback.example.com/notify"
+        assert call_args[1] == "failed"
+        assert "boom" in call_args[2]["error"]

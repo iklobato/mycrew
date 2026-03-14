@@ -22,7 +22,6 @@ def test_webhook_trigger_success(mock_kickoff, client):
         "issue_url": "https://github.com/test/example/issues/123",
         "branch": "main",
         "dry_run": True,
-        "test_command": "python -c 'print(\"Test passed\")'",
     }
     response = client.post("/webhook", json=payload)
     assert response.status_code == 202
@@ -34,8 +33,9 @@ def test_webhook_trigger_success(mock_kickoff, client):
         issue_url=payload["issue_url"],
         branch="main",
         dry_run=True,
-        test_command=payload["test_command"],
         programmatic=False,
+        from_scratch=False,
+        max_retries=3,
     )
 
 
@@ -116,6 +116,47 @@ def test_webhook_github_issues_assigned(mock_kickoff, mock_settings, client):
     assert data["message"] == "Pipeline queued"
 
 
+@patch("code_pipeline.webhook.kickoff")
+def test_webhook_with_max_retries_param(mock_kickoff, client):
+    """POST /webhook with max_retries=N passes to kickoff."""
+    mock_kickoff.return_value = "Done"
+    response = client.post(
+        "/webhook",
+        json={
+            "issue_url": "https://github.com/owner/repo/issues/42",
+            "max_retries": 10,
+        },
+    )
+    assert response.status_code == 202
+    mock_kickoff.assert_called_once()
+    call_kwargs = mock_kickoff.call_args[1]
+    assert call_kwargs["max_retries"] == 10
+
+
+@patch("code_pipeline.webhook.kickoff")
+def test_webhook_with_from_scratch_param(mock_kickoff, client):
+    """POST /webhook with from_scratch=true passes to kickoff."""
+    mock_kickoff.return_value = "Done"
+    response = client.post(
+        "/webhook",
+        json={
+            "issue_url": "https://github.com/owner/repo/issues/42",
+            "from_scratch": True,
+        },
+    )
+    assert response.status_code == 202
+    mock_kickoff.assert_called_once()
+    call_kwargs = mock_kickoff.call_args[1]
+    assert call_kwargs["from_scratch"] is True
+
+
+def test_health_endpoint_returns_200(client):
+    """GET /health returns healthy status."""
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "healthy"}
+
+
 @pytest.mark.integration
 def test_webhook_trigger_live():
     """Live integration test requiring running server. Skip by default."""
@@ -125,7 +166,6 @@ def test_webhook_trigger_live():
         "issue_url": "https://github.com/test/example/issues/123",
         "branch": "main",
         "dry_run": True,
-        "test_command": "python -c 'print(\"Test passed\")'",
     }
     try:
         response = requests.post(

@@ -8,7 +8,8 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - .:/app:ro
+      - ./workspace:/workspace
+      - ./config.yaml:/app/config.yaml:ro
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
@@ -17,16 +18,23 @@ services:
       - DEFAULT_BRANCH=${DEFAULT_BRANCH:-main}
       - PORT=8000
       - HOST=0.0.0.0
-    command: ["uv", "run", "webhook"]
+      - PYTHONPATH=/app/src
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
 
   test:
     build:
       context: .
       dockerfile: Dockerfile
     image: mycrew/webhook:test
-    command: ["pytest", "-x"]
-    volumes:
-      - .:/app:ro
+    container_name: mycrew-test
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - PYTHONPATH=/app/src
+    command: ["pytest", "-x", "tests/"]
