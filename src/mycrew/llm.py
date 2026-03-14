@@ -9,7 +9,9 @@ from typing import Any
 
 from crewai import LLM
 
+from mycrew.exceptions import ModelUnavailableError
 from mycrew.providers import create_provider
+from mycrew.settings import get_settings
 from mycrew.utils import log_exceptions
 
 logger = logging.getLogger(__name__)
@@ -538,6 +540,47 @@ def get_llm_for_stage(
     )
 
 
+def _extract_all_required_models() -> set[str]:
+    """Extract all required model IDs from PIPELINE_MODELS (primary + fallbacks)."""
+    models: set[str] = set()
+    for stage_config in PIPELINE_MODELS.values():
+        models.add(stage_config.primary)
+        models.update(stage_config.fallbacks)
+    return models
+
+
+def validate_required_models() -> None:
+    """Validate all required models are available for the configured provider.
+
+    Raises:
+        ModelUnavailableError: If any required model is not available on OpenRouter.
+    """
+    settings = get_settings()
+
+    if not settings.openrouter_api_key:
+        logger.debug("No OpenRouter API key, skipping model validation")
+        return
+
+    provider_type = settings.provider_type
+    if provider_type and provider_type.lower() == "huggingface":
+        logger.info("Skipping OpenRouter model validation for HuggingFace provider")
+        return
+
+    required_models = _extract_all_required_models()
+    logger.info(
+        "Validating %d required models against OpenRouter",
+        len(required_models),
+    )
+
+    provider = create_provider(provider_type="openrouter")
+    result = provider.validate_models(required_models)
+
+    if result["unavailable"]:
+        raise ModelUnavailableError(result["unavailable"])
+
+    logger.info("All %d required models are available", len(result["available"]))
+
+
 __all__ = [
     "PipelineStage",
     "ProviderType",
@@ -546,4 +589,5 @@ __all__ = [
     "ModelMappings",
     "get_llm_for_stage",
     "llm_with_fallback",
+    "validate_required_models",
 ]

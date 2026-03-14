@@ -16,6 +16,7 @@ from crewai.utilities.paths import db_storage_path
 from pydantic import BaseModel
 
 # Load settings before any CrewAI imports
+from mycrew.llm import validate_required_models
 from mycrew.settings import get_settings
 from mycrew.utils import (
     clone_repo_for_issue,
@@ -553,6 +554,8 @@ def kickoff(
     repo_path: str = "",
 ):
     """Kickoff the pipeline."""
+    validate_required_models()
+
     state = PipelineState(
         id=str(uuid.uuid4()),
         issue_url=issue_url,

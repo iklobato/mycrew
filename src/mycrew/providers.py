@@ -70,6 +70,18 @@ class IProvider(ABC):
         """
         logger.error("Provider error for model %s: %s", model, error, exc_info=True)
 
+    @abstractmethod
+    def validate_models(self, required_models: set[str]) -> dict[str, list[str]]:
+        """Validate required models are available.
+
+        Args:
+            required_models: Set of model IDs to check availability
+
+        Returns:
+            Dict with "available" and "unavailable" model lists
+        """
+        pass
+
 
 class OpenRouterProvider(IProvider):
     """OpenRouter provider implementation."""
@@ -147,6 +159,53 @@ class OpenRouterProvider(IProvider):
             },
         }
         return LLM(**llm_config)
+
+    def validate_models(self, required_models: set[str]) -> dict[str, list[str]]:
+        """Validate required models are available on OpenRouter.
+
+        Args:
+            required_models: Set of model IDs to check availability
+
+        Returns:
+            Dict with "available" and "unavailable" model lists
+        """
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/anomalyco/opencode",
+        }
+
+        try:
+            response = self.session.get(
+                f"{self.base_url}/models",
+                headers=headers,
+                timeout=30,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            available_model_ids: set[str] = set()
+            for model in data.get("data", []):
+                model_id = model.get("id", "")
+                if model_id:
+                    available_model_ids.add(model_id)
+
+            required_list = list(required_models)
+            available = [m for m in required_list if m in available_model_ids]
+            unavailable = [m for m in required_list if m not in available_model_ids]
+
+            logger.info(
+                "Model validation: %d available, %d unavailable out of %d required",
+                len(available),
+                len(unavailable),
+                len(required_models),
+            )
+
+            return {"available": available, "unavailable": unavailable}
+
+        except Exception as e:
+            logger.error("Failed to validate models: %s", e)
+            raise
 
 
 class HuggingFaceProvider(IProvider):
@@ -243,6 +302,21 @@ class HuggingFaceProvider(IProvider):
             "stream": False,
         }
         return LLM(**llm_config)
+
+    def validate_models(self, required_models: set[str]) -> dict[str, list[str]]:
+        """Validate required models are available on HuggingFace.
+
+        TODO: Implement HuggingFace model validation.
+
+        Args:
+            required_models: Set of model IDs to check availability
+
+        Returns:
+            Dict with "available" and "unavailable" model lists
+        """
+        # TODO: Implement validation for HuggingFace provider
+        # For now, assume all models are available
+        return {"available": list(required_models), "unavailable": []}
 
 
 def create_provider(provider_type: str | None = None) -> IProvider:
