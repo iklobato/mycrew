@@ -1,7 +1,7 @@
 # Code Pipeline Crew Analysis
 
 ## Overview
-The code_pipeline consists of 7 sequential crews that process a software development task from analysis to implementation and deployment.
+The mycrew consists of 7 sequential crews that process a software development task from analysis to implementation and deployment.
 
 ## 1. Issue Analyst Crew
 **Stage**: `analyze_issue`

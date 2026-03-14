@@ -63,11 +63,11 @@ If any answer is no, do not add it.
 
 **Rules**:
 
-- Source code MUST live under `src/code_pipeline/` with the default module set:
+- Source code MUST live under `src/mycrew/` with the default module set:
   `main.py` (flow orchestration), `llm.py` (LLM configuration), `utils.py`
   (pure helper functions), `crews/` (CrewAI crews and tasks), and `tools/`
   (tool factory and implementations).
-- A sub-package (e.g. `code_pipeline/crews/architect_crew/`) MUST NOT be introduced
+- A sub-package (e.g. `mycrew/crews/architect_crew/`) MUST NOT be introduced
   until a module genuinely exceeds ~300 lines **and** its responsibilities are
   clearly distinct from its siblings.
 - Nesting MUST NOT exceed 3 levels deep.
@@ -488,7 +488,7 @@ Architectural Decision Records live in `docs/decisions/`. An ADR is REQUIRED whe
 
 ### Abstract Crew Base (ABCrew)
 
-The codebase uses an abstract base class `ABCrew` (in `src/code_pipeline/crews/abc_crew.py`) to define the contract for all crews. This enforces SOLID principles:
+The codebase uses an abstract base class `ABCrew` (in `src/mycrew/crews/abc_crew.py`) to define the contract for all crews. This enforces SOLID principles:
 
 - **SRP**: Each crew has a single responsibility (e.g., exploration, implementation, review)
 - **OCP**: Crews can be extended without modifying the base
@@ -561,7 +561,7 @@ class ExplorerCrew(PipelineCrewBase):
 
 ### Creating a New Crew
 
-1. Create file in `src/code_pipeline/crews/<crew_name>/<crew_name>.py`
+1. Create file in `src/mycrew/crews/<crew_name>/<crew_name>.py`
 2. Import `PipelineCrewBase` and decorators
 3. Define `stage` class variable
 4. Implement `required_agents` and `required_tasks` properties

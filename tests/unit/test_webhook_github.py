@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 from fastapi import HTTPException
 
-from code_pipeline.webhook import (
+from mycrew.webhook import (
     _accepted_response,
     _default_params,
     _extract_github_params,
@@ -23,7 +23,7 @@ def test_signature_verification_valid_passes():
     payload = b'{"test": "data"}'
     hash_obj = hmac.new(secret.encode("utf-8"), msg=payload, digestmod=hashlib.sha256)
     valid_signature = "sha256=" + hash_obj.hexdigest()
-    with patch("code_pipeline.settings.get_settings") as mock_get:
+    with patch("mycrew.settings.get_settings") as mock_get:
         mock_get.return_value.github_webhook_secret = secret
         verify_github_signature(payload, valid_signature)
 
@@ -32,7 +32,7 @@ def test_signature_verification_invalid_fails():
     """Invalid signature raises."""
     secret = "mysecret"
     payload = b'{"test": "data"}'
-    with patch("code_pipeline.settings.get_settings") as mock_get:
+    with patch("mycrew.settings.get_settings") as mock_get:
         mock_get.return_value.github_webhook_secret = secret
         with pytest.raises(HTTPException, match="Invalid signature"):
             verify_github_signature(payload, "sha256=invalid")
@@ -42,7 +42,7 @@ def test_signature_verification_missing_when_secret_set():
     """Missing signature fails when secret is configured."""
     secret = "mysecret"
     payload = b'{"test": "data"}'
-    with patch("code_pipeline.settings.get_settings") as mock_get:
+    with patch("mycrew.settings.get_settings") as mock_get:
         mock_get.return_value.github_webhook_secret = secret
         with pytest.raises(HTTPException):
             verify_github_signature(payload, "")
@@ -50,14 +50,14 @@ def test_signature_verification_missing_when_secret_set():
 
 def test_signature_verification_no_secret_passes():
     """No verification when secret not configured."""
-    with patch("code_pipeline.settings.get_settings") as mock_get:
+    with patch("mycrew.settings.get_settings") as mock_get:
         mock_get.return_value.github_webhook_secret = ""
         verify_github_signature(b'{"test": "data"}', "")
 
 
 def test_payload_extraction_issues():
     """Extract pipeline params from GitHub issue payload."""
-    with patch("code_pipeline.settings.get_settings") as mock_get:
+    with patch("mycrew.settings.get_settings") as mock_get:
         mock_get.return_value.default_branch = "main"
         mock_get.return_value.default_dry_run = False
         sample_payload = {
@@ -110,7 +110,7 @@ def test_extract_github_params_unsupported_event_returns_none():
 
 def test_pr_comment_extraction():
     """Extract pipeline params from PR comment payload."""
-    with patch("code_pipeline.settings.get_settings") as mock_get:
+    with patch("mycrew.settings.get_settings") as mock_get:
         mock_get.return_value.default_branch = "main"
         mock_get.return_value.default_dry_run = False
         sample_payload = {
@@ -158,7 +158,7 @@ def test_get_nested_not_dict_returns_none():
 
 def test_run_kickoff_background_calls_kickoff():
     """_run_kickoff_background calls kickoff with params."""
-    with patch("code_pipeline.webhook.kickoff") as mock_kickoff:
+    with patch("mycrew.webhook.kickoff") as mock_kickoff:
         _run_kickoff_background(
             issue_url="https://github.com/o/r/issues/1",
             branch="main",
@@ -173,8 +173,8 @@ def test_run_kickoff_background_calls_kickoff():
 
 def test_run_kickoff_background_logs_on_exception():
     """_run_kickoff_background logs and swallows exception."""
-    with patch("code_pipeline.webhook.kickoff", side_effect=RuntimeError("oops")):
-        with patch("code_pipeline.webhook.logger") as mock_logger:
+    with patch("mycrew.webhook.kickoff", side_effect=RuntimeError("oops")):
+        with patch("mycrew.webhook.logger") as mock_logger:
             _run_kickoff_background(issue_url="https://x")
             mock_logger.error.assert_called_once()
             assert "oops" in str(mock_logger.error.call_args)
@@ -182,7 +182,7 @@ def test_run_kickoff_background_logs_on_exception():
 
 def test_default_params_returns_settings_values():
     """_default_params returns branch and dry_run from settings."""
-    with patch("code_pipeline.settings.get_settings") as mock_get:
+    with patch("mycrew.settings.get_settings") as mock_get:
         mock_get.return_value.default_branch = "develop"
         mock_get.return_value.default_dry_run = True
         params = _default_params()
@@ -193,7 +193,7 @@ def test_default_params_returns_settings_values():
 
 def test_default_params_defaults():
     """_default_params uses sensible defaults when settings not set."""
-    with patch("code_pipeline.settings.get_settings") as mock_get:
+    with patch("mycrew.settings.get_settings") as mock_get:
         mock_get.return_value.default_branch = ""
         mock_get.return_value.default_dry_run = False
         params = _default_params()
@@ -214,10 +214,10 @@ def test_accepted_response_returns_202():
     assert b'"Pipeline queued"' in response.body
 
 
-@patch("code_pipeline.webhook._send_callback")
+@patch("mycrew.webhook._send_callback")
 def test_run_kickoff_background_with_callback_url(mock_send_callback):
     """_run_kickoff_background extracts callback_url and sends on completion."""
-    with patch("code_pipeline.webhook.kickoff") as mock_kickoff:
+    with patch("mycrew.webhook.kickoff") as mock_kickoff:
         mock_kickoff.return_value = "success"
         _run_kickoff_background(
             issue_url="https://github.com/o/r/issues/1",
@@ -232,10 +232,10 @@ def test_run_kickoff_background_with_callback_url(mock_send_callback):
         assert call_args[1] == "completed"
 
 
-@patch("code_pipeline.webhook._send_callback")
+@patch("mycrew.webhook._send_callback")
 def test_run_kickoff_background_sends_error_callback(mock_send_callback):
     """_run_kickoff_background sends error callback when kickoff fails."""
-    with patch("code_pipeline.webhook.kickoff", side_effect=RuntimeError("boom")):
+    with patch("mycrew.webhook.kickoff", side_effect=RuntimeError("boom")):
         _run_kickoff_background(
             issue_url="https://github.com/o/r/issues/1",
             callback_url="https://callback.example.com/notify",

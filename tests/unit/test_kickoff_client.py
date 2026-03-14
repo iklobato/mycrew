@@ -1,11 +1,11 @@
-"""Unit tests for code_pipeline.kickoff_client."""
+"""Unit tests for mycrew.kickoff_client."""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 import httpx
 
-from code_pipeline.kickoff_client import KickoffClient, main
+from mycrew.kickoff_client import KickoffClient, main
 
 
 class TestKickoffClientInit:
@@ -27,7 +27,7 @@ class TestKickoffClientInit:
 class TestKickoffClientRun:
     """Tests for KickoffClient.run() method."""
 
-    @patch("code_pipeline.kickoff_client.httpx.post")
+    @patch("mycrew.kickoff_client.httpx.post")
     def test_run_success(self, mock_post):
         """Successful POST returns parsed JSON response."""
         mock_response = MagicMock()
@@ -64,7 +64,7 @@ class TestKickoffClientRun:
         assert call_kwargs["json"]["programmatic"] is False
         assert call_kwargs["timeout"] == 30
 
-    @patch("code_pipeline.kickoff_client.httpx.post")
+    @patch("mycrew.kickoff_client.httpx.post")
     def test_run_with_all_options(self, mock_post):
         """All parameters are passed in payload."""
         mock_response = MagicMock()
@@ -90,7 +90,7 @@ class TestKickoffClientRun:
         assert payload["dry_run"] is True
         assert payload["programmatic"] is True
 
-    @patch("code_pipeline.kickoff_client.httpx.post")
+    @patch("mycrew.kickoff_client.httpx.post")
     def test_run_raises_on_http_error(self, mock_post):
         """HTTP 4xx/5xx raises HTTPStatusError."""
         mock_response = MagicMock()
@@ -105,7 +105,7 @@ class TestKickoffClientRun:
         with pytest.raises(httpx.HTTPStatusError):
             client.run(issue_url="https://github.com/owner/repo/issues/1")
 
-    @patch("code_pipeline.kickoff_client.httpx.post")
+    @patch("mycrew.kickoff_client.httpx.post")
     def test_run_raises_on_connection_error(self, mock_post):
         """Connection error raises ConnectError."""
         mock_post.side_effect = httpx.ConnectError("Connection failed")
@@ -114,7 +114,7 @@ class TestKickoffClientRun:
         with pytest.raises(httpx.ConnectError):
             client.run(issue_url="https://github.com/owner/repo/issues/1")
 
-    @patch("code_pipeline.kickoff_client.httpx.post")
+    @patch("mycrew.kickoff_client.httpx.post")
     def test_run_raises_on_timeout(self, mock_post):
         """Timeout raises TimeoutException."""
         mock_post.side_effect = httpx.TimeoutException("Timed out")
@@ -123,7 +123,7 @@ class TestKickoffClientRun:
         with pytest.raises(httpx.TimeoutException):
             client.run(issue_url="https://github.com/owner/repo/issues/1")
 
-    @patch("code_pipeline.kickoff_client.httpx.post")
+    @patch("mycrew.kickoff_client.httpx.post")
     def test_run_custom_timeout(self, mock_post):
         """Custom timeout is passed to httpx.post."""
         mock_response = MagicMock()
@@ -143,12 +143,12 @@ class TestKickoffClientCLI:
 
     def test_cli_issue_url_required(self):
         """Positional argument issue_url is required."""
-        with patch("code_pipeline.kickoff_client.KickoffClient.run") as mock_run:
+        with patch("mycrew.kickoff_client.KickoffClient.run") as mock_run:
             mock_run.return_value = {}
             with pytest.raises(SystemExit):
                 main()
 
-    @patch("code_pipeline.kickoff_client.KickoffClient.run")
+    @patch("mycrew.kickoff_client.KickoffClient.run")
     def test_cli_parse_minimal(self, mock_run):
         """Minimal args: issue_url only."""
         mock_run.return_value = {}
@@ -165,7 +165,7 @@ class TestKickoffClientCLI:
         assert call_kwargs["dry_run"] is False
         assert call_kwargs["programmatic"] is False
 
-    @patch("code_pipeline.kickoff_client.KickoffClient.run")
+    @patch("mycrew.kickoff_client.KickoffClient.run")
     def test_cli_parse_all_options(self, mock_run):
         """All CLI options are parsed correctly."""
         mock_run.return_value = {}
@@ -195,8 +195,8 @@ class TestKickoffClientCLI:
         assert call_kwargs["dry_run"] is True
         assert call_kwargs["programmatic"] is True
 
-    @patch("code_pipeline.kickoff_client.print")
-    @patch("code_pipeline.kickoff_client.KickoffClient.run")
+    @patch("mycrew.kickoff_client.print")
+    @patch("mycrew.kickoff_client.KickoffClient.run")
     def test_cli_prints_result(self, mock_run, mock_print):
         """CLI prints the result of run()."""
         mock_run.return_value = {"status": "accepted", "issue_url": "https://x"}

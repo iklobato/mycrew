@@ -1,4 +1,4 @@
-"""Unit tests for code_pipeline.utils."""
+"""Unit tests for mycrew.utils."""
 
 import os
 import tempfile
@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from code_pipeline.utils import (
+from mycrew.utils import (
     build_repo_context,
     clone_repo_for_issue,
     delete_cloned_repo,
@@ -40,13 +40,13 @@ def test_resolve_issue_url_invalid_format_raises():
 
 def test_resolve_issue_url_no_token_raises():
     """Missing GITHUB_TOKEN raises ValueError."""
-    with patch("code_pipeline.utils.get_settings") as mock_get:
+    with patch("mycrew.utils.get_settings") as mock_get:
         mock_get.return_value.github_token = ""
         with pytest.raises(ValueError, match="GITHUB_TOKEN is required"):
             resolve_issue_url("https://github.com/owner/repo/issues/123")
 
 
-@patch("code_pipeline.utils.get_settings")
+@patch("mycrew.utils.get_settings")
 @patch("httpx.Client")
 def test_resolve_issue_url_parses_issues_url(mock_client_class, mock_get_settings):
     """Valid issues URL returns correct github_repo, issue_id, task."""
@@ -68,7 +68,7 @@ def test_resolve_issue_url_parses_issues_url(mock_client_class, mock_get_setting
     assert result["repo_path"] == "."
 
 
-@patch("code_pipeline.utils.get_settings")
+@patch("mycrew.utils.get_settings")
 @patch("httpx.Client")
 def test_resolve_issue_url_parses_pull_url(mock_client_class, mock_get_settings):
     """Valid PR URL returns issue_id as PR#N."""
@@ -88,7 +88,7 @@ def test_resolve_issue_url_parses_pull_url(mock_client_class, mock_get_settings)
     assert result["task"] == "Add feature"
 
 
-@patch("code_pipeline.utils.get_settings")
+@patch("mycrew.utils.get_settings")
 @patch("httpx.Client")
 def test_resolve_issue_url_api_failure_raises(mock_client_class, mock_get_settings):
     """API 404/401 raises ValueError."""
@@ -104,7 +104,7 @@ def test_resolve_issue_url_api_failure_raises(mock_client_class, mock_get_settin
         resolve_issue_url("https://github.com/owner/repo/issues/999")
 
 
-@patch("code_pipeline.utils.get_settings")
+@patch("mycrew.utils.get_settings")
 @patch("httpx.Client")
 def test_resolve_issue_url_empty_title_raises(mock_client_class, mock_get_settings):
     """GitHub issue with no title raises ValueError."""
@@ -260,20 +260,20 @@ def test_detect_repo_path_timeout_returns_cwd(mock_run):
 # ---------------------------------------------------------------------------
 
 
-@patch("code_pipeline.utils.subprocess.run")
+@patch("mycrew.utils.subprocess.run")
 def test_is_git_repo_true(mock_run, tmp_path):
     """When git rev-parse succeeds, returns True."""
     mock_run.return_value = MagicMock(returncode=0, stdout=f"{tmp_path}\n")
     assert is_git_repo(str(tmp_path)) is True
 
 
-@patch("code_pipeline.utils.subprocess.run")
+@patch("mycrew.utils.subprocess.run")
 def test_is_git_repo_false_empty_dir(tmp_path):
     """Empty temp dir is not a git repo."""
     assert is_git_repo(str(tmp_path)) is False
 
 
-@patch("code_pipeline.utils.subprocess.run")
+@patch("mycrew.utils.subprocess.run")
 def test_is_git_repo_false_git_fails(mock_run, tmp_path):
     """When git fails, returns False."""
     mock_run.return_value = MagicMock(returncode=1, stdout="")
@@ -419,7 +419,7 @@ def test_enrich_repo_context_preserves_non_empty():
     assert result["issue_url"] == "https://github.com/owner/repo/issues/1"
 
 
-@patch("code_pipeline.utils.detect_github_repo")
+@patch("mycrew.utils.detect_github_repo")
 def test_enrich_repo_context_fills_empty(detect_gh):
     """Empty github_repo is filled from detect_github_repo; issue_url from derive."""
     detect_gh.return_value = "detected/repo"

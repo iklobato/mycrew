@@ -1,10 +1,10 @@
-"""Unit tests for code_pipeline.llm."""
+"""Unit tests for mycrew.llm."""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from code_pipeline.llm import (
+from mycrew.llm import (
     DEFAULT_PIPELINE_MODELS,
     ModelMappings,
     PipelineStage,
@@ -81,7 +81,7 @@ models:
 
 
 @patch("crewai.LLM")
-@patch("code_pipeline.providers.get_settings")
+@patch("mycrew.providers.get_settings")
 def test_update_model_config_with_models_section(mock_settings, mock_llm_class):
     """update_model_config with models section updates PIPELINE_MODELS."""
     mock_settings.return_value.openrouter_api_key = "key"
@@ -103,7 +103,7 @@ def test_update_model_config_with_models_section(mock_settings, mock_llm_class):
 
 
 @patch("crewai.LLM")
-@patch("code_pipeline.providers.get_settings")
+@patch("mycrew.providers.get_settings")
 def test_update_model_config_no_models_keeps_existing(mock_settings, mock_llm_class):
     """update_model_config without models section does nothing."""
     mock_settings.return_value.openrouter_api_key = "key"
@@ -116,7 +116,7 @@ def test_update_model_config_no_models_keeps_existing(mock_settings, mock_llm_cl
 
 
 @patch("crewai.LLM")
-@patch("code_pipeline.providers.get_settings")
+@patch("mycrew.providers.get_settings")
 def test_get_llm_for_stage_returns_llm(mock_settings, mock_llm_class):
     """get_llm_for_stage returns LLM instance when API key set."""
     mock_settings.return_value.openrouter_api_key = "test-key"
@@ -129,7 +129,7 @@ def test_get_llm_for_stage_returns_llm(mock_settings, mock_llm_class):
 
 
 @patch("crewai.LLM")
-@patch("code_pipeline.providers.get_settings")
+@patch("mycrew.providers.get_settings")
 def test_get_llm_for_stage_with_string(mock_settings, mock_llm_class):
     """get_llm_for_stage accepts string stage name."""
     mock_settings.return_value.openrouter_api_key = "test-key"
@@ -148,10 +148,10 @@ def test_provider_type_default_stage():
     assert ProviderType.default_stage("huggingface") == PipelineStage.ANALYZE_ISSUE
 
 
-@patch("code_pipeline.providers.get_settings")
+@patch("mycrew.providers.get_settings")
 def test_llm_with_fallback_no_api_key_raises(mock_settings):
     """llm_with_fallback raises when no provider API key found."""
-    from code_pipeline.llm import llm_with_fallback
+    from mycrew.llm import llm_with_fallback
 
     mock_settings.return_value.openrouter_api_key = ""
     mock_settings.return_value.huggingface_api_key = ""

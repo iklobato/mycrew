@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from code_pipeline.webhook import app
+from mycrew.webhook import app
 
 
 @pytest.fixture
@@ -14,7 +14,7 @@ def client():
     return TestClient(app)
 
 
-@patch("code_pipeline.webhook.kickoff")
+@patch("mycrew.webhook.kickoff")
 def test_webhook_trigger_success(mock_kickoff, client):
     """POST /webhook (manual, no X-GitHub-Event) returns 202 and queues pipeline."""
     mock_kickoff.return_value = "Pipeline completed"
@@ -39,7 +39,7 @@ def test_webhook_trigger_success(mock_kickoff, client):
     )
 
 
-@patch("code_pipeline.webhook.kickoff")
+@patch("mycrew.webhook.kickoff")
 def test_webhook_trigger_minimal_payload(mock_kickoff, client):
     """POST /webhook with minimal payload (issue_url only) returns 202."""
     mock_kickoff.return_value = "Done"
@@ -51,7 +51,7 @@ def test_webhook_trigger_minimal_payload(mock_kickoff, client):
     assert response.json()["status"] == "accepted"
 
 
-@patch("code_pipeline.webhook.kickoff")
+@patch("mycrew.webhook.kickoff")
 def test_webhook_trigger_programmatic_passes_to_kickoff(mock_kickoff, client):
     """POST /webhook with programmatic: true passes programmatic=True to kickoff."""
     mock_kickoff.return_value = "Done"
@@ -74,7 +74,7 @@ def test_webhook_manual_missing_issue_url_returns_400(client):
     assert response.status_code == 400
 
 
-@patch("code_pipeline.webhook.kickoff")
+@patch("mycrew.webhook.kickoff")
 def test_webhook_trigger_kickoff_failure_still_returns_202(mock_kickoff, client):
     """POST /webhook returns 202 even when kickoff fails in background."""
     mock_kickoff.side_effect = RuntimeError("Pipeline failed")
@@ -86,8 +86,8 @@ def test_webhook_trigger_kickoff_failure_still_returns_202(mock_kickoff, client)
     assert response.json()["status"] == "accepted"
 
 
-@patch("code_pipeline.settings.get_settings")
-@patch("code_pipeline.webhook.kickoff")
+@patch("mycrew.settings.get_settings")
+@patch("mycrew.webhook.kickoff")
 def test_webhook_github_issues_assigned(mock_kickoff, mock_settings, client):
     """POST /webhook with GitHub issues/assigned returns 202 and queues pipeline."""
     mock_settings.return_value.github_webhook_secret = ""
@@ -116,7 +116,7 @@ def test_webhook_github_issues_assigned(mock_kickoff, mock_settings, client):
     assert data["message"] == "Pipeline queued"
 
 
-@patch("code_pipeline.webhook.kickoff")
+@patch("mycrew.webhook.kickoff")
 def test_webhook_with_max_retries_param(mock_kickoff, client):
     """POST /webhook with max_retries=N passes to kickoff."""
     mock_kickoff.return_value = "Done"
@@ -133,7 +133,7 @@ def test_webhook_with_max_retries_param(mock_kickoff, client):
     assert call_kwargs["max_retries"] == 10
 
 
-@patch("code_pipeline.webhook.kickoff")
+@patch("mycrew.webhook.kickoff")
 def test_webhook_with_from_scratch_param(mock_kickoff, client):
     """POST /webhook with from_scratch=true passes to kickoff."""
     mock_kickoff.return_value = "Done"

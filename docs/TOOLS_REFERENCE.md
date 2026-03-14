@@ -4,7 +4,7 @@ Reference for all tools used by pipeline crews. Parameters and example commands 
 
 **Running the pipeline:**
 - `kickoff-client "https://github.com/owner/repo/issues/123"` — Using kickoff client
-- `python -m code_pipeline "https://github.com/owner/repo/issues/123"` — Direct CLI
+- `python -m mycrew "https://github.com/owner/repo/issues/123"` — Direct CLI
 - `docker run -it --rm -v $(pwd):/workspace -w /workspace -e OPENROUTER_API_KEY=$OPENROUTER_API_KEY iklobato/mycrew "https://github.com/owner/repo/issues/123"` — Docker
 
 See [README](../README.md) for full usage.

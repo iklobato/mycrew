@@ -28,13 +28,13 @@ cp config.example.yaml config.yaml
 
 ```bash
 # Clone repo from issue URL (requires GITHUB_TOKEN)
-python -m code_pipeline "https://github.com/owner/repo/issues/123"
+python -m mycrew "https://github.com/owner/repo/issues/123"
 
 # Use local repository instead of cloning
-python -m code_pipeline --repo-path /path/to/local/repo
+python -m mycrew --repo-path /path/to/local/repo
 
 # Use local repo with issue URL (uses local repo, parses issue from URL)
-python -m code_pipeline --repo-path /path/to/local/repo "https://github.com/owner/repo/issues/123"
+python -m mycrew --repo-path /path/to/local/repo "https://github.com/owner/repo/issues/123"
 
 # Using the kickoff client (recommended)
 kickoff-client "https://github.com/owner/repo/issues/123"
@@ -169,7 +169,7 @@ docker compose up -d webhook
 
 ```bash
 # Inside container via docker exec
-docker exec mycrew-webhook /app/.venv/bin/python -m code_pipeline.kickoff_client \
+docker exec mycrew-webhook /app/.venv/bin/python -m mycrew.kickoff_client \
   "https://github.com/owner/repo/issues/123" \
   --branch main
 ```
@@ -190,12 +190,12 @@ docker exec mycrew-webhook /app/.venv/bin/python -m code_pipeline.kickoff_client
 
 ```bash
 # Dry run (no commits)
-docker exec mycrew-webhook /app/.venv/bin/python -m code_pipeline.kickoff_client \
+docker exec mycrew-webhook /app/.venv/bin/python -m mycrew.kickoff_client \
   "https://github.com/owner/repo/issues/123" \
   --dry-run
 
 # Full options
-docker exec mycrew-webhook /app/.venv/bin/python -m code_pipeline.kickoff_client \
+docker exec mycrew-webhook /app/.venv/bin/python -m mycrew.kickoff_client \
   "https://github.com/owner/repo/issues/123" \
   --branch main \
   --from-scratch \
@@ -285,23 +285,23 @@ curl -X POST http://localhost:8000/webhook \
 
 ```bash
 # Clone repo from issue URL (requires GITHUB_TOKEN)
-python -m code_pipeline "https://github.com/owner/repo/issues/123"
+python -m mycrew "https://github.com/owner/repo/issues/123"
 
 # Use local repository instead of cloning
-python -m code_pipeline --repo-path /path/to/local/repo
+python -m mycrew --repo-path /path/to/local/repo
 
 # With repository path and issue URL
-python -m code_pipeline --repo-path /path/to/local/repo "https://github.com/owner/repo/issues/123"
+python -m mycrew --repo-path /path/to/local/repo "https://github.com/owner/repo/issues/123"
 
 # Dry run (skip git commit/PR)
-python -m code_pipeline "https://github.com/owner/repo/issues/123" --dry-run
+python -m mycrew "https://github.com/owner/repo/issues/123" --dry-run
 ```
 
 ### Advanced Usage
 
 ```bash
 # Full options via CLI
-python -m code_pipeline "https://github.com/owner/repo/issues/123" \
+python -m mycrew "https://github.com/owner/repo/issues/123" \
   --branch main \
   --max-retries 3 \
   --dry-run
@@ -348,7 +348,7 @@ models:
     primary: "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"
 ```
 
-Supported models are defined in `src/code_pipeline/llm.py` under `ModelMappings`.
+Supported models are defined in `src/mycrew/llm.py` under `ModelMappings`.
 
 ---
 
@@ -472,13 +472,13 @@ ruff check .
 ruff format --check .
 
 # Run type checking
-mypy --strict src/code_pipeline
+mypy --strict src/mycrew
 ```
 
 ### Project Structure
 
 ```
-src/code_pipeline/
+src/mycrew/
 ├── main.py          # Pipeline flow orchestration
 ├── settings.py      # Configuration management
 ├── llm.py           # LLM provider and model config

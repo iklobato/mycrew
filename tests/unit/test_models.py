@@ -1,8 +1,8 @@
-"""Unit tests for code_pipeline.models."""
+"""Unit tests for mycrew.models."""
 
 import pytest
 
-from code_pipeline.models import (
+from mycrew.models import (
     CrewTemplate,
     DynamicPipeline,
     PipelineConfig,

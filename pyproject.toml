@@ -1,7 +1,7 @@
 [project]
-name = "code_pipeline"
+name = "mycrew"
 version = "0.1.0"
-description = "code_pipeline using crewAI"
+description = "mycrew - AI-powered development team using CrewAI"
 authors = [{ name = "Your Name", email = "you@example.com" }]
 requires-python = ">=3.10,<3.13"
 dependencies = [
@@ -21,13 +21,13 @@ dev = [
 ]
 
 [project.scripts]
-kickoff = "code_pipeline.main:kickoff"
-run_crew = "code_pipeline.main:kickoff"
-plot = "code_pipeline.main:plot"
-run_with_trigger = "code_pipeline.main:run_with_trigger"
-webhook = "code_pipeline.webhook:main"
-register_webhook = "code_pipeline.register_webhook:main"
-kickoff-client = "code_pipeline.kickoff_client:main"
+kickoff = "mycrew.main:kickoff"
+run_crew = "mycrew.main:kickoff"
+plot = "mycrew.main:plot"
+run_with_trigger = "mycrew.main:run_with_trigger"
+webhook = "mycrew.webhook:main"
+register_webhook = "mycrew.register_webhook:main"
+kickoff-client = "mycrew.kickoff_client:main"
 
 [build-system]
 requires = ["hatchling"]

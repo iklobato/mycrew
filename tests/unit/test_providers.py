@@ -1,10 +1,10 @@
-"""Unit tests for code_pipeline.providers."""
+"""Unit tests for mycrew.providers."""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from code_pipeline.providers import (
+from mycrew.providers import (
     IProvider,
     OpenRouterProvider,
     HuggingFaceProvider,
@@ -16,11 +16,11 @@ from code_pipeline.providers import (
 @pytest.fixture(autouse=True)
 def clean_settings_singleton():
     """Clear the settings singleton before each test."""
-    import code_pipeline.providers as providers_module
+    import mycrew.providers as providers_module
 
     # Reload settings to clear singleton
     import importlib
-    import code_pipeline.settings as settings_module
+    import mycrew.settings as settings_module
 
     importlib.reload(settings_module)
     providers_module._settings = None
@@ -76,7 +76,7 @@ class TestIProvider:
         assert result == messages
 
         # Test handle_error (default implementation)
-        with patch("code_pipeline.providers.logger") as mock_logger:
+        with patch("mycrew.providers.logger") as mock_logger:
             error = ValueError("Test error")
             provider.handle_error(error, "test-model")
             mock_logger.error.assert_called_once()
@@ -90,8 +90,8 @@ class TestOpenRouterProvider:
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
         monkeypatch.setenv("OPENROUTER_API_KEY", "")
 
-        with patch("code_pipeline.providers.get_settings") as mock_get_settings:
-            from code_pipeline.settings import Settings
+        with patch("mycrew.providers.get_settings") as mock_get_settings:
+            from mycrew.settings import Settings
 
             mock_get_settings.return_value = Settings()
             mock_get_settings.return_value.openrouter_api_key = ""
@@ -121,7 +121,7 @@ class TestOpenRouterProvider:
         assert "http://" in session.adapters
         assert "https://" in session.adapters
 
-    @patch("code_pipeline.providers.requests.Session.post")
+    @patch("mycrew.providers.requests.Session.post")
     def test_generate_success(self, mock_post, monkeypatch):
         """generate() makes API call and returns response."""
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
@@ -142,7 +142,7 @@ class TestOpenRouterProvider:
         assert result == "Test response"
         mock_post.assert_called_once()
 
-    @patch("code_pipeline.providers.requests.Session.post")
+    @patch("mycrew.providers.requests.Session.post")
     def test_generate_error(self, mock_post, monkeypatch):
         """generate() raises exception on API error."""
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
@@ -214,7 +214,7 @@ class TestHuggingFaceProvider:
         assert "Hi there!" in prompt
         assert "How are you?" in prompt
 
-    @patch("code_pipeline.providers.requests.Session.post")
+    @patch("mycrew.providers.requests.Session.post")
     def test_generate_success_list_response(self, mock_post, monkeypatch):
         """generate() handles list response format."""
         monkeypatch.delenv("HUGGINGFACE_API_KEY", raising=False)
@@ -235,7 +235,7 @@ class TestHuggingFaceProvider:
         assert result == "Test response from list"
         mock_post.assert_called_once()
 
-    @patch("code_pipeline.providers.requests.Session.post")
+    @patch("mycrew.providers.requests.Session.post")
     def test_generate_success_dict_response(self, mock_post, monkeypatch):
         """generate() handles dict response format."""
         monkeypatch.delenv("HUGGINGFACE_API_KEY", raising=False)
@@ -254,7 +254,7 @@ class TestHuggingFaceProvider:
         assert result == "Test response from dict"
         mock_post.assert_called_once()
 
-    @patch("code_pipeline.providers.requests.Session.post")
+    @patch("mycrew.providers.requests.Session.post")
     def test_generate_unexpected_format(self, mock_post, monkeypatch):
         """generate() raises ValueError for unexpected response format."""
         monkeypatch.delenv("HUGGINGFACE_API_KEY", raising=False)

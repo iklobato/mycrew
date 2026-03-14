@@ -1,10 +1,10 @@
-"""Unit tests for code_pipeline.settings."""
+"""Unit tests for mycrew.settings."""
 
 import os
 
 import pytest
 
-from code_pipeline.settings import (
+from mycrew.settings import (
     PipelineContext,
     get_pipeline_context,
     get_settings,
