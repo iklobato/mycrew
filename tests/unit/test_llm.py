@@ -44,13 +44,13 @@ def test_stage_model_config_primary_and_fallbacks():
 
 def test_load_model_config_missing_file_returns_default():
     """Missing config file returns DEFAULT_PIPELINE_MODELS."""
-    result = _load_model_config_from_file("/nonexistent/config.yaml")
+    result = _load_model_config_from_file("/nonexistent/defaults.yaml")
     assert result == DEFAULT_PIPELINE_MODELS
 
 
 def test_load_model_config_valid_yaml_updates_models(tmp_path):
     """Valid YAML with models section updates config."""
-    config = tmp_path / "config.yaml"
+    config = tmp_path / "defaults.yaml"
     config.write_text("""
 models:
   analyze_issue:
