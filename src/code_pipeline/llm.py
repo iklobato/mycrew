@@ -615,32 +615,6 @@ def llm_with_fallback(
     raise Exception("All models failed")
 
 
-def _get_retry_config_for_model(model_str: str) -> dict[str, int]:
-    """Get retry configuration optimized for specific model types."""
-    model_lower = model_str.lower()
-
-    # Free models have stricter rate limits - need more conservative retry strategy
-    if "free" in model_lower:
-        return {
-            "num_retries": 3,  # Fewer retries for free models
-            "time_between_retries": 30,  # Longer wait between retries (30 seconds)
-        }
-    # Paid models can have more aggressive retry
-    elif any(
-        paid_model in model_lower for paid_model in ["gpt-", "claude-", "gemini-"]
-    ):
-        return {
-            "num_retries": 5,
-            "time_between_retries": 10,  # 10 seconds for paid models
-        }
-    # Default for other models
-    else:
-        return {
-            "num_retries": 4,
-            "time_between_retries": 15,  # 15 seconds default
-        }
-
-
 def get_llm_for_stage(
     stage: str | PipelineStage,
     agent_name: str | None = None,
