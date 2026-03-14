@@ -142,11 +142,9 @@ def test_build_repo_context_single_field():
     assert "GitHub: (auto-detected" in result
     # github_repo set: only that line (no auto-detect)
     assert build_repo_context(github_repo="a/b") == ("- GitHub: a/b (use for gh -R)")
-    # issue_url, test_command: always get GitHub line too (when gh empty)
+    # issue_url: always get GitHub line too (when gh empty)
     result = build_repo_context(issue_url="https://x")
     assert "- Issue URL: https://x" in result
-    result = build_repo_context(test_command="pytest")
-    assert "- Test command: pytest" in result
 
 
 def test_build_repo_context_empty_github_shows_auto_detect():
@@ -161,14 +159,12 @@ def test_build_repo_context_multiple_fields():
         repo_path="/repo",
         github_repo="owner/repo",
         issue_url="https://github.com/owner/repo/issues/1",
-        test_command="pytest",
     )
     lines = result.split("\n")
-    assert len(lines) == 4
+    assert len(lines) == 3
     assert "- Repository: /repo" in result
     assert "- GitHub: owner/repo (use for gh -R)" in result
     assert "- Issue URL: https://github.com/owner/repo/issues/1" in result
-    assert "- Test command: pytest" in result
 
 
 def test_build_repo_context_strips_whitespace():
