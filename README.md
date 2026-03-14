@@ -20,8 +20,9 @@ cd mycrew
 uv sync
 
 # 3. Configure environment
-cp config.example.yaml config.yaml
-# Edit config.yaml and set OPENROUTER_API_KEY
+# Copy .env.example to .env and set your API keys
+cp .env.example .env
+# Edit .env and set OPENROUTER_API_KEY
 ```
 
 ### Run the Pipeline
@@ -65,34 +66,13 @@ Set these before running:
 
 *Required when using `issue_url` (to clone repo). Not required when using `--repo-path` with local repo.
 
-### config.yaml
+### Configuration
 
-Copy `config.example.yaml` to `config.yaml` and customize:
+Configuration is handled through environment variables (`.env`) and a minimal `defaults.yaml`:
 
-```yaml
-pipeline:
-  issue_url: "https://github.com/owner/repo/issues/123"
-  branch: "main"
-  from_scratch: false
-  max_retries: 3
-  dry_run: false
-  programmatic: false
-
-api_keys:
-  openrouter_api_key: "${OPENROUTER_API_KEY}"  # Or paste key directly
-  github_token: "${GITHUB_TOKEN}"
-  serper_api_key: "${SERPER_API_KEY}"
-
-# Provider: openrouter (default) or huggingface
-provider_type: "openrouter"
-
-# Model configuration (optional - defaults work well)
-models:
-  analyze_issue:
-    primary: "openrouter/deepseek/deepseek-chat"
-    fallbacks:
-      - "openrouter/qwen/qwen-2.5-coder-32b-instruct"
-```
+- **API Keys**: Set in `.env` file (copy from `.env.example`)
+- **Model Configuration**: Optional overrides in `src/mycrew/config/defaults.yaml`
+- **All pipeline parameters**: Passed via CLI arguments
 
 ---
 
@@ -137,7 +117,6 @@ docker rm -f mycrew-webhook
 | Mount | Description |
 |-------|-------------|
 | `./workspace:/workspace` | Where the pipeline clones and modifies the target repository |
-| `./config.yaml:/app/config.yaml:ro` | Custom configuration file (optional) |
 
 ### Environment Variables
 
@@ -268,7 +247,6 @@ curl -X POST http://localhost:8000/webhook \
 |-----|-------------|
 | `issue_url` (positional) | GitHub issue URL. The pipeline will implement the feature/fix described in this issue. Format: `https://github.com/owner/repo/issues/123`. Optional if `--repo-path` is provided. |
 | `--repo-path` | Local repository path. If provided, uses this directory instead of cloning from issue URL. If no issue_url provided, detects github_repo from local repo. |
-| `-c, --config` | Path to config.yaml file. Contains pipeline configuration including model settings |
 | `-b, --branch` | Base branch name. The branch to create feature branches from. Default: `main` |
 | `-n, --max-retries` | Maximum retry attempts if implementation fails. The pipeline will retry the implementer crew up to this many times. Default: `3` |
 | `-f, --from-scratch` | Ignore all previous checkpoints and run the entire pipeline from the start. Use when you want a fresh start |
@@ -386,22 +364,13 @@ When a Tactiq meeting ID is provided:
 # Standard run with issue URL
 kickoff-client "https://github.com/owner/repo/issues/123"
 
-# Without issue - specify task description via config
-# (set issue_url in config.yaml or pass via environment)
+# With local repo
+kickoff-client "https://github.com/owner/repo/issues/123" --repo-path /path/to/repo
 ```
 
 ### Configuration
 
-```yaml
-# config.yaml
-pipeline:
-  issue_url: "https://github.com/owner/repo/issues/123"
-  branch: "main"
-  dry_run: false
-
-api_keys:
-  github_token: "${GITHUB_TOKEN}"
-```
+All configuration is via environment variables (`.env`) and CLI arguments. See Environment Variables section for details.
 
 ---
 
