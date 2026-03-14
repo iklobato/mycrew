@@ -275,33 +275,142 @@ python -m mycrew --repo-path /path/to/local/repo "https://github.com/owner/repo/
 python -m mycrew "https://github.com/owner/repo/issues/123" --dry-run
 ```
 
-### Advanced Usage
+### Local Repository Examples
 
 ```bash
-# Full options via CLI
+# Run on local repo, detect repo from git remote
+python -m mycrew --repo-path /path/to/local/repo
+
+# Run on local repo with specific issue
+python -m mycrew --repo-path /path/to/local/repo "https://github.com/owner/repo/issues/123"
+
+# Use a different base branch
+python -m mycrew --repo-path /path/to/local/repo --branch develop
+```
+
+### Dry Run Examples
+
+```bash
+# Dry run - test without making changes
+python -m mycrew "https://github.com/owner/repo/issues/123" --dry-run
+
+# Dry run with verbose output
+python -m mycrew "https://github.com/owner/repo/issues/123" --dry-run --verbose
+```
+
+### Retry & Recovery Examples
+
+```bash
+# Run with custom retry count
+python -m mycrew "https://github.com/owner/repo/issues/123" --max-retries 5
+
+# Run from scratch (ignore all checkpoints, start fresh)
+python -m mycrew "https://github.com/owner/repo/issues/123" --from-scratch
+
+# Combine from-scratch with retries
+python -m mycrew "https://github.com/owner/repo/issues/123" --from-scratch --max-retries 2
+```
+
+### Programmatic Mode Examples
+
+```bash
+# Run without human interaction (agents make decisions autonomously)
+python -m mycrew "https://github.com/owner/repo/issues/123" --programmatic
+
+# Programmatic with local repo
+python -m mycrew --repo-path /path/to/local/repo --programmatic
+
+# Programmatic with dry run (fully test automation)
+python -m mycrew "https://github.com/owner/repo/issues/123" --programmatic --dry-run
+```
+
+### Tactiq Integration Examples
+
+```bash
+# Run with Tactiq meeting context
+python -m mycrew "https://github.com/owner/repo/issues/123" --tactiq-meeting-id abc123
+
+# Combine Tactiq with programmatic mode
+python -m mycrew "https://github.com/owner/repo/issues/123" \
+  --tactiq-meeting-id abc123 \
+  --programmatic
+```
+
+### Full-Featured Examples
+
+```bash
+# Full-featured run with all options
 python -m mycrew "https://github.com/owner/repo/issues/123" \
   --branch main \
   --max-retries 3 \
-  --dry-run
+  --programmatic \
+  --verbose
 
-# Run from scratch (ignore checkpoints)
-kickoff-client "https://github.com/owner/repo/issues/123" --from-scratch
+# Complete local repo workflow
+python -m mycrew --repo-path /path/to/local/repo \
+  --branch develop \
+  --from-scratch \
+  --max-retries 2 \
+  --dry-run \
+  --verbose
+
+# CI/CD pipeline ready command
+python -m mycrew "https://github.com/owner/repo/issues/123" \
+  --branch main \
+  --from-scratch \
+  --max-retries 3 \
+  --programmatic \
+  --dry-run
+```
+
+### Webhook Client Examples
+
+```bash
+# Using kickoff-client (recommended for production)
+kickoff-client "https://github.com/owner/repo/issues/123"
 
 # With custom webhook URL
 kickoff-client "https://github.com/owner/repo/issues/123" --url http://localhost:8000
+
+# Full options via kickoff-client
+kickoff-client "https://github.com/owner/repo/issues/123" \
+  --branch main \
+  --from-scratch \
+  --max-retries 3 \
+  --programmatic
+
+# Dry run via webhook
+kickoff-client "https://github.com/owner/repo/issues/123" --dry-run
+```
+
+### Debugging Examples
+
+```bash
+# Enable debug logging
+python -m mycrew "https://github.com/owner/repo/issues/123" --debug
+
+# Debug with dry run (safe debugging)
+python -m mycrew "https://github.com/owner/repo/issues/123" --debug --dry-run
+
+# Verbose output
+python -m mycrew "https://github.com/owner/repo/issues/123" -v
 ```
 
 ### CLI Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `issue_url` | GitHub issue URL (required) | - |
-| `--branch` | Git branch | `main` |
+| `issue_url` | GitHub issue URL (required if --repo-path not provided) | - |
+| `--repo-path` | Local repository path | - |
+| `-b, --branch` | Base branch for feature branches | `main` |
 | `--from-scratch` | Start from scratch ignoring checkpoints | `false` |
-| `--max-retries` | Maximum retry attempts | `3` |
+| `-n, --max-retries` | Maximum retry attempts | `3` |
 | `--dry-run` | Skip git commit/PR | `false` |
 | `--programmatic` | No human interaction | `false` |
-| `--url` | Webhook URL | `http://localhost:8000` |
+| `--tactiq-meeting-id` | Tactiq meeting ID for context | - |
+| `-v, --verbose` | Enable verbose logging | `false` |
+| `--debug` | Enable debug logging | `false` |
+| `--url` | Webhook URL (kickoff-client only) | `http://localhost:8000` |
 
 ---
 
