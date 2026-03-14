@@ -53,6 +53,7 @@ Set these before running:
 | `HUGGINGFACE_API_KEY` | No | HuggingFace token for local models |
 | `GITHUB_TOKEN` | No | GitHub token for cloning repos, creating PRs |
 | `SERPER_API_KEY` | No | Serper API key for web search |
+| `TACTIQ_TOKEN` | No | Tactiq API token from [Tactiq settings](https://app.tactiq.io/settings) |
 | `GITHUB_WEBHOOK_SECRET` | No | Secret for webhook signature verification |
 | `CODE_PIPELINE_LOG_LEVEL` | No | DEBUG, INFO, WARNING, ERROR |
 
@@ -66,7 +67,6 @@ pipeline:
   repo_path: "."
   branch: "main"
   dry_run: false
-  test_command: "pytest"
 
 api_keys:
   openrouter_api_key: "${OPENROUTER_API_KEY}"  # Or paste key directly
@@ -83,6 +83,191 @@ models:
     fallbacks:
       - "openrouter/qwen/qwen-2.5-coder-32b-instruct"
 ```
+
+---
+
+## Docker
+
+### Prerequisites
+
+1. Install Docker
+2. Build the image:
+   ```bash
+   docker build -t mycrew/webhook:latest .
+   ```
+
+### Docker Compose (Recommended)
+
+```bash
+# Start webhook server
+docker compose up -d webhook
+
+# View logs
+docker compose logs -f webhook
+
+# Stop
+docker compose down
+```
+
+### Docker Run
+
+```bash
+# Start webhook server
+docker run -d --name mycrew-webhook -p 8000:8000 \
+  -e OPENROUTER_API_KEY=your_key \
+  -e GITHUB_TOKEN=your_token \
+  mycrew/webhook:latest
+
+# Stop
+docker rm -f mycrew-webhook
+```
+
+### Volume Mounts
+
+| Mount | Description |
+|-------|-------------|
+| `./workspace:/workspace` | Where the pipeline clones and modifies the target repository |
+| `./config.yaml:/app/config.yaml:ro` | Custom configuration file (optional) |
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OPENROUTER_API_KEY` | Yes* | LLM API key from openrouter.ai. Required for AI agents to generate code |
+| `GITHUB_TOKEN` | No | Personal Access Token with `repo` scope. Used to clone repos, commit changes, create PRs |
+| `GITHUB_WEBHOOK_SECRET` | No | Secret string to verify webhook requests from GitHub |
+| `SERPER_API_KEY` | No | API key for Serper web search. Enables agents to search for best practices |
+| `DEFAULT_DRY_RUN` | No | When true, pipeline runs without git commits or PRs. Default: `false` |
+| `DEFAULT_BRANCH` | No | Base branch for feature branches. Default: `main` |
+
+*Required when using OpenRouter provider
+
+---
+
+## Kickoff Client
+
+Trigger the pipeline from inside the container using the kickoff client.
+
+### Prerequisites
+
+```bash
+# Start webhook server first
+docker compose up -d webhook
+```
+
+### Usage
+
+```bash
+# Inside container via docker exec
+docker exec mycrew-webhook /app/.venv/bin/python -m code_pipeline.kickoff_client \
+  "https://github.com/owner/repo/issues/123" \
+  --branch main
+```
+
+### Parameters
+
+| Arg | Description |
+|-----|-------------|
+| `issue_url` (positional) | GitHub issue URL. The pipeline will implement the feature/fix described in this issue. Format: `https://github.com/owner/repo/issues/123` |
+| `--branch` | Target branch name. Base branch for feature branch. Default: `main` |
+| `--from-scratch` | Start pipeline from beginning, ignoring saved checkpoint state. Use when you want a fresh start |
+| `--max-retries` | Number of retry attempts if implementation fails. Default: `3` |
+| `--dry-run` | Run pipeline without making git commits or creating PRs. Changes exist locally but aren't pushed |
+| `--programmatic` | Disable human-in-the-loop interactions. Agents won't ask questions - they'll make their best guess |
+| `--url` | Base URL of the webhook server. Default: `http://localhost:8000` |
+
+### Examples
+
+```bash
+# Dry run (no commits)
+docker exec mycrew-webhook /app/.venv/bin/python -m code_pipeline.kickoff_client \
+  "https://github.com/owner/repo/issues/123" \
+  --dry-run
+
+# Full options
+docker exec mycrew-webhook /app/.venv/bin/python -m code_pipeline.kickoff_client \
+  "https://github.com/owner/repo/issues/123" \
+  --branch main \
+  --from-scratch \
+  --max-retries 3 \
+  --programmatic
+```
+
+---
+
+## Webhook (GitHub Integration)
+
+Trigger the pipeline from GitHub when an issue is assigned or a PR review comment is created.
+
+### Setup
+
+1. Create a GitHub token with `repo` and `admin:repo_hook` scopes
+2. Set environment variables:
+   ```bash
+   export GITHUB_TOKEN=ghp_xxx
+   export GITHUB_WEBHOOK_SECRET=your_secret
+   export OPENROUTER_API_KEY=your_key
+   ```
+3. Register the webhook:
+   ```bash
+   uv run register_webhook owner/repo
+   ```
+4. Deploy the webhook server:
+   ```bash
+   # Deploy to your hosting (Fly.io, DigitalOcean, etc.)
+   # Or run locally:
+   uv run webhook
+   ```
+
+### Webhook Events
+
+- **Issues**: Triggers when an issue is assigned
+- **Pull Request Review Comment**: Triggers on review comments
+
+### Webhook JSON Body
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `issue_url` | string | GitHub issue URL to implement |
+| `branch` | string | Base branch name. Default: `main` |
+| `from_scratch` | boolean | Start fresh, ignoring checkpoints. Default: `false` |
+| `max_retries` | integer | Max retry attempts. Default: `3` |
+| `dry_run` | boolean | Skip git operations. Default: `false` |
+| `programmatic` | boolean | No human interaction. Default: `false` |
+| `callback_url` | string | URL to receive POST callback when pipeline completes |
+
+### Example Webhook Call
+
+```bash
+curl -X POST http://localhost:8000/webhook \
+  -H "Content-Type: application/json" \
+  -d '{
+    "issue_url": "https://github.com/owner/repo/issues/123",
+    "branch": "main",
+    "dry_run": false
+  }'
+```
+
+---
+
+## Parameters Reference
+
+### CLI (kickoff command)
+
+| Arg | Description |
+|-----|-------------|
+| `issue_url` (positional) | GitHub issue URL. The pipeline will implement the feature/fix described in this issue. Format: `https://github.com/owner/repo/issues/123` |
+| `-c, --config` | Path to config.yaml file. Contains pipeline configuration including model settings |
+| `-t, --task` | Task description. Alternative to issue_url - describes what to build |
+| `-r, --repo-path` | Path to the repository where changes will be made. Default: current directory (`.`) |
+| `-b, --branch` | Base branch name. The branch to create feature branches from. Default: `main` |
+| `-n, --max-retries` | Maximum retry attempts if implementation fails. The pipeline will retry the implementer crew up to this many times. Default: `3` |
+| `-f, --from-scratch` | Ignore all previous checkpoints and run the entire pipeline from the start. Use when you want a fresh start |
+| `--dry-run` | Run pipeline without making git commits or creating PRs. Changes exist locally but aren't pushed |
+| `--test-command` | Command to run tests after implementation. Examples: `pytest`, `npm test`, `go test ./...`. Used by Test Validator crew |
+| `--programmatic` | Disable all human-in-the-loop interactions. Agents won't ask questions - they'll make their best guess |
+| `-v, --verbose` | Enable verbose logging. Shows more detailed output about what agents are doing |
+| `--debug` | Enable debug logging. Shows all internal details including API calls |
 
 ---
 
@@ -140,51 +325,7 @@ task run TASK_DESC="Implement feature" ISSUE_URL="https://github.com/owner/repo/
 | `V` | - | Verbose logging (1/0) | `0` |
 | `GITHUB_REPO` | - | GitHub owner/repo | - |
 | `ISSUE_URL` | - | GitHub issue URL | - |
-
-### Docker
-
-```bash
-# Run with config file
-docker run -it --rm -v $(pwd):/workspace -w /workspace \
-  -e OPENROUTER_API_KEY=$OPENROUTER_API_KEY \
-  iklobato/mycrew -c config.yaml
-
-# Run with task description
-docker run -it --rm -v $(pwd):/workspace -w /workspace \
-  -e OPENROUTER_API_KEY=$OPENROUTER_API_KEY \
-  iklobato/mycrew -t "Add feature" -r .
-```
-
----
-
-## Webhook (GitHub Integration)
-
-Trigger the pipeline from GitHub when an issue is assigned or a PR review comment is created.
-
-### Setup
-
-1. Create a GitHub token with `repo` and `admin:repo_hook` scopes
-2. Set environment variables:
-   ```bash
-   export GITHUB_TOKEN=ghp_xxx
-   export GITHUB_WEBHOOK_SECRET=your_secret
-   export OPENROUTER_API_KEY=your_key
-   ```
-3. Register the webhook:
-   ```bash
-   uv run register_webhook owner/repo
-   ```
-4. Deploy the webhook server:
-   ```bash
-   # Deploy to your hosting (Fly.io, DigitalOcean, etc.)
-   # Or run locally:
-   uv run webhook
-   ```
-
-### Webhook Events
-
-- **Issues**: Triggers when an issue is assigned
-- **Pull Request Review Comment**: Triggers on review comments
+| `TACTIQ_MEETING_ID` | - | Tactiq meeting ID for context | - |
 
 ---
 
@@ -213,21 +354,73 @@ Supported models are defined in `src/code_pipeline/llm.py` under `ModelMappings`
 
 ---
 
+## Tactiq Integration (Optional)
+
+Get implementation context from meeting transcripts to reduce clarifying questions.
+
+### Setup
+
+1. Get your Tactiq API token from [Tactiq Settings](https://app.tactiq.io/settings)
+2. Set the environment variable:
+   ```bash
+   export TACTIQ_TOKEN=your_token
+   ```
+
+### How It Works
+
+```
+Issue Analyst → Explorer → [TactiqResearch] → Clarify → Architect → ...
+                                       ↓
+                              If meeting resolves all questions:
+                                       ↓
+                                   Skip Clarify
+```
+
+When a Tactiq meeting ID is provided:
+1. **TactiqResearch** fetches meeting details (transcript, decisions, action items)
+2. **Tactiq AI** answers questions about ambiguities from the issue
+3. **Decision**: If meeting resolves all questions → skip Clarify, go directly to Architect
+4. **If gaps remain** → Clarify asks only unanswered questions
+
+### Usage
+
+```bash
+# With Tactiq meeting ID (skips clarification if meeting resolves all questions)
+task run TASK_DESC="Add feature" TACTIQ_MEETING_ID=abc123
+
+# Without Tactiq - standard clarification flow
+task run TASK_DESC="Add feature"
+```
+
+### Configuration
+
+```yaml
+# config.yaml
+pipeline:
+  tactiq_meeting_id: "abc123"  # Optional: Tactiq meeting ID
+
+api_keys:
+  tactiq_token: "${TACTIQ_TOKEN}"  # From Tactiq settings
+```
+
+---
+
 ## Pipeline Flow
 
 ```
-Issue Analyst → Explorer → Clarify → Architect → Implementer → Test Validator → Reviewer → Commit
+Issue Analyst → Explorer → [TactiqResearch (optional)] → Clarify → Architect → Implementer → Test Validator → Reviewer → Commit
 ```
 
 ### Crews
 
 1. **Issue Analyst** - Parse task into structured requirements
 2. **Explorer** - Analyze codebase structure and dependencies
-3. **Clarify** - Resolve ambiguities via human questions
-4. **Architect** - Create file-level implementation plan
-5. **Implementer** - Write code following the plan
-6. **Test Validator** - Write and validate tests
-7. **Reviewer** - Code review with security/perf checks
+3. **TactiqResearch** - (Optional) Fetch meeting context, ask AI questions, determine if clarification needed
+4. **Clarify** - Resolve ambiguities via human questions (skipped if Tactiq resolves all)
+5. **Architect** - Create file-level implementation plan
+6. **Implementer** - Write code following the plan
+7. **Test Validator** - Write and validate tests
+8. **Reviewer** - Code review with security/perf checks
 8. **Commit** - Create branch, commit, and PR
 
 ---
@@ -293,6 +486,7 @@ src/code_pipeline/
 ├── providers.py     # OpenRouter & HuggingFace providers
 ├── utils.py         # Shared utilities
 ├── webhook.py       # Webhook API server
+├── kickoff_client.py # HTTP client for triggering pipeline
 ├── crews/           # Crew implementations
 │   ├── base.py      # PipelineCrewBase
 │   ├── abc_crew.py  # ABCrew abstract base
