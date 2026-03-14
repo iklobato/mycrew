@@ -27,11 +27,17 @@ cp config.example.yaml config.yaml
 ### Run the Pipeline
 
 ```bash
+# Clone repo from issue URL (requires GITHUB_TOKEN)
+python -m code_pipeline "https://github.com/owner/repo/issues/123"
+
+# Use local repository instead of cloning
+python -m code_pipeline --repo-path /path/to/local/repo
+
+# Use local repo with issue URL (uses local repo, parses issue from URL)
+python -m code_pipeline --repo-path /path/to/local/repo "https://github.com/owner/repo/issues/123"
+
 # Using the kickoff client (recommended)
 kickoff-client "https://github.com/owner/repo/issues/123"
-
-# Or with Python directly
-python -m code_pipeline "https://github.com/owner/repo/issues/123"
 
 # Docker
 docker run -it --rm -v $(pwd):/workspace -w /workspace \
@@ -51,11 +57,13 @@ Set these before running:
 |----------|----------|-------------|
 | `OPENROUTER_API_KEY` | Yes | LLM API key from [openrouter.ai](https://openrouter.ai) |
 | `HUGGINGFACE_API_KEY` | No | HuggingFace token for local models |
-| `GITHUB_TOKEN` | No | GitHub token for cloning repos, creating PRs |
+| `GITHUB_TOKEN` | No* | GitHub token for cloning repos, creating PRs |
 | `SERPER_API_KEY` | No | Serper API key for web search |
 | `TACTIQ_TOKEN` | No | Tactiq API token from [Tactiq settings](https://app.tactiq.io/settings) |
 | `GITHUB_WEBHOOK_SECRET` | No | Secret for webhook signature verification |
 | `CODE_PIPELINE_LOG_LEVEL` | No | DEBUG, INFO, WARNING, ERROR |
+
+*Required when using `issue_url` (to clone repo). Not required when using `--repo-path` with local repo.
 
 ### config.yaml
 
@@ -258,9 +266,9 @@ curl -X POST http://localhost:8000/webhook \
 
 | Arg | Description |
 |-----|-------------|
-| `issue_url` (positional) | GitHub issue URL. The pipeline will implement the feature/fix described in this issue. Format: `https://github.com/owner/repo/issues/123` |
+| `issue_url` (positional) | GitHub issue URL. The pipeline will implement the feature/fix described in this issue. Format: `https://github.com/owner/repo/issues/123`. Optional if `--repo-path` is provided. |
+| `--repo-path` | Local repository path. If provided, uses this directory instead of cloning from issue URL. If no issue_url provided, detects github_repo from local repo. |
 | `-c, --config` | Path to config.yaml file. Contains pipeline configuration including model settings |
-| `-r, --repo-path` | Path to the repository where changes will be made. Default: current directory (`.`) |
 | `-b, --branch` | Base branch name. The branch to create feature branches from. Default: `main` |
 | `-n, --max-retries` | Maximum retry attempts if implementation fails. The pipeline will retry the implementer crew up to this many times. Default: `3` |
 | `-f, --from-scratch` | Ignore all previous checkpoints and run the entire pipeline from the start. Use when you want a fresh start |
@@ -276,17 +284,17 @@ curl -X POST http://localhost:8000/webhook \
 ### Basic Usage
 
 ```bash
-# Minimal run (uses current directory)
-kickoff-client "https://github.com/owner/repo/issues/123"
+# Clone repo from issue URL (requires GITHUB_TOKEN)
+python -m code_pipeline "https://github.com/owner/repo/issues/123"
 
-# With repository path
-kickoff-client "https://github.com/owner/repo/issues/123" --branch feature-branch
+# Use local repository instead of cloning
+python -m code_pipeline --repo-path /path/to/local/repo
 
-# With custom max retries
-kickoff-client "https://github.com/owner/repo/issues/123" --max-retries 5
+# With repository path and issue URL
+python -m code_pipeline --repo-path /path/to/local/repo "https://github.com/owner/repo/issues/123"
 
 # Dry run (skip git commit/PR)
-kickoff-client "https://github.com/owner/repo/issues/123" --dry-run
+python -m code_pipeline "https://github.com/owner/repo/issues/123" --dry-run
 ```
 
 ### Advanced Usage
@@ -420,24 +428,26 @@ Issue Analyst → Explorer → [TactiqResearch (optional)] → Clarify → Archi
 ## CLI Reference
 
 ```
-usage: kickoff [-h] [-c CONFIG] [-t TASK] [-r REPO_PATH] [-b BRANCH]
-               [-n MAX_RETRIES] [-f] [--dry-run] [--test-command TEST_COMMAND]
-               [--programmatic] [-v] [--debug]
-               issue_url
+usage: main.py [-h] [--repo-path REPO_PATH] [--branch BRANCH] [--from-scratch]
+               [--max-retries MAX_RETRIES] [--dry-run] [--programmatic]
+               [--tactiq-meeting-id TACTIQ_MEETING_ID] [--verbose] [--debug]
+               [issue_url]
 
 positional arguments:
-  issue_url             GitHub issue URL
+  issue_url             GitHub issue URL (optional if --repo-path is provided)
 
 optional arguments:
-  -c, --config CONFIG   Path to config.yaml
-  -r, --repo-path REPO_PATH
-                        Repository path (default: .)
-  -b, --branch BRANCH   Base branch (default: main)
-  -n, --max-retries MAX_RETRIES
-                        Max retries (default: 3)
-  -f, --from-scratch    Start from scratch, ignoring checkpoints
+  -h, --help           show this help message and exit
+  --repo-path REPO_PATH
+                       Local repo path (if not provided, repo will be cloned)
+  --branch BRANCH       Base branch (default: main)
+  --from-scratch        Start from scratch, ignoring checkpoints
+  --max-retries MAX_RETRIES
+                       Max retries (default: 3)
   --dry-run             Skip git commit and PR
   --programmatic        Programmatic mode (no human interaction)
+  --tactiq-meeting-id TACTIQ_MEETING_ID
+                       Tactiq meeting ID for context
   -v, --verbose         Verbose logging
   --debug               Debug logging
 ```
