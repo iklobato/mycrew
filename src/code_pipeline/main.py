@@ -3,7 +3,11 @@
 
 import argparse
 import logging
+import os
+import re
 import subprocess
+import tempfile
+import uuid
 from pathlib import Path
 
 from crewai.flow import Flow, listen, or_, start
@@ -13,6 +17,11 @@ from pydantic import BaseModel
 
 # Load settings before any CrewAI imports
 from code_pipeline.settings import get_settings
+from code_pipeline.utils import (
+    clone_repo_for_issue,
+    delete_cloned_repo,
+    detect_github_repo,
+)
 
 get_settings().apply_crewai_telemetry()  # noqa: E402
 
@@ -38,6 +47,8 @@ class PipelineState(BaseModel):
     max_retries: int = 3
     dry_run: bool = False
     programmatic: bool = False
+    repo_path: str = ""  # User-provided repo path (optional)
+    repo_path_cloned: bool = False  # True if repo was cloned (for cleanup)
 
     # Core state fields
     repo_root: Path | None = None
@@ -123,17 +134,85 @@ class CodePipelineFlow(Flow[PipelineState]):
         """Explore the repository."""
         self.state.current_stage = "explore"
 
-        # Parse issue URL
-        import re
+        url = self.state.issue_url.strip() if self.state.issue_url else ""
+        rp = self.state.repo_path.strip() if self.state.repo_path else ""
 
-        url = self.state.issue_url.strip()
+        if not url and not rp:
+            logger.error("Either issue_url or --repo-path is required")
+            return self.end
+
+        if rp:
+            return self._explore_with_repo_path(rp, url)
+
+        return self._explore_with_clone(url)
+
+    def _explore_with_repo_path(self, rp: str, url: str):
+        """Handle exploration with user-provided repo path."""
+        if not os.path.isdir(rp):
+            logger.error(f"repo_path does not exist: {rp}")
+            return self.end
+
+        self.state.repo_root = Path(os.path.abspath(rp))
+        logger.info(f"Using provided repo path: {self.state.repo_root}")
+
+        if not url:
+            github_repo = detect_github_repo(str(self.state.repo_root))
+            if not github_repo:
+                logger.error("Could not detect github_repo from local repo")
+                return self.end
+            self.state.issue_data = {
+                "owner": github_repo.split("/")[0],
+                "repo": github_repo.split("/")[1],
+                "kind": "repo",
+                "number": "",
+                "is_pull": False,
+                "github_repo": github_repo,
+            }
+            result = self._run_crew(
+                ExplorerCrew,
+                "explore",
+                {"issue_url": "", "issue_data": self.state.issue_data},
+            )
+            if not result:
+                logger.error("explore: exploration failed")
+                return self.end
+            self.state.exploration_result = result
+            return self.analyze_issue
+
         m = re.search(
             r"https?://(?:www\.)?github\.com/([^/]+)/([^/]+)/(issues|pull)/(\d+)",
             url,
             re.IGNORECASE,
         )
         if not m:
-            logger.error(f"explore: invalid issue URL: {self.state.issue_url}")
+            logger.error(f"explore: invalid issue URL: {url}")
+            return self.end
+
+        owner, repo_name, kind, number = (
+            m.group(1),
+            m.group(2),
+            m.group(3).lower(),
+            m.group(4),
+        )
+        self.state.issue_data = {
+            "owner": owner,
+            "repo": repo_name,
+            "kind": kind,
+            "number": number,
+            "is_pull": kind == "pull",
+            "github_repo": f"{owner}/{repo_name}",
+        }
+        return self._run_exploration()
+
+    def _explore_with_clone(self, url: str):
+        """Handle exploration by cloning repo from GitHub issue URL."""
+        m = re.search(
+            r"https?://(?:www\.)?github\.com/([^/]+)/([^/]+)/(issues|pull)/(\d+)",
+            url,
+            re.IGNORECASE,
+        )
+        if not m:
+            logger.error(f"explore: invalid issue URL: {url}")
             return self.end
 
         owner, repo_name, kind, number = (
@@ -151,19 +230,36 @@ class CodePipelineFlow(Flow[PipelineState]):
             "github_repo": f"{owner}/{repo_name}",
         }
 
-        # Get repo root
-        import os
+        settings = get_settings()
+        github_repo = f"{owner}/{repo_name}"
+        branch = self.state.branch if self.state.branch else "main"
+        token = settings.github_token
 
-        self.state.repo_root = Path(os.getcwd())
+        if not token:
+            logger.error("GITHUB_TOKEN required to clone repo")
+            return self.end
 
-        # Run exploration
+        parent_dir = os.path.join(
+            tempfile.gettempdir(), f"code_pipeline_{uuid.uuid4().hex[:8]}"
+        )
+
+        try:
+            cloned_path = clone_repo_for_issue(github_repo, parent_dir, branch, token)
+            self.state.repo_root = Path(cloned_path)
+            self.state.repo_path_cloned = True
+            logger.info(f"Cloned repo to: {self.state.repo_root}")
+        except Exception as e:
+            logger.error(f"Failed to clone repo: {e}")
+            return self.end
+
+        return self._run_exploration()
+
+    def _run_exploration(self):
+        """Run the exploration crew. Returns next stage or self.end."""
         result = self._run_crew(
             ExplorerCrew,
             "explore",
-            {
-                "issue_url": self.state.issue_url,
-                "issue_data": self.state.issue_data,
-            },
+            {"issue_url": self.state.issue_url, "issue_data": self.state.issue_data},
         )
 
         if not result:
@@ -397,6 +493,13 @@ class CodePipelineFlow(Flow[PipelineState]):
     @listen(retry_implement)
     def end(self):
         """End the pipeline."""
+        # Clean up cloned repo if we cloned it
+        if self.state.repo_path_cloned and self.state.repo_root:
+            try:
+                delete_cloned_repo(str(self.state.repo_root))
+            except Exception as e:
+                logger.warning(f"Failed to delete cloned repo: {e}")
+
         logger.info(f"Pipeline completed: {self.state.issue_url}")
         return None
 
@@ -421,6 +524,7 @@ def kickoff(
     dry_run: bool = False,
     programmatic: bool = False,
     tactiq_meeting_id: str = "",
+    repo_path: str = "",
 ):
     """Kickoff the pipeline."""
     state = PipelineState(
@@ -430,6 +534,7 @@ def kickoff(
         dry_run=dry_run,
         programmatic=programmatic,
         tactiq_meeting_id=tactiq_meeting_id,
+        repo_path=repo_path,
     )
     flow = CodePipelineFlow(state=state)
     flow.kickoff()
@@ -438,7 +543,12 @@ def kickoff(
 def _main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Code Pipeline")
-    parser.add_argument("issue_url", help="GitHub issue URL")
+    parser.add_argument("issue_url", help="GitHub issue URL", nargs="?")
+    parser.add_argument(
+        "--repo-path",
+        default="",
+        help="Local repo path (if not provided, repo will be cloned)",
+    )
     parser.add_argument("--branch", default="", help="Branch name")
     parser.add_argument(
         "--from-scratch", action="store_true", help="Start from scratch"
@@ -454,6 +564,10 @@ def _main():
 
     args = parser.parse_args()
 
+    # Must provide either issue_url or repo_path
+    if not args.issue_url and not args.repo_path:
+        parser.error("Either issue_url or --repo-path is required")
+
     if args.debug:
         log_level = logging.DEBUG
     elif args.verbose:
@@ -464,7 +578,8 @@ def _main():
     _configure_logging(level=log_level)
 
     kickoff(
-        issue_url=args.issue_url,
+        issue_url=args.issue_url or "",
+        repo_path=args.repo_path,
         branch=args.branch,
         from_scratch=args.from_scratch,
         max_retries=args.max_retries,
