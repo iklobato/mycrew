@@ -23,6 +23,9 @@ from code_pipeline.crews.explorer_crew.explorer_crew import ExplorerCrew  # noqa
 from code_pipeline.crews.implementer_crew.implementer_crew import ImplementerCrew  # noqa: E402
 from code_pipeline.crews.issue_analyst_crew.issue_analyst_crew import IssueAnalystCrew  # noqa: E402
 from code_pipeline.crews.reviewer_crew.reviewer_crew import ReviewerCrew  # noqa: E402
+from code_pipeline.crews.tactiq_research_crew.tactiq_research_crew import (
+    TactiqResearchCrew,
+)  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +37,6 @@ class PipelineState(BaseModel):
     branch: str = ""
     max_retries: int = 3
     dry_run: bool = False
-    test_command: str = ""
     programmatic: bool = False
 
     # Core state fields
@@ -46,6 +48,8 @@ class PipelineState(BaseModel):
     review_result: dict | None = None
     validation_result: dict | None = None
     commit_result: dict | None = None
+    tactiq_meeting_id: str = ""
+    tactiq_result: dict | None = None
 
     # Retry tracking
     retry_count: int = 0
@@ -193,6 +197,43 @@ class CodePipelineFlow(Flow[PipelineState]):
             self._log_step("analyze_issue", "issue analysis failed")
             return self.end
 
+        # If tactiq_meeting_id is provided, run tactiq_research
+        if self.state.tactiq_meeting_id:
+            return self.tactiq_research
+
+        return self.clarify
+
+    @listen(analyze_issue)
+    def tactiq_research(self):
+        """Fetch meeting context from Tactiq and determine if clarification is needed."""
+        self.state.current_stage = "tactiq_research"
+
+        result = self._run_crew(
+            TactiqResearchCrew,
+            "tactiq_research",
+            {
+                "task": self.state.issue_data.get("task", "")
+                if self.state.issue_data
+                else "",
+                "issue_analysis": self.state.issue_data,
+                "exploration": self.state.exploration_result,
+                "tactiq_meeting_id": self.state.tactiq_meeting_id,
+            },
+        )
+
+        if not result:
+            self._log_step("tactiq_research", "failed, falling back to clarify")
+            return self.clarify
+
+        self.state.tactiq_result = result
+
+        # Check if clarification is still needed based on result
+        # If "sufficient_info: true" is in the result, skip clarification
+        if isinstance(result, str) and "sufficient_info: true" in result.lower():
+            self._log_step("tactiq_research", "sufficient info found, skipping clarify")
+            return self.architect
+
+        self._log_step("tactiq_research", "clarification still needed")
         return self.clarify
 
     @listen(analyze_issue)
@@ -384,8 +425,8 @@ def kickoff(
     from_scratch: bool = False,
     max_retries: int = 3,
     dry_run: bool = False,
-    test_command: str = "",
     programmatic: bool = False,
+    tactiq_meeting_id: str = "",
 ):
     """Kickoff the pipeline."""
     state = PipelineState(
@@ -393,8 +434,8 @@ def kickoff(
         branch=branch,
         max_retries=max_retries,
         dry_run=dry_run,
-        test_command=test_command,
         programmatic=programmatic,
+        tactiq_meeting_id=tactiq_meeting_id,
     )
     flow = CodePipelineFlow(state=state)
     flow.kickoff()
@@ -410,8 +451,10 @@ def _main():
     )
     parser.add_argument("--max-retries", type=int, default=3, help="Max retries")
     parser.add_argument("--dry-run", action="store_true", help="Dry run")
-    parser.add_argument("--test-command", default="", help="Test command")
     parser.add_argument("--programmatic", action="store_true", help="Programmatic mode")
+    parser.add_argument(
+        "--tactiq-meeting-id", default="", help="Tactiq meeting ID for context"
+    )
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose logging")
     parser.add_argument("--debug", action="store_true", help="Debug logging")
 
@@ -432,8 +475,8 @@ def _main():
         from_scratch=args.from_scratch,
         max_retries=args.max_retries,
         dry_run=args.dry_run,
-        test_command=getattr(args, "test_command", ""),
         programmatic=args.programmatic,
+        tactiq_meeting_id=args.tactiq_meeting_id,
     )
 
 

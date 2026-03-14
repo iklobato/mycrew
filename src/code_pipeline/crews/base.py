@@ -14,6 +14,7 @@ from code_pipeline.tools.factory import (
     get_github_search_tool,
     get_scrape_website_tool,
     get_serper_tool,
+    get_tactiq_tool,
 )
 from code_pipeline.tools.human_tool import ask_human as ask_human_tool
 from code_pipeline.tools.noop_tool import NoOpTool
@@ -121,6 +122,13 @@ class PipelineCrewBase(ABCrew):
     @tool
     def ask_human(self) -> BaseTool:
         return ask_human_tool
+
+    @tool
+    def tactiq_meeting(self) -> BaseTool:
+        t = get_tactiq_tool()
+        if t:
+            return t
+        return NoOpTool()  # type: ignore[abstract]
 
     @crew
     def crew(self) -> Crew:
