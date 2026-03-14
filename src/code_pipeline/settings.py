@@ -46,16 +46,18 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # API keys (required for pipeline, optional for serper)
+    # API keys (required for pipeline, optional for serper/tactiq)
     openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
     huggingface_api_key: str = Field(default="", alias="HUGGINGFACE_API_KEY")
     github_token: str = Field(default="", alias="GITHUB_TOKEN")
     serper_api_key: str = Field(default="", alias="SERPER_API_KEY")
+    tactiq_token: str = Field(default="", alias="TACTIQ_TOKEN")
 
     # Webhook defaults
     github_webhook_secret: str = Field(default="", alias="GITHUB_WEBHOOK_SECRET")
     default_dry_run: bool = Field(default=False, alias="DEFAULT_DRY_RUN")
     default_branch: str = Field(default="main", alias="DEFAULT_BRANCH")
+    tactiq_meeting_id: str = Field(default="", alias="TACTIQ_MEETING_ID")
 
     # Webhook server
     host: str = Field(default="0.0.0.0", alias="HOST")

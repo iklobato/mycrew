@@ -16,12 +16,12 @@ pipeline:
   
   # Dry run mode (no commits, no pushes)
   dry_run: false
-  
-  # Test command to run (e.g., "pytest", "npm test", "go test ./...")
-  test_command: ""
 
   # Programmatic mode: no human interaction; models decide clarify questions and auto-commit
   programmatic: false
+  
+  # Tactiq meeting ID for context (optional) - if provided, TactiqResearch crew will fetch meeting details
+  tactiq_meeting_id: ""
 
 # API Keys and Authentication
 # ---------------------------
@@ -29,10 +29,12 @@ pipeline:
 #   export OPENROUTER_API_KEY=...
 #   export GITHUB_TOKEN=...
 #   export SERPER_API_KEY=...
+#   export TACTIQ_TOKEN=...
 api_keys:
   openrouter_api_key: "${OPENROUTER_API_KEY}"
   github_token: "${GITHUB_TOKEN}"
   serper_api_key: "${SERPER_API_KEY}"
+  tactiq_token: "${TACTIQ_TOKEN}"
 
 # Logging Configuration
 # ---------------------
