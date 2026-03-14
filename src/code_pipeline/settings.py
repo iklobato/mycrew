@@ -77,8 +77,6 @@ class Settings(BaseSettings):
 
     def apply_crewai_telemetry(self) -> None:
         """Apply crewai_telemetry to os.environ for CrewAI library."""
-        import os
-
         os.environ["CREWAI_TRACING_ENABLED"] = str(self.crewai_telemetry).lower()
 
 
@@ -92,8 +90,6 @@ def get_settings() -> Settings:
 
 def init_settings_from_config(config_data: dict[str, Any]) -> None:
     """Update settings from parsed config file. Call after loading YAML."""
-    import os
-
     global _settings
     settings = get_settings()
 

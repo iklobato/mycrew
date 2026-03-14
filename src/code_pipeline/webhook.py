@@ -3,8 +3,10 @@
 
 import hashlib
 import hmac
+import httpx
 import json
 import logging
+import uvicorn
 from datetime import datetime
 from typing import Any
 
@@ -112,8 +114,6 @@ def _get_nested(obj: dict[str, Any], path: tuple[str, ...]) -> Any:
 def _send_callback(callback_url: str, status: str, details: dict[str, Any]) -> None:
     """Send callback to external URL. Logs errors but doesn't raise."""
     try:
-        import httpx
-
         payload = {"status": status, "timestamp": datetime.now().isoformat(), **details}
 
         # Use sync client since we're in background thread
@@ -285,8 +285,6 @@ def health_check() -> dict[str, str]:
 
 def main() -> None:
     """Run the simple webhook server."""
-    import uvicorn
-
     from code_pipeline.settings import get_settings
 
     logging.basicConfig(

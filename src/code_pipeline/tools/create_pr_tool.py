@@ -107,10 +107,7 @@ class CreatePRTool(BaseTool):
         labels: str = "",
         **kwargs: Any,
     ) -> str:
-        rp = self.repo_path
-        if rp is None or rp == "":
-            rp = os.getcwd()
-        repo = os.path.abspath(rp)
+        repo = os.path.abspath(self.repo_path)
         if not os.path.isdir(repo):
             return f"Error: repo_path does not exist: {repo}"
         if github_repo is not None:

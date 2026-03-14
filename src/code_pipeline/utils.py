@@ -1,6 +1,7 @@
 """Shared utilities for the code pipeline."""
 
 import functools
+import httpx
 import logging
 import os
 import re
@@ -61,8 +62,6 @@ def resolve_issue_url(issue_url: str) -> dict[str, str]:
         )
 
     try:
-        import httpx
-
         api_url = f"https://api.github.com/repos/{owner}/{repo_name}/issues/{number}"
         headers = {
             "Authorization": f"Bearer {token}",

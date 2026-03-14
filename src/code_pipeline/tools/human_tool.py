@@ -70,7 +70,6 @@ def ask_human(question: str) -> str:
 
         # Parse the question to find the recommended option
         # Look for "Option A (recommended):" pattern
-        import re
 
         # Try to find Option A (recommended)
         option_a_match = re.search(

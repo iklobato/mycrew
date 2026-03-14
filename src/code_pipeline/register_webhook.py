@@ -2,6 +2,7 @@
 """Register GitHub repository webhook for code pipeline (issues assigned, PR review comments)."""
 
 import argparse
+import httpx
 import logging
 import sys
 
@@ -43,12 +44,6 @@ def register_webhook(
         logger.error(
             "GITHUB_WEBHOOK_SECRET required. Must match the secret on your remote server."
         )
-        return 1
-
-    try:
-        import httpx
-    except ImportError:
-        logger.error("httpx required. Run: uv sync")
         return 1
 
     api_url = f"https://api.github.com/repos/{owner}/{repo_name}/hooks"
