@@ -183,6 +183,14 @@ def get_tools_for_stage(
         )
         return tools
 
+    if stage == "tactiq_research":
+        tools = []
+        tt = get_tactiq_tool()
+        if tt:
+            tools.append(tt)
+        logger.debug("Stage %s: TactiqTool=%s", stage, tt is not None)
+        return tools
+
     logger.warning("Unknown stage %s, returning empty tools", stage)
     return []
 
@@ -248,4 +256,21 @@ def get_serper_tool(enabled: bool = True, n_results: int = 5) -> BaseTool | None
         return SerperDevTool(n_results=n_results)
     except Exception as e:
         logger.error("SerperDevTool unavailable: %s", e, exc_info=True)
+        return None
+
+
+def get_tactiq_tool() -> BaseTool | None:
+    """Return TactiqTool for meeting lookup if TACTIQ_TOKEN is configured."""
+    token = get_settings().tactiq_token.strip()
+    if not token:
+        logger.debug("TactiqTool disabled: TACTIQ_TOKEN not set")
+        return None
+
+    try:
+        from code_pipeline.tools.tactiq_tool import TactiqTool
+
+        logger.info("TactiqTool enabled")
+        return TactiqTool()
+    except Exception as e:
+        logger.error("TactiqTool unavailable: %s", e, exc_info=True)
         return None
