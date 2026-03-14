@@ -92,7 +92,7 @@ async def main():
     print("\n1. Checking API health...")
     if not await check_health(base_url):
         print("\n⚠️  API is not running. Start it with:")
-        print("  cd /Users/iklo/crew/code_pipeline")
+        print("  cd /path/to/mycrew")
         print("  uv run webhook")
         print("\nThen run this example again.")
         return

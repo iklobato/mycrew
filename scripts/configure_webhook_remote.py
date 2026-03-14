@@ -29,7 +29,7 @@ def _ensure_env(*names: str) -> dict[str, str]:
 
 def configure_github(repo: str, token: str, secret: str) -> bool:
     """Register webhook at GitHub. Returns True on success."""
-    from code_pipeline.register_webhook import register_webhook
+    from mycrew.register_webhook import register_webhook
 
     return (
         register_webhook(repo, token=token, secret=secret, webhook_url=WEBHOOK_URL) == 0
@@ -134,7 +134,7 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        from code_pipeline.settings import get_settings
+        from mycrew.settings import get_settings
 
         stg = get_settings()
         gh_token = os.environ.get("GITHUB_TOKEN", "").strip() or stg.github_token or ""

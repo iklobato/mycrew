@@ -42,16 +42,16 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 
 [tool.coverage.run]
-source = ["src/code_pipeline"]
+source = ["src/mycrew"]
 omit = [
-    "src/code_pipeline/main.py",  # Flow orchestration; tested via integration
+    "src/mycrew/main.py",  # Flow orchestration; tested via integration
 ]
 
 [tool.coverage.report]
 fail_under = 75
 
 [tool.ruff.lint.per-file-ignores]
-"src/code_pipeline/main.py" = ["E402"]
+"src/mycrew/main.py" = ["E402"]
 
 [tool.uv]
 # onnxruntime 1.24+ dropped macOS x86_64 wheels; 1.19.2 has universal2 (Intel + ARM)
