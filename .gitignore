@@ -5,6 +5,4 @@ lib/
 .DS_Store
 logs.txt
 .code_pipeline/
-lightapi-config.yaml
-*-config.yaml
 webhook.http
