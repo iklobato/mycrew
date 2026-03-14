@@ -13,11 +13,6 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 
-def _get_valkey_cache_safe():
-    """Return None - caching removed."""
-    return None
-
-
 # Dangerous patterns to block
 _DANGEROUS_PATTERNS = [
     r"rm\s+-rf\s+/",
@@ -68,15 +63,11 @@ class RepoShellTool(BaseTool):
         "gh: issue list --state= accepts only open|closed|all; for merged PRs use 'gh pr list --state=merged'. "
         "Commands run with cwd=repo_path. Output is limited to 16KB to prevent memory exhaustion. "
         'For large repositories, use focused searches: \'grep -r "pattern" src --include="*.py" --exclude-dir=node_modules --exclude-dir=.git | head -100\'. '
-        "Dangerous commands (rm -rf /, mkfs, etc.) are blocked. "
-        "Command outputs are cached (LRU) to avoid redundant executions."
+        "Dangerous commands (rm -rf /, mkfs, etc.) are blocked."
     )
     args_schema: Type[BaseModel] = RepoShellToolInput
 
     repo_path: str = ""
-
-    # No caching
-    # This keeps app memory minimal by avoiding local caching
 
     def _run(self, command: str) -> str:
         """Execute a shell command in the repo with safety checks."""
@@ -93,9 +84,6 @@ class RepoShellTool(BaseTool):
         command = command.strip()
         if not command:
             return "Error: empty command."
-
-        # No caching
-        # cache_key = f"{repo_path}:{command}"
 
         # Block dangerous patterns
         cmd_lower = command.lower()
