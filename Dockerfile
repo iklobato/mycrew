@@ -35,7 +35,6 @@ COPY --from=builder /app/.venv /app/.venv
 
 WORKDIR /app
 COPY src/ ./src/
-COPY config.example.yaml ./config.yaml
 
 EXPOSE 8000
 

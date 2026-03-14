@@ -315,7 +315,7 @@ def _load_model_config_from_file(
 ) -> dict[PipelineStage, StageModelConfig]:
     """Load model configuration from YAML config file, falling back to defaults."""
     if config_path is None:
-        config_path = Path(__file__).parent.parent.parent / "config.yaml"
+        config_path = Path(__file__).parent.parent.parent / "defaults.yaml"
 
     config_path = Path(config_path)
     if not config_path.exists():
@@ -404,71 +404,20 @@ def _get_agent_model_config(stage: PipelineStage, agent_name: str) -> StageModel
     if cache_key in _agent_model_cache:
         return _agent_model_cache[cache_key]
 
-    # Try to load agent-specific config from models.<stage>.agents.<agent_name>
-    config_path = Path(__file__).parent.parent.parent / "config.yaml"
-    if config_path.exists():
-        try:
-            with open(config_path, "r") as f:
-                config_data = yaml.safe_load(f)
+    # Use pipeline models from defaults.yaml or built-in defaults
+    stage_config = PIPELINE_MODELS.get(stage)
+    if stage_config:
+        _agent_model_cache[cache_key] = stage_config
+        return stage_config
 
-            models_config = config_data.get("models", {})
-            stage_config = models_config.get(stage.value, {})
-
-            # Check if there's an agent-specific configuration
-            agents_config = stage_config.get("agents", {})
-            agent_config = agents_config.get(agent_name, {})
-
-            if agent_config and agent_config.get("primary"):
-                primary = agent_config.get("primary", "")
-                fallbacks = agent_config.get("fallbacks", [])
-
-                # Match against ModelMappings model IDs or normalize custom string
-                primary_model = None
-                for member in ModelMappings:
-                    if isinstance(member.value, str) and member.value == primary:
-                        primary_model = member.value
-                        break
-
-                if primary_model is None:
-                    primary_model = ModelMappings.normalize_model(primary)
-                    logger.info(
-                        "Using custom agent model not in enum: %s for %s",
-                        primary,
-                        agent_name,
-                    )
-
-                # Match fallbacks against ModelMappings or normalize custom string
-                fallback_models = []
-                for fb in fallbacks:
-                    fb_model = None
-                    for member in ModelMappings:
-                        if isinstance(member.value, str) and member.value == fb:
-                            fb_model = member.value
-                            break
-                    if fb_model is None:
-                        fb_model = ModelMappings.normalize_model(fb)
-                    fallback_models.append(fb_model)
-
-                agent_model_config = StageModelConfig(
-                    primary=primary_model, fallbacks=tuple(fallback_models)
-                )
-                _agent_model_cache[cache_key] = agent_model_config
-                logger.info(
-                    "Loaded agent-specific config for %s in stage %s",
-                    agent_name,
-                    stage.value,
-                )
-                return agent_model_config
-
-        except Exception as e:
-            logger.error("Failed to load agent-specific config: %s", e)
-
-    # Fall back to stage configuration from ModelMappings or config
-    stage_config = PIPELINE_MODELS.get(
-        stage, ModelMappings.for_stage(stage).to_stage_config()
+    # Fallback to auxiliary
+    return PIPELINE_MODELS.get(
+        PipelineStage.AUXILIARY,
+        StageModelConfig(
+            primary="openrouter/mistralai/mistral-small-24b-instruct-2501",
+            fallbacks=(),
+        ),
     )
-    _agent_model_cache[cache_key] = stage_config
-    return stage_config  # type: ignore[return-value]
 
 
 def llm_with_fallback(

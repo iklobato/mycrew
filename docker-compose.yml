@@ -9,7 +9,6 @@ services:
       - "8000:8000"
     volumes:
       - ./workspace:/workspace
-      - ./config.yaml:/app/config.yaml:ro
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - GITHUB_TOKEN=${GITHUB_TOKEN}

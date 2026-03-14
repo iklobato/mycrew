@@ -35,7 +35,7 @@ class PipelineContext(BaseModel):
 class Settings(BaseSettings):
     """Centralized settings from environment variables.
 
-    Load once at startup. Config file can update via init_settings_from_config().
+    Load once at startup. Model configuration is loaded from defaults.yaml.
     """
 
     model_config = SettingsConfigDict(
