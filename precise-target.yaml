@@ -20,9 +20,6 @@ pipeline:
   
   # Dry run mode (no commits, no pushes)
   dry_run: false
-  
-  # Test command to run (e.g., "pytest", "npm test", "go test ./...")
-  test_command: ""
 
 # API Keys and Authentication
 # ---------------------------
