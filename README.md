@@ -1,8 +1,8 @@
-# Code Pipeline: Your AI-Powered Development Team
+# mycrew: Your AI-Powered Development Team
 
 ## Imagine Having a Complete Development Team at Your Fingertips
 
-**Code Pipeline** is like having a full software development team that works for you 24/7. Instead of hiring individual developers, you get a complete workflow system where specialized AI agents handle every step of your project—from understanding what you need, to planning, building, testing, and delivering working code.
+**mycrew** is like having a full software development team that works for you 24/7. Instead of hiring individual developers, you get a complete workflow system where specialized AI agents handle every step of your project—from understanding what you need, to planning, building, testing, and delivering working code.
 
 ---
 
