@@ -1,16 +1,15 @@
 """Shared LLM configuration for OpenRouter with stage-specific models and fallbacks."""
 
 import logging
-import os
 import yaml
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Any
 
 from crewai import LLM
 
-from code_pipeline.settings import get_settings
+from code_pipeline.providers import create_provider
 from code_pipeline.utils import log_exceptions
 
 logger = logging.getLogger(__name__)
@@ -119,34 +118,6 @@ def _patched_format_messages(self, messages: list[Any]) -> list[dict[str, Any]]:
 LLM._format_messages_for_provider = _patched_format_messages
 
 
-class OpenRouterModel(StrEnum):
-    """OpenRouter model IDs. Single source of truth for reuse across stages."""
-
-    # Expensive models (keep for fallback)
-    DEEPSEEK_R1 = "openrouter/deepseek/deepseek-r1"
-    DEEPSEEK_V3_2 = "openrouter/deepseek/deepseek-v3.2"
-    GEMINI_3_FLASH = "openrouter/google/gemini-3-flash-preview"
-    QWEN3_CODER = "openrouter/qwen/qwen3-coder"
-
-    # Cheaper alternatives (primary recommendations)
-    DEEPSEEK_CHAT = "openrouter/deepseek/deepseek-chat"  # ~70% cheaper than v3.2
-    GEMINI_2_FLASH = "openrouter/google/gemini-2.0-flash-001"  # Cheaper than gemini-3
-    QWEN2_5_CODER = (
-        "openrouter/qwen/qwen-2.5-coder-32b-instruct"  # ~60% cheaper than qwen3-coder
-    )
-    MISTRAL_SMALL = "openrouter/mistralai/mistral-small-24b-instruct-2501"  # Available mistral small model
-    LLAMA_3_3_70B = (
-        "openrouter/meta-llama/llama-3.3-70b-instruct"  # Good for complex tasks
-    )
-
-    # Legacy/fallback options
-    GPT_5_NANO = "openrouter/openai/gpt-5-nano"
-    KIMI_K25 = "openrouter/moonshotai/kimi-k2.5"
-    QWEN3_235B_THINKING = "openrouter/qwen/qwen3-235b-a22b-thinking-2507"
-    QWEN3_NEXT_80B = "openrouter/qwen/qwen3-next-80b-a3b-instruct"
-    TRINITY_MINI = "openrouter/arcee-ai/trinity-mini"
-
-
 class PipelineStage(StrEnum):
     """Pipeline stage names. StrEnum ensures value equals string for backward compatibility."""
 
@@ -162,107 +133,180 @@ class PipelineStage(StrEnum):
     TEST_VALIDATION = "test_validation"
 
 
+class ProviderType(StrEnum):
+    """Provider type for LLM backend. Used to select stage and model source."""
+
+    OPENROUTER = "openrouter"
+    HUGGINGFACE = "huggingface"
+
+    @staticmethod
+    def default_stage(provider_type: str | None = None) -> PipelineStage:
+        """Return default pipeline stage for the given provider type."""
+        return PipelineStage.ANALYZE_ISSUE
+
+
 @dataclass(frozen=True)
 class StageModelConfig:
     """Primary model and fallbacks for a pipeline stage."""
 
-    primary: OpenRouterModel
-    fallbacks: tuple[OpenRouterModel, ...]
+    primary: str
+    fallbacks: tuple[str, ...]
 
 
-# Default model configuration - optimized for MAXIMUM cost-effectiveness using cheapest non-free models
-# Using only 4 cheapest models: DeepSeek Chat, Qwen2.5 Coder, Gemini 2.0 Flash, Mistral Small
+@dataclass(frozen=True)
+class _StageMapping:
+    """Per-stage model config: OpenRouter primary + fallbacks + HuggingFace model."""
+
+    openrouter_model: str
+    openrouter_fallbacks: tuple[str, ...]
+    huggingface_model: str
+
+    def to_stage_config(self) -> StageModelConfig:
+        """Return StageModelConfig for OpenRouter (primary + fallbacks)."""
+        return StageModelConfig(
+            primary=self.openrouter_model,
+            fallbacks=self.openrouter_fallbacks,
+        )
+
+
+class ModelMappings(Enum):
+    """Unified enum: model IDs (value=str) and stage mappings (value=_StageMapping).
+    Single source for OpenRouter models and per-stage config."""
+
+    # Model IDs (value = str)
+    DEEPSEEK_R1 = "openrouter/deepseek/deepseek-r1"
+    DEEPSEEK_V3_2 = "openrouter/deepseek/deepseek-v3.2"
+    GEMINI_3_FLASH = "openrouter/google/gemini-3-flash-preview"
+    QWEN3_CODER = "openrouter/qwen/qwen3-coder"
+    DEEPSEEK_CHAT = "openrouter/deepseek/deepseek-chat"
+    GEMINI_2_FLASH = "openrouter/google/gemini-2.0-flash-001"
+    QWEN2_5_CODER = "openrouter/qwen/qwen-2.5-coder-32b-instruct"
+    MISTRAL_SMALL = "openrouter/mistralai/mistral-small-24b-instruct-2501"
+    LLAMA_3_3_70B = "openrouter/meta-llama/llama-3.3-70b-instruct"
+    MAGISTRAL_SMALL = "openrouter/mistralai/magistral-small-latest"
+    QWEN3_235B_A22B = "openrouter/qwen/qwen3-235b-a22b-2507"
+    DEVSTRAL_SMALL = "openrouter/mistralai/devstral-small"
+    GPT_5_NANO = "openrouter/openai/gpt-5-nano"
+    KIMI_K25 = "openrouter/moonshotai/kimi-k2.5"
+    QWEN3_235B_THINKING = "openrouter/qwen/qwen3-235b-a22b-thinking-2507"
+    QWEN3_NEXT_80B = "openrouter/qwen/qwen3-next-80b-a3b-instruct"
+    TRINITY_MINI = "openrouter/arcee-ai/trinity-mini"
+
+    # Stage mappings (value = _StageMapping)
+    ANALYZE_ISSUE = _StageMapping(
+        openrouter_model="openrouter/qwen/qwen3-235b-a22b-2507",
+        openrouter_fallbacks=(
+            "openrouter/deepseek/deepseek-v3.2",
+            "openrouter/mistralai/magistral-small-latest",
+        ),
+        huggingface_model="deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
+    )
+    EXPLORE = _StageMapping(
+        openrouter_model="openrouter/qwen/qwen3-235b-a22b-2507",
+        openrouter_fallbacks=(
+            "openrouter/deepseek/deepseek-v3.2",
+            "openrouter/mistralai/magistral-small-latest",
+        ),
+        huggingface_model="Qwen/Qwen2.5-Coder-32B-Instruct",
+    )
+    PLAN = _StageMapping(
+        openrouter_model="openrouter/mistralai/devstral-small",
+        openrouter_fallbacks=(
+            "openrouter/qwen/qwen3-235b-a22b-2507",
+            "openrouter/mistralai/magistral-small-latest",
+        ),
+        huggingface_model="google/gemma-2-2b-it",
+    )
+    IMPLEMENT = _StageMapping(
+        openrouter_model="openrouter/mistralai/devstral-small",
+        openrouter_fallbacks=(
+            "openrouter/qwen/qwen3-235b-a22b-2507",
+            "openrouter/deepseek/deepseek-v3.2",
+        ),
+        huggingface_model="Qwen/Qwen2.5-Coder-32B-Instruct",
+    )
+    REVIEW = _StageMapping(
+        openrouter_model="openrouter/deepseek/deepseek-v3.2",
+        openrouter_fallbacks=(
+            "openrouter/qwen/qwen3-235b-a22b-2507",
+            "openrouter/mistralai/magistral-small-latest",
+        ),
+        huggingface_model="deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
+    )
+    COMMIT = _StageMapping(
+        openrouter_model="openrouter/mistralai/magistral-small-latest",
+        openrouter_fallbacks=(
+            "openrouter/mistralai/devstral-small",
+            "openrouter/qwen/qwen3-235b-a22b-2507",
+        ),
+        huggingface_model="mistralai/Mistral-7B-Instruct-v0.3",
+    )
+    PUBLISH = _StageMapping(
+        openrouter_model="openrouter/mistralai/magistral-small-latest",
+        openrouter_fallbacks=(
+            "openrouter/mistralai/devstral-small",
+            "openrouter/qwen/qwen3-235b-a22b-2507",
+        ),
+        huggingface_model="mistralai/Mistral-7B-Instruct-v0.3",
+    )
+    AUXILIARY = _StageMapping(
+        openrouter_model="openrouter/mistralai/magistral-small-latest",
+        openrouter_fallbacks=(
+            "openrouter/mistralai/devstral-small",
+            "openrouter/qwen/qwen3-235b-a22b-2507",
+        ),
+        huggingface_model="mistralai/Mistral-7B-Instruct-v0.3",
+    )
+    SECURITY = _StageMapping(
+        openrouter_model="openrouter/deepseek/deepseek-v3.2",
+        openrouter_fallbacks=(
+            "openrouter/qwen/qwen3-235b-a22b-2507",
+            "openrouter/mistralai/magistral-small-latest",
+        ),
+        huggingface_model="deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
+    )
+    TEST_VALIDATION = _StageMapping(
+        openrouter_model="openrouter/mistralai/devstral-small",
+        openrouter_fallbacks=(
+            "openrouter/deepseek/deepseek-v3.2",
+            "openrouter/qwen/qwen3-235b-a22b-2507",
+        ),
+        huggingface_model="Qwen/Qwen2.5-Coder-32B-Instruct",
+    )
+
+    @classmethod
+    def normalize_model(cls, model: str) -> str:
+        """Prepend openrouter/ if not present. Use when parsing config or external input."""
+        if model.startswith("openrouter/"):
+            return model
+        return f"openrouter/{model}"
+
+    @classmethod
+    def all_model_ids(cls) -> set[str]:
+        """Return all unique OpenRouter model IDs from model members and stage mappings."""
+        ids: set[str] = set()
+        for member in cls:
+            val = member.value
+            if isinstance(val, str):
+                ids.add(val)
+            elif isinstance(val, _StageMapping):
+                ids.add(val.openrouter_model)
+                ids.update(val.openrouter_fallbacks)
+        return ids
+
+    @classmethod
+    def for_stage(cls, stage: PipelineStage) -> _StageMapping:
+        """Get stage mapping for pipeline stage. Fallback to ANALYZE_ISSUE."""
+        member = getattr(cls, stage.name, cls.ANALYZE_ISSUE)
+        val = member.value
+        if isinstance(val, _StageMapping):
+            return val
+        return cls.ANALYZE_ISSUE.value
+
+
+# Stage config derived from ModelMappings (used when config file has no models section)
 DEFAULT_PIPELINE_MODELS: dict[PipelineStage, StageModelConfig] = {
-    # Issue Analysis: Needs reasoning + GitHub issue understanding
-    # DeepSeek Chat is the cheapest good reasoning model
-    PipelineStage.ANALYZE_ISSUE: StageModelConfig(
-        primary=OpenRouterModel.DEEPSEEK_CHAT,
-        fallbacks=(
-            OpenRouterModel.QWEN2_5_CODER,  # Cheaper coding alternative
-            OpenRouterModel.MISTRAL_SMALL,  # Cheapest general alternative
-        ),
-    ),
-    # Exploration: Needs code understanding + tech stack analysis
-    # Qwen2.5 Coder is the cheapest specialized coding model
-    PipelineStage.EXPLORE: StageModelConfig(
-        primary=OpenRouterModel.QWEN2_5_CODER,
-        fallbacks=(
-            OpenRouterModel.DEEPSEEK_CHAT,  # Cheaper reasoning alternative
-            OpenRouterModel.MISTRAL_SMALL,  # Cheapest general alternative
-        ),
-    ),
-    # Planning: Needs design thinking + architecture planning
-    # Gemini 2.0 Flash is the cheapest fast brainstorming model
-    PipelineStage.PLAN: StageModelConfig(
-        primary=OpenRouterModel.GEMINI_2_FLASH,
-        fallbacks=(
-            OpenRouterModel.MISTRAL_SMALL,  # Cheapest alternative
-            OpenRouterModel.DEEPSEEK_CHAT,  # Cheaper reasoning alternative
-        ),
-    ),
-    # Implementation: Needs coding excellence + precision
-    # Qwen2.5 Coder is the cheapest specialized coding model
-    PipelineStage.IMPLEMENT: StageModelConfig(
-        primary=OpenRouterModel.QWEN2_5_CODER,
-        fallbacks=(
-            OpenRouterModel.DEEPSEEK_CHAT,  # Cheaper reasoning alternative
-            OpenRouterModel.MISTRAL_SMALL,  # Cheapest general alternative
-        ),
-    ),
-    # Review: Needs critical thinking + code review skills
-    # DeepSeek Chat is the cheapest good reasoning model
-    PipelineStage.REVIEW: StageModelConfig(
-        primary=OpenRouterModel.DEEPSEEK_CHAT,
-        fallbacks=(
-            OpenRouterModel.QWEN2_5_CODER,  # Cheaper coding alternative for code-specific reviews
-            OpenRouterModel.MISTRAL_SMALL,  # Cheapest general alternative
-        ),
-    ),
-    # Commit: Needs concise, clear writing for commit messages
-    # Gemini 2.0 Flash is the cheapest fast text generation model
-    PipelineStage.COMMIT: StageModelConfig(
-        primary=OpenRouterModel.GEMINI_2_FLASH,
-        fallbacks=(
-            OpenRouterModel.MISTRAL_SMALL,  # Cheapest alternative
-            OpenRouterModel.DEEPSEEK_CHAT,  # Cheaper reasoning alternative
-        ),
-    ),
-    # Publish: Needs PR description writing + communication
-    # Gemini 2.0 Flash is the cheapest fast text generation model
-    PipelineStage.PUBLISH: StageModelConfig(
-        primary=OpenRouterModel.GEMINI_2_FLASH,
-        fallbacks=(
-            OpenRouterModel.MISTRAL_SMALL,  # Cheapest alternative
-            OpenRouterModel.DEEPSEEK_CHAT,  # Cheaper reasoning alternative
-        ),
-    ),
-    # Auxiliary: General-purpose tasks, needs to be cheapest possible
-    # Mistral Small is the cheapest general-purpose model
-    PipelineStage.AUXILIARY: StageModelConfig(
-        primary=OpenRouterModel.MISTRAL_SMALL,
-        fallbacks=(
-            OpenRouterModel.GEMINI_2_FLASH,  # Cheapest fast alternative
-            OpenRouterModel.DEEPSEEK_CHAT,  # Cheaper reasoning alternative
-        ),
-    ),
-    # Security: Needs security reasoning + vulnerability analysis
-    # DeepSeek Chat is cheapest good reasoning model (security doesn't need expensive Llama)
-    PipelineStage.SECURITY: StageModelConfig(
-        primary=OpenRouterModel.DEEPSEEK_CHAT,
-        fallbacks=(
-            OpenRouterModel.QWEN2_5_CODER,  # Cheaper coding alternative for code security
-            OpenRouterModel.MISTRAL_SMALL,  # Cheapest general alternative
-        ),
-    ),
-    # Test Validation: Needs test writing and validation
-    # Qwen2.5 Coder is cheapest specialized coding model for test writing
-    PipelineStage.TEST_VALIDATION: StageModelConfig(
-        primary=OpenRouterModel.QWEN2_5_CODER,
-        fallbacks=(
-            OpenRouterModel.DEEPSEEK_CHAT,  # Cheaper reasoning alternative
-            OpenRouterModel.MISTRAL_SMALL,  # Cheapest general alternative
-        ),
-    ),
+    stage: ModelMappings.for_stage(stage).to_stage_config() for stage in PipelineStage
 }
 
 
@@ -302,28 +346,27 @@ def _load_model_config_from_file(
                     )
                     continue
 
-                # Convert string to OpenRouterModel enum if it exists
+                # Match against ModelMappings model IDs or normalize custom string
                 primary_model = None
-                for model in OpenRouterModel:
-                    if model.value == primary:
-                        primary_model = model
+                for member in ModelMappings:
+                    if isinstance(member.value, str) and member.value == primary:
+                        primary_model = member.value
                         break
 
                 if primary_model is None:
-                    # If not in enum, use as string
-                    primary_model = primary
+                    primary_model = ModelMappings.normalize_model(primary)
                     logger.info("Using custom model not in enum: %s", primary)
 
-                # Convert fallbacks to OpenRouterModel enums or strings
+                # Match fallbacks against ModelMappings or normalize custom string
                 fallback_models = []
                 for fb in fallbacks:
                     fb_model = None
-                    for model in OpenRouterModel:
-                        if model.value == fb:
-                            fb_model = model
+                    for member in ModelMappings:
+                        if isinstance(member.value, str) and member.value == fb:
+                            fb_model = member.value
                             break
                     if fb_model is None:
-                        fb_model = fb
+                        fb_model = ModelMappings.normalize_model(fb)
                         logger.info("Using custom fallback model not in enum: %s", fb)
                     fallback_models.append(fb_model)
 
@@ -348,6 +391,7 @@ def _load_model_config_from_file(
 
 # Load models on module import (can be overridden)
 PIPELINE_MODELS = _load_model_config_from_file()
+
 
 # Agent-specific configuration cache
 _agent_model_cache: dict[str, StageModelConfig] = {}
@@ -374,24 +418,24 @@ def update_model_config(config_data: dict[str, Any] | None = None) -> None:
                     continue
 
                 primary_model = None
-                for model in OpenRouterModel:
-                    if model.value == primary:
-                        primary_model = model
+                for member in ModelMappings:
+                    if isinstance(member.value, str) and member.value == primary:
+                        primary_model = member.value
                         break
                 if primary_model is None:
-                    primary_model = primary
+                    primary_model = ModelMappings.normalize_model(primary)
                     logger.info("Using custom primary model not in enum: %s", primary)
 
                 # Parse fallback models
                 fallback_models = []
                 for fb in stage_config.get("fallbacks", []):
                     fb_model = None
-                    for model in OpenRouterModel:
-                        if model.value == fb:
-                            fb_model = model
+                    for member in ModelMappings:
+                        if isinstance(member.value, str) and member.value == fb:
+                            fb_model = member.value
                             break
                     if fb_model is None:
-                        fb_model = fb
+                        fb_model = ModelMappings.normalize_model(fb)
                         logger.info("Using custom fallback model not in enum: %s", fb)
                     fallback_models.append(fb_model)
 
@@ -422,7 +466,7 @@ def _get_agent_model_config(stage: PipelineStage, agent_name: str) -> StageModel
     if cache_key in _agent_model_cache:
         return _agent_model_cache[cache_key]
 
-    # Try to load agent-specific config from current PIPELINE_MODELS
+    # Try to load agent-specific config from models.<stage>.agents.<agent_name>
     config_path = Path(__file__).parent.parent.parent / "config.yaml"
     if config_path.exists():
         try:
@@ -440,31 +484,31 @@ def _get_agent_model_config(stage: PipelineStage, agent_name: str) -> StageModel
                 primary = agent_config.get("primary", "")
                 fallbacks = agent_config.get("fallbacks", [])
 
-                # Convert string to OpenRouterModel enum if it exists
+                # Match against ModelMappings model IDs or normalize custom string
                 primary_model = None
-                for model in OpenRouterModel:
-                    if model.value == primary:
-                        primary_model = model
+                for member in ModelMappings:
+                    if isinstance(member.value, str) and member.value == primary:
+                        primary_model = member.value
                         break
 
                 if primary_model is None:
-                    primary_model = primary
+                    primary_model = ModelMappings.normalize_model(primary)
                     logger.info(
                         "Using custom agent model not in enum: %s for %s",
                         primary,
                         agent_name,
                     )
 
-                # Convert fallbacks to OpenRouterModel enums or strings
+                # Match fallbacks against ModelMappings or normalize custom string
                 fallback_models = []
                 for fb in fallbacks:
                     fb_model = None
-                    for model in OpenRouterModel:
-                        if model.value == fb:
-                            fb_model = model
+                    for member in ModelMappings:
+                        if isinstance(member.value, str) and member.value == fb:
+                            fb_model = member.value
                             break
                     if fb_model is None:
-                        fb_model = fb
+                        fb_model = ModelMappings.normalize_model(fb)
                     fallback_models.append(fb_model)
 
                 agent_model_config = StageModelConfig(
@@ -481,19 +525,20 @@ def _get_agent_model_config(stage: PipelineStage, agent_name: str) -> StageModel
         except Exception as e:
             logger.error("Failed to load agent-specific config: %s", e)
 
-    # Fall back to stage configuration
+    # Fall back to stage configuration from ModelMappings or config
     stage_config = PIPELINE_MODELS.get(
-        stage, DEFAULT_PIPELINE_MODELS[PipelineStage.ANALYZE_ISSUE]
+        stage, ModelMappings.for_stage(stage).to_stage_config()
     )
     _agent_model_cache[cache_key] = stage_config
     return stage_config  # type: ignore[return-value]
 
 
 def llm_with_fallback(
-    *models: str | OpenRouterModel,
+    *models: str,
     context_text: str = "",
     stage_name: str = "",
     estimated_context_tokens: int = 0,
+    provider_type: str | None = None,
 ) -> LLM:
     """Try models in order, return the first that works with smart retry strategy.
 
@@ -502,24 +547,23 @@ def llm_with_fallback(
         context_text: Text that will be in the context/prompt (for token estimation)
         stage_name: Pipeline stage name (for stage-specific adjustments)
         estimated_context_tokens: Pre-estimated token count (optional, will estimate if not provided)
+        provider_type: Explicit provider type ("openrouter" or "huggingface"). If None, auto-detects.
     """
-    api_key = get_settings().openrouter_api_key
-    if not api_key:
-        raise ValueError("OPENROUTER_API_KEY environment variable is required")
-
-    os.environ["OPENROUTER_API_KEY"] = api_key
+    # Create provider based on type or auto-detection
+    provider = create_provider(provider_type)
 
     logger.info(
-        "┌─[ LLM SELECTION ]─ Trying %d model(s): %s",
+        "┌─[ LLM SELECTION ]─ Trying %d model(s) with %s provider: %s",
         len(models),
+        provider.__class__.__name__,
         ", ".join(str(m) for m in models),
     )
 
-    # Conservative default max_tokens - OpenRouter middle-out handles context overflow
+    # Conservative default max_tokens
     max_tokens = 2048
 
     logger.info(
-        "│ Using conservative max_tokens: %d (OpenRouter middle-out handles context overflow)",
+        "│ Using conservative max_tokens: %d",
         max_tokens,
     )
 
@@ -532,37 +576,11 @@ def llm_with_fallback(
         logger.info("│ Attempt %d/%d: %s", attempt, total, model_str)
 
         try:
-            # Configure retry strategy based on model type
-            retry_config = _get_retry_config_for_model(model_str)
-
-            # Configure LLM for OpenRouter with conservative defaults
-            llm_config = {
-                "model": model_str,
-                "num_retries": retry_config["num_retries"],
-                "time_between_retries": retry_config["time_between_retries"],
-                "timeout": 90,  # Reduced timeout
-                "max_tokens": max_tokens,  # Conservative default
-                "stream": False,  # Avoid empty responses from streaming with some OpenRouter models
-                # LiteLLM: ensure last message is user (fixes Anthropic assistant prefill error)
-                "additional_params": {
-                    "transforms": [
-                        "middle-out"
-                    ],  # OpenRouter automatic context compression
-                    "user_continue_message": {
-                        "role": "user",
-                        "content": "Continue.",
-                    },
-                    "ensure_alternating_roles": True,
-                },
-            }
-
-            # Add API key and base URL if available
-            if api_key:
-                llm_config["api_key"] = api_key
-                # OpenRouter requires specific base URL
-                llm_config["base_url"] = "https://openrouter.ai/api/v1"
-
-            llm = LLM(**llm_config)
+            # Create LLM using provider
+            llm = provider.create_llm(
+                model=model_str,
+                max_tokens=max_tokens,
+            )
             logger.info(
                 "└─[ LLM SUCCESS ]─ Selected: %s (attempt %d/%d, max_tokens: %d)",
                 model_str,
@@ -628,6 +646,7 @@ def get_llm_for_stage(
     agent_name: str | None = None,
     context_text: str = "",
     estimated_context_tokens: int = 0,
+    provider_type: str | None = None,
 ) -> LLM:
     """Return LLM for the given pipeline stage. Uses primary + fallbacks from PIPELINE_MODELS.
 
@@ -636,6 +655,7 @@ def get_llm_for_stage(
         agent_name: Optional agent name for agent-specific configuration
         context_text: Text that will be in the context/prompt (for token estimation)
         estimated_context_tokens: Pre-estimated token count (optional)
+        provider_type: Explicit provider type ("openrouter" or "huggingface"). If None, auto-detects.
     """
     if isinstance(stage, str):
         stage_enum = PipelineStage(stage)
@@ -649,29 +669,32 @@ def get_llm_for_stage(
     else:
         # Use stage-level configuration
         config = PIPELINE_MODELS.get(
-            stage_enum, DEFAULT_PIPELINE_MODELS[PipelineStage.ANALYZE_ISSUE]
+            stage_enum, ModelMappings.for_stage(stage_enum).to_stage_config()
         )
 
-    models: tuple[str | OpenRouterModel, ...] = (config.primary,) + config.fallbacks
+    # Get models based on provider type
+    if provider_type and provider_type.lower() == "huggingface":
+        model_mapping = ModelMappings.for_stage(stage_enum)
+        models: tuple[str, ...] = (model_mapping.huggingface_model,)
+    else:
+        # Use OpenRouter models (default)
+        models: tuple[str, ...] = (config.primary,) + config.fallbacks
+
     return llm_with_fallback(
         *models,
         context_text=context_text,
         stage_name=stage_enum.value,
         estimated_context_tokens=estimated_context_tokens,
+        provider_type=provider_type,
     )
 
 
-def get_llm() -> LLM:
-    """Return default LLM (analyze_issue model). Prefer get_llm_for_stage for stage-specific models."""
-    return get_llm_for_stage(PipelineStage.ANALYZE_ISSUE)
-
-
 __all__ = [
-    "OpenRouterModel",
     "PipelineStage",
+    "ProviderType",
     "StageModelConfig",
     "PIPELINE_MODELS",
-    "get_llm",
+    "ModelMappings",
     "get_llm_for_stage",
     "llm_with_fallback",
 ]

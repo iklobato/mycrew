@@ -48,6 +48,7 @@ class Settings(BaseSettings):
 
     # API keys (required for pipeline, optional for serper)
     openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
+    huggingface_api_key: str = Field(default="", alias="HUGGINGFACE_API_KEY")
     github_token: str = Field(default="", alias="GITHUB_TOKEN")
     serper_api_key: str = Field(default="", alias="SERPER_API_KEY")
 
@@ -60,7 +61,7 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0", alias="HOST")
     port: int = Field(default=8000, alias="PORT")
 
-    # Valkey/Redis (optional; when set, offloads large pipeline state)
+    # Redis URL (optional)
     redis_url: str = Field(default="", alias="REDIS_URL")
 
     # Logging
@@ -68,6 +69,9 @@ class Settings(BaseSettings):
         default="INFO", alias="CODE_PIPELINE_LOG_LEVEL"
     )
     crewai_telemetry: bool = Field(default=False, alias="CREWAI_TRACING_ENABLED")
+
+    # Provider configuration
+    provider_type: str | None = Field(default=None, alias="PROVIDER_TYPE")
 
     def apply_crewai_telemetry(self) -> None:
         """Apply crewai_telemetry to os.environ for CrewAI library."""
@@ -96,6 +100,7 @@ def init_settings_from_config(config_data: dict[str, Any]) -> None:
         api_keys = config_data["api_keys"]
         for config_key, attr_name in [
             ("openrouter_api_key", "openrouter_api_key"),
+            ("huggingface_api_key", "huggingface_api_key"),
             ("github_token", "github_token"),
             ("serper_api_key", "serper_api_key"),
         ]:
@@ -109,6 +114,12 @@ def init_settings_from_config(config_data: dict[str, Any]) -> None:
                 val = os.environ.get(var_name, "")
             if val:
                 object.__setattr__(settings, attr_name, str(val).strip())
+
+    # Provider type
+    if "provider_type" in config_data:
+        val = config_data["provider_type"]
+        if val:
+            object.__setattr__(settings, "provider_type", str(val).strip())
 
     # Logging
     if "logging" in config_data:

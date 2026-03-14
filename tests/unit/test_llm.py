@@ -6,12 +6,12 @@ import pytest
 
 from code_pipeline.llm import (
     DEFAULT_PIPELINE_MODELS,
-    OpenRouterModel,
+    ModelMappings,
     PipelineStage,
+    ProviderType,
     _get_retry_config_for_model,
     _load_model_config_from_file,
     get_llm_for_stage,
-    get_llm,
     update_model_config,
 )
 
@@ -29,11 +29,12 @@ def test_pipeline_stage_invalid_raises():
         PipelineStage("invalid_stage")
 
 
-def test_openrouter_model_enum_values():
-    """OpenRouterModel values are non-empty strings."""
-    for model in OpenRouterModel:
-        assert model.value
-        assert isinstance(model.value, str)
+def test_model_mappings_model_ids_are_strings():
+    """ModelMappings model ID members have non-empty string values."""
+    for member in ModelMappings:
+        if isinstance(member.value, str):
+            assert member.value
+            assert member.value.startswith("openrouter/")
 
 
 def test_stage_model_config_primary_and_fallbacks():
@@ -106,8 +107,8 @@ models:
     assert PipelineStage.ANALYZE_ISSUE in result
 
 
-@patch("code_pipeline.llm.LLM")
-@patch("code_pipeline.llm.get_settings")
+@patch("crewai.LLM")
+@patch("code_pipeline.providers.get_settings")
 def test_update_model_config_with_models_section(mock_settings, mock_llm_class):
     """update_model_config with models section updates PIPELINE_MODELS."""
     mock_settings.return_value.openrouter_api_key = "key"
@@ -128,8 +129,8 @@ def test_update_model_config_with_models_section(mock_settings, mock_llm_class):
     mock_llm_class.assert_called_once()
 
 
-@patch("code_pipeline.llm.LLM")
-@patch("code_pipeline.llm.get_settings")
+@patch("crewai.LLM")
+@patch("code_pipeline.providers.get_settings")
 def test_update_model_config_no_models_keeps_existing(mock_settings, mock_llm_class):
     """update_model_config without models section does nothing."""
     mock_settings.return_value.openrouter_api_key = "key"
@@ -141,8 +142,8 @@ def test_update_model_config_no_models_keeps_existing(mock_settings, mock_llm_cl
     mock_llm_class.assert_called_once()
 
 
-@patch("code_pipeline.llm.LLM")
-@patch("code_pipeline.llm.get_settings")
+@patch("crewai.LLM")
+@patch("code_pipeline.providers.get_settings")
 def test_get_llm_for_stage_returns_llm(mock_settings, mock_llm_class):
     """get_llm_for_stage returns LLM instance when API key set."""
     mock_settings.return_value.openrouter_api_key = "test-key"
@@ -154,8 +155,8 @@ def test_get_llm_for_stage_returns_llm(mock_settings, mock_llm_class):
     assert result is mock_llm_class.return_value
 
 
-@patch("code_pipeline.llm.LLM")
-@patch("code_pipeline.llm.get_settings")
+@patch("crewai.LLM")
+@patch("code_pipeline.providers.get_settings")
 def test_get_llm_for_stage_with_string(mock_settings, mock_llm_class):
     """get_llm_for_stage accepts string stage name."""
     mock_settings.return_value.openrouter_api_key = "test-key"
@@ -167,24 +168,20 @@ def test_get_llm_for_stage_with_string(mock_settings, mock_llm_class):
     assert result is mock_llm_class.return_value
 
 
-@patch("code_pipeline.llm.get_llm_for_stage")
-def test_get_llm_calls_analyze_issue(mock_get):
-    """get_llm calls get_llm_for_stage with ANALYZE_ISSUE."""
-    mock_llm = MagicMock()
-    mock_get.return_value = mock_llm
-
-    result = get_llm()
-
-    mock_get.assert_called_once_with(PipelineStage.ANALYZE_ISSUE)
-    assert result is mock_llm
+def test_provider_type_default_stage():
+    """ProviderType.default_stage returns ANALYZE_ISSUE."""
+    assert ProviderType.default_stage() == PipelineStage.ANALYZE_ISSUE
+    assert ProviderType.default_stage("openrouter") == PipelineStage.ANALYZE_ISSUE
+    assert ProviderType.default_stage("huggingface") == PipelineStage.ANALYZE_ISSUE
 
 
-@patch("code_pipeline.llm.get_settings")
+@patch("code_pipeline.providers.get_settings")
 def test_llm_with_fallback_no_api_key_raises(mock_settings):
-    """llm_with_fallback raises when OPENROUTER_API_KEY empty."""
+    """llm_with_fallback raises when no provider API key found."""
     from code_pipeline.llm import llm_with_fallback
 
     mock_settings.return_value.openrouter_api_key = ""
+    mock_settings.return_value.huggingface_api_key = ""
 
-    with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
+    with pytest.raises(ValueError, match="No provider API key found"):
         llm_with_fallback("openrouter/deepseek/deepseek-chat")

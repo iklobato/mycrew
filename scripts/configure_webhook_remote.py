@@ -31,10 +31,14 @@ def configure_github(repo: str, token: str, secret: str) -> bool:
     """Register webhook at GitHub. Returns True on success."""
     from code_pipeline.register_webhook import register_webhook
 
-    return register_webhook(repo, token=token, secret=secret, webhook_url=WEBHOOK_URL) == 0
+    return (
+        register_webhook(repo, token=token, secret=secret, webhook_url=WEBHOOK_URL) == 0
+    )
 
 
-def _env_obj(key: str, value: str, scope: str = "RUN_TIME", secret: bool = True) -> dict:
+def _env_obj(
+    key: str, value: str, scope: str = "RUN_TIME", secret: bool = True
+) -> dict:
     return {
         "key": key,
         "value": value,
@@ -106,7 +110,9 @@ def configure_do(
             json={"spec": spec},
         )
         if put_resp.status_code not in (200, 201):
-            logger.error("DO app update failed: %s %s", put_resp.status_code, put_resp.text[:300])
+            logger.error(
+                "DO app update failed: %s %s", put_resp.status_code, put_resp.text[:300]
+            )
             return False
         logger.info("DigitalOcean App Platform updated successfully")
     return True
@@ -116,9 +122,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Configure GitHub webhook and DO App Platform for mycrew"
     )
-    parser.add_argument("repo", nargs="?", default="iklobato/mycrew", help="GitHub repo owner/repo")
-    parser.add_argument("--github-only", action="store_true", help="Only configure GitHub")
-    parser.add_argument("--do-only", action="store_true", help="Only configure DigitalOcean")
+    parser.add_argument(
+        "repo", nargs="?", default="iklobato/mycrew", help="GitHub repo owner/repo"
+    )
+    parser.add_argument(
+        "--github-only", action="store_true", help="Only configure GitHub"
+    )
+    parser.add_argument(
+        "--do-only", action="store_true", help="Only configure DigitalOcean"
+    )
     args = parser.parse_args()
 
     try:
@@ -127,7 +139,9 @@ def main() -> int:
         stg = get_settings()
         gh_token = os.environ.get("GITHUB_TOKEN", "").strip() or stg.github_token or ""
         gh_secret = (
-            os.environ.get("GITHUB_WEBHOOK_SECRET", "").strip() or stg.github_webhook_secret or ""
+            os.environ.get("GITHUB_WEBHOOK_SECRET", "").strip()
+            or stg.github_webhook_secret
+            or ""
         )
     except Exception:
         gh_token = os.environ.get("GITHUB_TOKEN", "").strip()

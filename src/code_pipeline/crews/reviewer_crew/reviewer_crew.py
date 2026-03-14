@@ -1,6 +1,6 @@
 """Reviewer crew: reviews implementation against plan and task."""
 
-from typing import List, Literal
+from typing import List, Literal, ClassVar
 
 from crewai import Agent, LLM, Task
 from crewai.project import CrewBase, agent, llm, task
@@ -26,6 +26,30 @@ class ReviewVerdict(BaseModel):
 class ReviewerCrew(PipelineCrewBase):
     """Reviewer crew: reviews implementation and returns APPROVED or ISSUES:..."""
 
+    stage: ClassVar[str] = "review"
+
+    @property
+    def required_agents(self) -> List[str]:
+        return [
+            "reviewer",
+            "security_reviewer",
+            "performance_reviewer",
+            "accessibility_checker",
+            "backward_compat_checker",
+            "convention_checker",
+        ]
+
+    @property
+    def required_tasks(self) -> List[str]:
+        return [
+            "review_task",
+            "security_review_task",
+            "performance_review_task",
+            "accessibility_review_task",
+            "backward_compat_task",
+            "convention_check_task",
+        ]
+
     @llm
     def review_llm(self) -> LLM:
         return get_llm_for_stage("review")
@@ -36,71 +60,48 @@ class ReviewerCrew(PipelineCrewBase):
 
     @agent
     def reviewer(self) -> Agent:
-        return Agent(config=self.agents_config["reviewer"])  # type: ignore[index]
+        return self._build_agent("reviewer")
 
     @agent
     def security_reviewer(self) -> Agent:
-        return Agent(
-            config=self.agents_config["security_reviewer"],  # type: ignore[index]
-        )
+        return self._build_agent("security_reviewer")
 
     @agent
     def performance_reviewer(self) -> Agent:
-        return Agent(
-            config=self.agents_config["performance_reviewer"],  # type: ignore[index]
-        )
+        return self._build_agent("performance_reviewer")
 
     @agent
     def accessibility_checker(self) -> Agent:
-        return Agent(
-            config=self.agents_config["accessibility_checker"],  # type: ignore[index]
-        )
+        return self._build_agent("accessibility_checker")
 
     @agent
     def backward_compat_checker(self) -> Agent:
-        return Agent(
-            config=self.agents_config["backward_compat_checker"],  # type: ignore[index]
-        )
+        return self._build_agent("backward_compat_checker")
 
     @agent
     def convention_checker(self) -> Agent:
-        return Agent(
-            config=self.agents_config["convention_checker"],  # type: ignore[index]
-        )
+        return self._build_agent("convention_checker")
 
     @task
     def review_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["review_task"],  # type: ignore[index]
-            output_pydantic=ReviewVerdict,
-        )
+        return self._build_task("review_task")
 
     @task
     def security_review_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["security_review_task"],  # type: ignore[index]
-        )
+        return self._build_task("security_review_task")
 
     @task
     def performance_review_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["performance_review_task"],  # type: ignore[index]
-        )
+        return self._build_task("performance_review_task")
 
     @task
     def accessibility_review_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["accessibility_review_task"],  # type: ignore[index]
-        )
+        return self._build_task("accessibility_review_task")
 
     @task
     def backward_compat_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["backward_compat_task"],  # type: ignore[index]
-        )
+        return self._build_task("backward_compat_task")
 
     @task
     def convention_check_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["convention_check_task"],  # type: ignore[index]
-        )
+        return self._build_task("convention_check_task")

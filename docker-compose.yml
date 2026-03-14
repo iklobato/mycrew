@@ -1,13 +1,32 @@
 services:
-  run:
-    image: iklobato/mycrew
-    build: .
-    stdin_open: true
-    tty: true
-    working_dir: /workspace
+  webhook:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mycrew/webhook:latest
+    container_name: mycrew-webhook
+    ports:
+      - "8000:8000"
     volumes:
-      - .:/workspace
+      - .:/app:ro
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
-    command: ["-c", "config.yaml"]
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET}
+      - DEFAULT_DRY_RUN=${DEFAULT_DRY_RUN:-false}
+      - DEFAULT_BRANCH=${DEFAULT_BRANCH:-main}
+      - PORT=8000
+      - HOST=0.0.0.0
+    command: ["uv", "run", "webhook"]
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mycrew/webhook:test
+    command: ["pytest", "-x"]
+    volumes:
+      - .:/app:ro
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}

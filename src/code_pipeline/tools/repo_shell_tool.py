@@ -1,6 +1,5 @@
 """RepoShellTool: run shell commands in a repo with safety checks."""
 
-import hashlib
 import logging
 import os
 import re
@@ -15,13 +14,8 @@ logger = logging.getLogger(__name__)
 
 
 def _get_valkey_cache_safe():
-    """Return ValkeyCache if REDIS_URL set, else None. Avoids import errors."""
-    try:
-        from code_pipeline.valkey_cache import get_valkey_cache
-
-        return get_valkey_cache()
-    except Exception:
-        return None
+    """Return None - caching removed."""
+    return None
 
 
 # Dangerous patterns to block
@@ -81,7 +75,7 @@ class RepoShellTool(BaseTool):
 
     repo_path: str = ""
 
-    # No in-memory cache - all caching delegated to Valkey when REDIS_URL is set
+    # No caching
     # This keeps app memory minimal by avoiding local caching
 
     def _run(self, command: str) -> str:
@@ -100,18 +94,8 @@ class RepoShellTool(BaseTool):
         if not command:
             return "Error: empty command."
 
-        # Check Valkey cache first (cache key includes repo_path for safety)
-        # No in-memory caching to keep app memory minimal
-        cache_key = f"{repo_path}:{command}"
-        valkey_cache = _get_valkey_cache_safe()
-        if valkey_cache is not None:
-            valkey_key = (
-                f"reposhell:{hashlib.sha256(cache_key.encode()).hexdigest()[:32]}"
-            )
-            cached = valkey_cache.retrieve(valkey_key)
-            if cached is not None:
-                logger.info("│ Using Valkey cached output")
-                return cached
+        # No caching
+        # cache_key = f"{repo_path}:{command}"
 
         # Block dangerous patterns
         cmd_lower = command.lower()
@@ -319,16 +303,6 @@ class RepoShellTool(BaseTool):
                 logger.info("│ Output preview: %s", preview)
 
             logger.info("└─[ RepoShellTool COMPLETE ]─")
-
-            # Cache the result in Valkey (only cache successful commands with return code 0)
-            # No in-memory caching to keep app memory minimal
-            if returncode == 0 and valkey_cache is not None:
-                cache_key = f"{repo_path}:{command}"
-                valkey_key = (
-                    f"reposhell:{hashlib.sha256(cache_key.encode()).hexdigest()[:32]}"
-                )
-                if valkey_cache.store(valkey_key, output, ttl_seconds=300):
-                    logger.debug("│ Cached output in Valkey")
 
             return output
 

@@ -1,3 +1,5 @@
+from typing import ClassVar, List
+
 from crewai import Agent, LLM, Task
 from crewai.project import CrewBase, agent, llm, task
 
@@ -9,64 +11,68 @@ from code_pipeline.llm import get_llm_for_stage
 class ExplorerCrew(PipelineCrewBase):
     """Explorer crew: repo summary, dependency map, and test layout."""
 
+    stage: ClassVar[str] = "explore"
+
+    @property
+    def required_agents(self) -> List[str]:
+        return [
+            "repo_explorer",
+            "dependency_analyzer",
+            "test_layout_scout",
+            "convention_extractor",
+            "api_boundary_scout",
+        ]
+
+    @property
+    def required_tasks(self) -> List[str]:
+        return [
+            "explore_task",
+            "dependency_analyze_task",
+            "test_layout_task",
+            "convention_extract_task",
+            "api_boundary_scout_task",
+        ]
+
     @llm
     def explore_llm(self) -> LLM:
         return get_llm_for_stage("explore")
 
     @agent
     def repo_explorer(self) -> Agent:
-        return Agent(config=self.agents_config["repo_explorer"])  # type: ignore[index]
+        return self._build_agent("repo_explorer")
 
     @agent
     def dependency_analyzer(self) -> Agent:
-        return Agent(
-            config=self.agents_config["dependency_analyzer"],  # type: ignore[index]
-        )
+        return self._build_agent("dependency_analyzer")
 
     @agent
     def test_layout_scout(self) -> Agent:
-        return Agent(
-            config=self.agents_config["test_layout_scout"],  # type: ignore[index]
-        )
+        return self._build_agent("test_layout_scout")
 
     @agent
     def convention_extractor(self) -> Agent:
-        return Agent(
-            config=self.agents_config["convention_extractor"],  # type: ignore[index]
-        )
+        return self._build_agent("convention_extractor")
 
     @agent
     def api_boundary_scout(self) -> Agent:
-        return Agent(
-            config=self.agents_config["api_boundary_scout"],  # type: ignore[index]
-        )
+        return self._build_agent("api_boundary_scout")
 
     @task
     def explore_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["explore_task"],  # type: ignore[index]
-        )
+        return self._build_task("explore_task")
 
     @task
     def dependency_analyze_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["dependency_analyze_task"],  # type: ignore[index]
-        )
+        return self._build_task("dependency_analyze_task")
 
     @task
     def test_layout_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["test_layout_task"],  # type: ignore[index]
-        )
+        return self._build_task("test_layout_task")
 
     @task
     def convention_extract_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["convention_extract_task"],  # type: ignore[index]
-        )
+        return self._build_task("convention_extract_task")
 
     @task
     def api_boundary_scout_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["api_boundary_scout_task"],  # type: ignore[index]
-        )
+        return self._build_task("api_boundary_scout_task")

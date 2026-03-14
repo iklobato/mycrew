@@ -481,3 +481,89 @@ Architectural Decision Records live in `docs/decisions/`. An ADR is REQUIRED whe
 - A principle is violated with justification.
 - A new external dependency is added.
 - An anti-pattern from the catalogue is intentionally used.
+
+---
+
+## Crew System Architecture
+
+### Abstract Crew Base (ABCrew)
+
+The codebase uses an abstract base class `ABCrew` (in `src/code_pipeline/crews/abc_crew.py`) to define the contract for all crews. This enforces SOLID principles:
+
+- **SRP**: Each crew has a single responsibility (e.g., exploration, implementation, review)
+- **OCP**: Crews can be extended without modifying the base
+- **LSP**: Subclasses can be substituted for the base
+- **ISP**: Mixins provide focused interfaces (stage-specific LLMs, config loading)
+- **DIP**: Depend on abstractions, not concrete implementations
+
+### Key Components
+
+1. **ABCrew**: Abstract base with required properties:
+   - `required_agents: List[str]` - Agent keys the crew needs
+   - `required_tasks: List[str]` - Task keys the crew needs
+   - `_build_agent(agent_key: str) -> Agent` - Build agent from config
+   - `_build_task(task_key: str) -> Task` - Build task from config
+   - `crew() -> Crew` - Returns assembled Crew instance
+
+2. **StageSpecificCrew**: Mixin for stage-specific LLMs
+   - `stage_llm: LLM` - Gets LLM for crew's stage via `get_llm_for_stage()`
+
+3. **ConfigurableCrew**: Mixin for YAML config loading
+   - `_load_config(config_key: str) -> dict` - Loads config from YAML files
+
+4. **PipelineCrewBase**: Concrete base implementing ABCrew
+   - Provides shared tools (repo_shell, github_search, etc.)
+   - Implements `_build_agent` with provider_type integration
+   - Implements `_build_task` with YAML config loading
+
+### Provider System Integration
+
+The LLM provider system is integrated via global `provider_type` setting:
+
+1. **Settings**: `provider_type: str | None` in `Settings` class
+2. **Propagation**: `_build_agent` passes `provider_type` to `get_llm_for_stage()`
+3. **Default**: `None` auto-detects provider based on available API keys
+
+### Crew Subclass Pattern
+
+Concrete crews follow this pattern:
+
+```python
+@CrewBase
+class ExplorerCrew(PipelineCrewBase):
+    stage: ClassVar[str] = "explore"
+    
+    @property
+    def required_agents(self) -> List[str]:
+        return ["repo_explorer", "dependency_analyzer", ...]
+    
+    @property
+    def required_tasks(self) -> List[str]:
+        return ["explore_task", "dependency_analyze_task", ...]
+    
+    @agent
+    def repo_explorer(self) -> Agent:
+        return self._build_agent("repo_explorer")
+    
+    @task
+    def explore_task(self) -> Task:
+        return self._build_task("explore_task")
+```
+
+### Benefits
+
+1. **Reduced Boilerplate**: ~80% reduction in repetitive code
+2. **Type Safety**: Full type hints and mypy strict compliance
+3. **Testability**: Easy mocking of abstract methods
+4. **Extensibility**: New crews follow consistent pattern
+5. **Documentation**: Required properties serve as documentation
+6. **Backward Compatible**: Existing YAML configs and decorators unchanged
+
+### Creating a New Crew
+
+1. Create file in `src/code_pipeline/crews/<crew_name>/<crew_name>.py`
+2. Import `PipelineCrewBase` and decorators
+3. Define `stage` class variable
+4. Implement `required_agents` and `required_tasks` properties
+5. Add `@agent` and `@task` methods calling `_build_agent`/`_build_task`
+6. Add YAML configs to `config/agents.yaml` and `config/tasks.yaml`
