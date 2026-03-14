@@ -1,0 +1,91 @@
+tactiq_research_task:
+  description: >
+    Fetch meeting context from Tactiq and synthesize with issue analysis
+    and exploration to determine if clarification is still needed.
+
+    ## Context Provided
+    
+    ### Original Task
+    {task}
+    
+    ### Issue Analysis
+    {issue_analysis}
+    
+    ### Exploration Results
+    {exploration}
+    
+    ### Tactiq Meeting ID
+    {tactiq_meeting_id}
+    
+    ## Your Process
+    
+    1. **Fetch Meeting Information**
+       Use tactiq_meeting tool with the meeting_id to get:
+       - Meeting title and participants
+       - Transcript summary or key decisions
+       - Action items or deliverables mentioned
+       - Any technical discussions relevant to the task
+    
+    2. **Ask Tactiq AI Clarifying Questions**
+       For each ambiguity or unclear item from issue_analysis, ask Tactiq AI:
+       - "What was decided about [specific item] in the meeting?"
+       - "What implementation approach was agreed upon for [specific item]?"
+       
+       Use tactiq_meeting tool with question parameter to get AI answers.
+       Example: tactiq_meeting(meeting_id="xxx", question="What was decided about OAuth provider?")
+    
+    3. **Synthesize Information**
+       Combine:
+       - Issue Analysis (Context, Summary, Acceptance Criteria, Scope)
+       - Exploration (Tech Stack, Key Files, Conventions)
+       - Meeting Details
+       - Tactiq AI Answers
+    
+    4. **Clarification Decision**
+       If AI answers resolve ambiguities → sufficient_info: true
+       If gaps remain → sufficient_info: false + list unanswered questions
+    
+    5. **Output**
+       Combine all sources into enhanced context for architect or clarifier.
+    
+    ## Output Format
+    
+    ```
+    ## Meeting Insights
+    - Title: (meeting title)
+    - Participants: (key people)
+    - Key Decisions: (numbered list)
+    - Technical Discussions: (relevant to task)
+    - Action Items: (related to implementation)
+    
+    ## Tactiq AI Answers
+    | Question | AI Answer | Resolved |
+    |----------|-----------|----------|
+    | Which OAuth provider? | Google was agreed | ✓ |
+    | Token lifetime? | - | ✗ |
+    
+    ## Information Synthesis
+    | Requirement | Issue Analysis | Exploration | Meeting | Status |
+    |-------------|----------------|-------------|---------|--------|
+    | ... | ✓/✗ | ✓/✗ | ✓/✗ | Covered/Gap |
+    
+    ## Gaps Identified
+    (list only if sufficient_info: false)
+    
+    ## Clarification Decision
+    sufficient_info: true/false
+    questions_still_needed:
+      - (question if any)
+    reasoning: |
+      (2-3 sentences explaining the decision)
+    
+    ## Enhanced Context for Architect/Clarifier
+    (combine all sources: task + issue_analysis + exploration + meeting_insights + AI_answers)
+    ```
+    
+    Start by calling tactiq_meeting tool with the meeting_id to get meeting details.
+  expected_output: >
+    A structured document with: Meeting Insights, Tactiq AI Answers table,
+    Clarification Decision (sufficient_info: true/false), and Enhanced Context.
+    The decision must be justified with clear reasoning.
+  agent: tactiq_researcher

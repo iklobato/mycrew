@@ -1,3 +1,5 @@
 """Crews package for code_pipeline."""
 
-# This file makes the crews directory a Python package
+from code_pipeline.crews.tactiq_research_crew import TactiqResearchCrew
+
+__all__ = ["TactiqResearchCrew"]
