@@ -9,7 +9,6 @@ from code_pipeline.llm import (
     ModelMappings,
     PipelineStage,
     ProviderType,
-    _get_retry_config_for_model,
     _load_model_config_from_file,
     get_llm_for_stage,
     update_model_config,
@@ -42,32 +41,6 @@ def test_stage_model_config_primary_and_fallbacks():
     cfg = DEFAULT_PIPELINE_MODELS[PipelineStage.ANALYZE_ISSUE]
     assert cfg.primary is not None
     assert isinstance(cfg.fallbacks, tuple)
-
-
-def test_get_retry_config_free_model():
-    """Free model gets fewer retries and longer wait."""
-    result = _get_retry_config_for_model("openrouter/some/free-model")
-    assert result["num_retries"] == 3
-    assert result["time_between_retries"] == 30
-
-
-def test_get_retry_config_paid_models():
-    """Paid models get more retries."""
-    for model_str in [
-        "openrouter/openai/gpt-4",
-        "anthropic/claude-3",
-        "google/gemini-pro",
-    ]:
-        result = _get_retry_config_for_model(model_str)
-        assert result["num_retries"] == 5
-        assert result["time_between_retries"] == 10
-
-
-def test_get_retry_config_default():
-    """Default model gets standard retry config."""
-    result = _get_retry_config_for_model("openrouter/deepseek/deepseek-chat")
-    assert result["num_retries"] == 4
-    assert result["time_between_retries"] == 15
 
 
 def test_load_model_config_missing_file_returns_default():

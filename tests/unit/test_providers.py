@@ -1,6 +1,5 @@
 """Unit tests for code_pipeline.providers."""
 
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -90,8 +89,6 @@ class TestOpenRouterProvider:
         """OpenRouterProvider requires OPENROUTER_API_KEY."""
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
         monkeypatch.setenv("OPENROUTER_API_KEY", "")
-
-        from code_pipeline.providers import _settings
 
         with patch("code_pipeline.providers.get_settings") as mock_get_settings:
             from code_pipeline.settings import Settings
