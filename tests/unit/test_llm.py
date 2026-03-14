@@ -11,7 +11,6 @@ from mycrew.llm import (
     ProviderType,
     _load_model_config_from_file,
     get_llm_for_stage,
-    update_model_config,
 )
 
 
@@ -78,41 +77,6 @@ models:
     result = _load_model_config_from_file(str(config))
     # invalid_stage_xyz is skipped, so we get defaults
     assert PipelineStage.ANALYZE_ISSUE in result
-
-
-@patch("crewai.LLM")
-@patch("mycrew.providers.get_settings")
-def test_update_model_config_with_models_section(mock_settings, mock_llm_class):
-    """update_model_config with models section updates PIPELINE_MODELS."""
-    mock_settings.return_value.openrouter_api_key = "key"
-    mock_llm_class.return_value = MagicMock()
-
-    update_model_config(
-        {
-            "models": {
-                "analyze_issue": {
-                    "primary": "openrouter/deepseek/deepseek-chat",
-                    "fallbacks": [],
-                },
-            },
-        }
-    )
-    result = get_llm_for_stage(PipelineStage.ANALYZE_ISSUE)
-    assert result is mock_llm_class.return_value
-    mock_llm_class.assert_called_once()
-
-
-@patch("crewai.LLM")
-@patch("mycrew.providers.get_settings")
-def test_update_model_config_no_models_keeps_existing(mock_settings, mock_llm_class):
-    """update_model_config without models section does nothing."""
-    mock_settings.return_value.openrouter_api_key = "key"
-    mock_llm_class.return_value = MagicMock()
-
-    update_model_config({"pipeline": {"branch": "main"}})
-    result = get_llm_for_stage(PipelineStage.ANALYZE_ISSUE)
-    assert result is mock_llm_class.return_value
-    mock_llm_class.assert_called_once()
 
 
 @patch("crewai.LLM")

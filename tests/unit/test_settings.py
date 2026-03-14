@@ -8,7 +8,6 @@ from mycrew.settings import (
     PipelineContext,
     get_pipeline_context,
     get_settings,
-    init_settings_from_config,
     set_pipeline_context,
 )
 
@@ -63,31 +62,3 @@ def test_get_pipeline_context_none_returns_default():
     assert ctx.repo_path == os.path.abspath(os.getcwd())
     assert ctx.github_repo == ""
     assert ctx.issue_url == ""
-
-
-def test_init_settings_from_config_api_keys(monkeypatch):
-    """init_settings_from_config updates api_keys from config."""
-    monkeypatch.setenv("TEST_GH_TOKEN", "secret123")
-    init_settings_from_config(
-        {
-            "api_keys": {
-                "github_token": "${TEST_GH_TOKEN}",
-            },
-        }
-    )
-    # Settings singleton is updated
-    stg = get_settings()
-    assert stg.github_token == "secret123"
-
-
-def test_init_settings_from_config_logging():
-    """init_settings_from_config updates logging level."""
-    init_settings_from_config(
-        {
-            "logging": {
-                "level": "DEBUG",
-            },
-        }
-    )
-    stg = get_settings()
-    assert stg.code_pipeline_log_level == "DEBUG"

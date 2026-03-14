@@ -1,6 +1,6 @@
 """PipelineCrewBase: shared tools, LLMs, config, and crew() for all crews."""
 
-from typing import List, ClassVar
+from typing import Any, List, ClassVar
 
 from crewai import Agent, Crew, LLM, Process, Task
 from crewai.project import crew, llm, tool
@@ -67,6 +67,25 @@ class PipelineCrewBase(ABCrew):
             expected_output=config.get("expected_output", ""),
             agent=None,  # Will be set when task is added to crew
         )
+
+    def build_inputs(
+        self,
+        state: Any,
+        custom_inputs: dict | None = None,
+    ) -> dict[str, Any]:
+        """Build standard inputs for this crew from pipeline state.
+
+        Args:
+            state: PipelineState containing all pipeline data
+            custom_inputs: Additional inputs specific to this crew (optional)
+
+        Returns:
+            Dictionary of inputs to pass to crew.kickoff()
+        """
+        from mycrew.crews.input_builder import PipelineInputBuilder
+
+        builder = PipelineInputBuilder()
+        return builder.build(state, custom_inputs)
 
     @llm
     def auxiliary_llm(self) -> LLM:

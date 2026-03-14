@@ -42,7 +42,10 @@ logger = logging.getLogger("mycrew.main")
 class PipelineState(BaseModel):
     """Minimal pipeline state."""
 
-    issue_url: str
+    id: str = ""  # Required for CrewAI Flow persistence
+    issue_url: str = (
+        ""  # Required for CLI, but needs default for CrewAI Flow initialization
+    )
     branch: str = ""
     max_retries: int = 3
     dry_run: bool = False
@@ -51,7 +54,7 @@ class PipelineState(BaseModel):
     repo_path_cloned: bool = False  # True if repo was cloned (for cleanup)
 
     # Core state fields
-    repo_root: Path | None = None
+    repo_root: str | None = None  # Use string instead of Path for JSON serialization
     issue_data: dict | None = None
     exploration_result: dict | None = None
     architecture_result: dict | None = None
@@ -84,15 +87,38 @@ class CodePipelineFlow(Flow[PipelineState]):
         return getattr(self.state, field_name, default)
 
     def _run_crew(self, crew_class, crew_name: str, input_data: dict | None = None):
-        """Run a crew with simplified error handling."""
+        """Run a crew with simplified error handling.
+
+        Uses the crew's build_inputs method to construct standard inputs from
+        pipeline state, then merges with custom input_data.
+        """
         if not crew_class:
             logger.info(f"Skipping {crew_name}: crew_class is None")
             return None
 
+        # Set the pipeline context before running the crew so tools use correct repo_path
+        from mycrew.settings import set_pipeline_context, PipelineContext
+
+        github_repo = ""
+        if self.state.issue_data and isinstance(self.state.issue_data, dict):
+            github_repo = self.state.issue_data.get("github_repo", "")
+
+        ctx = PipelineContext(
+            repo_path=self.state.repo_root or self.state.repo_path,
+            github_repo=github_repo,
+            issue_url=self.state.issue_url,
+            programmatic=self.state.programmatic,
+        )
+        set_pipeline_context(ctx)
+
         logger.info(f"Starting {crew_name} crew")
         try:
-            crew = crew_class()
-            result = crew.kickoff(inputs=input_data)
+            crew_instance = crew_class()
+            # Use the crew's build_inputs method to get standard inputs from state
+            final_inputs = crew_instance.build_inputs(self.state, input_data)
+            # CrewBase decorated classes have a crew() method that returns the Crew
+            crew = crew_instance.crew()
+            result = crew.kickoff(inputs=final_inputs)
             logger.info(f"Completed {crew_name} crew")
             return result.raw
         except Exception as e:
@@ -152,11 +178,11 @@ class CodePipelineFlow(Flow[PipelineState]):
             logger.error(f"repo_path does not exist: {rp}")
             return self.end
 
-        self.state.repo_root = Path(os.path.abspath(rp))
+        self.state.repo_root = os.path.abspath(rp)
         logger.info(f"Using provided repo path: {self.state.repo_root}")
 
         if not url:
-            github_repo = detect_github_repo(str(self.state.repo_root))
+            github_repo = detect_github_repo(self.state.repo_root)
             if not github_repo:
                 logger.error("Could not detect github_repo from local repo")
                 return self.end
@@ -245,7 +271,7 @@ class CodePipelineFlow(Flow[PipelineState]):
 
         try:
             cloned_path = clone_repo_for_issue(github_repo, parent_dir, branch, token)
-            self.state.repo_root = Path(cloned_path)
+            self.state.repo_root = cloned_path
             self.state.repo_path_cloned = True
             logger.info(f"Cloned repo to: {self.state.repo_root}")
         except Exception as e:
@@ -528,6 +554,7 @@ def kickoff(
 ):
     """Kickoff the pipeline."""
     state = PipelineState(
+        id=str(uuid.uuid4()),
         issue_url=issue_url,
         branch=branch,
         max_retries=max_retries,
@@ -537,6 +564,8 @@ def kickoff(
         repo_path=repo_path,
     )
     flow = CodePipelineFlow(state=state)
+    # Force set state after initialization to ensure our values are used
+    flow._state = state
     flow.kickoff()
 
 

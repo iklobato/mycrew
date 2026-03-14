@@ -216,16 +216,6 @@ def get_scrape_website_tool() -> BaseTool:
     return ScrapeWebsiteTool()
 
 
-@log_exceptions("CodeDocsSearchTool")
-def get_code_docs_search_tool(docs_url: str | None = None) -> BaseTool | None:
-    """Return CodeDocsSearchTool when docs_url is set; otherwise None to avoid loading heavy deps."""
-    if not docs_url or not docs_url.strip():
-        return None
-    from crewai_tools import CodeDocsSearchTool
-
-    return CodeDocsSearchTool(docs_url=docs_url.strip())
-
-
 def get_code_interpreter_tool() -> BaseTool | None:
     """Return CodeInterpreterTool if Docker is available."""
     try:

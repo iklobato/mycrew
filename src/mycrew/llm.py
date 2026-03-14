@@ -397,68 +397,6 @@ PIPELINE_MODELS = _load_model_config_from_file()
 _agent_model_cache: dict[str, StageModelConfig] = {}
 
 
-def update_model_config(config_data: dict[str, Any] | None = None) -> None:
-    """Update the global model configuration with new data."""
-    global PIPELINE_MODELS, _agent_model_cache
-
-    if config_data and "models" in config_data:
-        # Parse config data
-        pipeline_models = DEFAULT_PIPELINE_MODELS.copy()
-
-        for stage_name, stage_config in config_data["models"].items():
-            try:
-                stage_enum = PipelineStage(stage_name)
-
-                # Parse primary model
-                primary = stage_config.get("primary")
-                if not primary:
-                    logger.warning(
-                        "No primary model specified for stage %s", stage_name
-                    )
-                    continue
-
-                primary_model = None
-                for member in ModelMappings:
-                    if isinstance(member.value, str) and member.value == primary:
-                        primary_model = member.value
-                        break
-                if primary_model is None:
-                    primary_model = ModelMappings.normalize_model(primary)
-                    logger.info("Using custom primary model not in enum: %s", primary)
-
-                # Parse fallback models
-                fallback_models = []
-                for fb in stage_config.get("fallbacks", []):
-                    fb_model = None
-                    for member in ModelMappings:
-                        if isinstance(member.value, str) and member.value == fb:
-                            fb_model = member.value
-                            break
-                    if fb_model is None:
-                        fb_model = ModelMappings.normalize_model(fb)
-                        logger.info("Using custom fallback model not in enum: %s", fb)
-                    fallback_models.append(fb_model)
-
-                pipeline_models[stage_enum] = StageModelConfig(
-                    primary=primary_model, fallbacks=tuple(fallback_models)
-                )
-                logger.info(
-                    "Updated model config for stage %s: primary=%s", stage_name, primary
-                )
-
-            except ValueError:
-                logger.warning("Invalid pipeline stage name in config: %s", stage_name)
-                continue
-
-        PIPELINE_MODELS = pipeline_models
-        _agent_model_cache.clear()  # Clear agent cache
-        logger.info("Model configuration updated successfully")
-    elif config_data:
-        logger.warning(
-            "No 'models' section in config data, keeping existing configuration"
-        )
-
-
 def _get_agent_model_config(stage: PipelineStage, agent_name: str) -> StageModelConfig:
     """Get model configuration for a specific agent, falling back to stage configuration."""
     cache_key = f"{stage.value}:{agent_name}"

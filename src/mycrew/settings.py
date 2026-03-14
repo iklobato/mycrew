@@ -88,50 +88,6 @@ def get_settings() -> Settings:
     return _settings
 
 
-def init_settings_from_config(config_data: dict[str, Any]) -> None:
-    """Update settings from parsed config file. Call after loading YAML."""
-    global _settings
-    settings = get_settings()
-
-    # API keys: expand ${VAR} from env, or use literal
-    if "api_keys" in config_data:
-        api_keys = config_data["api_keys"]
-        for config_key, attr_name in [
-            ("openrouter_api_key", "openrouter_api_key"),
-            ("huggingface_api_key", "huggingface_api_key"),
-            ("github_token", "github_token"),
-            ("serper_api_key", "serper_api_key"),
-        ]:
-            if config_key not in api_keys:
-                continue
-            val = api_keys[config_key]
-            if not isinstance(val, str):
-                continue
-            if val.strip().startswith("${") and val.strip().endswith("}"):
-                var_name = val.strip()[2:-1]
-                val = os.environ.get(var_name, "")
-            if val:
-                object.__setattr__(settings, attr_name, str(val).strip())
-
-    # Provider type
-    if "provider_type" in config_data:
-        val = config_data["provider_type"]
-        if val:
-            object.__setattr__(settings, "provider_type", str(val).strip())
-
-    # Logging
-    if "logging" in config_data:
-        log_cfg = config_data["logging"]
-        if log_cfg.get("level"):
-            object.__setattr__(
-                settings, "code_pipeline_log_level", str(log_cfg["level"]).upper()
-            )
-        if log_cfg.get("crewai_telemetry"):
-            object.__setattr__(settings, "crewai_telemetry", True)
-
-    _settings = settings
-
-
 def set_pipeline_context(ctx: PipelineContext) -> None:
     """Set the current flow's context. Call before each crew run."""
     _pipeline_context_var.set(ctx)

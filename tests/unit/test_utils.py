@@ -13,115 +13,11 @@ from mycrew.utils import (
     derive_issue_url,
     detect_github_repo,
     detect_repo_path,
-    enrich_repo_context,
     is_git_repo,
     log_exceptions,
-    resolve_issue_url,
 )
 
 
-def test_resolve_issue_url_empty_raises():
-    """Empty issue_url raises ValueError."""
-    with pytest.raises(ValueError, match="issue_url is required and cannot be empty"):
-        resolve_issue_url("")
-    with pytest.raises(ValueError, match="issue_url is required and cannot be empty"):
-        resolve_issue_url("   ")
-
-
-def test_resolve_issue_url_invalid_format_raises():
-    """Invalid URL format raises ValueError with expected message."""
-    with pytest.raises(ValueError, match="Invalid GitHub issue URL"):
-        resolve_issue_url("https://gitlab.com/owner/repo/issues/123")
-    with pytest.raises(ValueError, match="Invalid GitHub issue URL"):
-        resolve_issue_url("https://github.com/owner/repo")
-    with pytest.raises(ValueError, match="Invalid GitHub issue URL"):
-        resolve_issue_url("not-a-url")
-
-
-def test_resolve_issue_url_no_token_raises():
-    """Missing GITHUB_TOKEN raises ValueError."""
-    with patch("mycrew.utils.get_settings") as mock_get:
-        mock_get.return_value.github_token = ""
-        with pytest.raises(ValueError, match="GITHUB_TOKEN is required"):
-            resolve_issue_url("https://github.com/owner/repo/issues/123")
-
-
-@patch("mycrew.utils.get_settings")
-@patch("httpx.Client")
-def test_resolve_issue_url_parses_issues_url(mock_client_class, mock_get_settings):
-    """Valid issues URL returns correct github_repo, issue_id, task."""
-    mock_get_settings.return_value.github_token = "token"
-    mock_client = MagicMock()
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"title": "Fix login bug"}
-    mock_resp.raise_for_status = MagicMock()
-    mock_client.get.return_value = mock_resp
-    mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-    mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
-
-    result = resolve_issue_url("https://github.com/owner/repo/issues/123")
-
-    assert result["task"] == "Fix login bug"
-    assert result["github_repo"] == "owner/repo"
-    assert result["issue_id"] == "#123"
-    assert result["issue_url"] == "https://github.com/owner/repo/issues/123"
-    assert result["repo_path"] == "."
-
-
-@patch("mycrew.utils.get_settings")
-@patch("httpx.Client")
-def test_resolve_issue_url_parses_pull_url(mock_client_class, mock_get_settings):
-    """Valid PR URL returns issue_id as PR#N."""
-    mock_get_settings.return_value.github_token = "token"
-    mock_client = MagicMock()
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"title": "Add feature"}
-    mock_resp.raise_for_status = MagicMock()
-    mock_client.get.return_value = mock_resp
-    mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-    mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
-
-    result = resolve_issue_url("https://github.com/owner/repo/pull/456")
-
-    assert result["issue_id"] == "PR#456"
-    assert result["github_repo"] == "owner/repo"
-    assert result["task"] == "Add feature"
-
-
-@patch("mycrew.utils.get_settings")
-@patch("httpx.Client")
-def test_resolve_issue_url_api_failure_raises(mock_client_class, mock_get_settings):
-    """API 404/401 raises ValueError."""
-    mock_get_settings.return_value.github_token = "token"
-    mock_client = MagicMock()
-    mock_resp = MagicMock()
-    mock_resp.raise_for_status.side_effect = Exception("404 Not Found")
-    mock_client.get.return_value = mock_resp
-    mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-    mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
-
-    with pytest.raises(ValueError, match="Failed to fetch issue from GitHub API"):
-        resolve_issue_url("https://github.com/owner/repo/issues/999")
-
-
-@patch("mycrew.utils.get_settings")
-@patch("httpx.Client")
-def test_resolve_issue_url_empty_title_raises(mock_client_class, mock_get_settings):
-    """GitHub issue with no title raises ValueError."""
-    mock_get_settings.return_value.github_token = "token"
-    mock_client = MagicMock()
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"title": ""}
-    mock_resp.raise_for_status = MagicMock()
-    mock_client.get.return_value = mock_resp
-    mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-    mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
-
-    with pytest.raises(ValueError, match="GitHub issue has no title"):
-        resolve_issue_url("https://github.com/owner/repo/issues/123")
-
-
-# ---------------------------------------------------------------------------
 # build_repo_context
 # ---------------------------------------------------------------------------
 
@@ -402,40 +298,6 @@ def test_detect_github_repo_git_fails_returns_empty(mock_run):
     assert detect_github_repo("/path") == ""
 
 
-# ---------------------------------------------------------------------------
-# enrich_repo_context
-# ---------------------------------------------------------------------------
-
-
-def test_enrich_repo_context_preserves_non_empty():
-    """Non-empty values are preserved."""
-    result = enrich_repo_context(
-        "/abs/repo",
-        github_repo="owner/repo",
-        issue_url="https://github.com/owner/repo/issues/1",
-    )
-    assert result["repo_path"] == "/abs/repo"
-    assert result["github_repo"] == "owner/repo"
-    assert result["issue_url"] == "https://github.com/owner/repo/issues/1"
-
-
-@patch("mycrew.utils.detect_github_repo")
-def test_enrich_repo_context_fills_empty(detect_gh):
-    """Empty github_repo is filled from detect_github_repo; issue_url from derive."""
-    detect_gh.return_value = "detected/repo"
-
-    result = enrich_repo_context(
-        "/abs/repo",
-        github_repo="",
-        issue_url="",
-        issue_id="#42",
-    )
-    assert result["repo_path"] == "/abs/repo"
-    assert result["github_repo"] == "detected/repo"
-    assert result["issue_url"] == "https://github.com/detected/repo/issues/42"
-    detect_gh.assert_called_once_with("/abs/repo")
-
-
 def test_log_exceptions_decorator_logs_and_reraises():
     """log_exceptions decorator logs exception and re-raises."""
 
@@ -455,14 +317,3 @@ def test_log_exceptions_decorator_passes_through_success():
         return 42
 
     assert succeeding() == 42
-
-
-def test_enrich_repo_context_derive_issue_url_when_issue_id():
-    """When issue_url empty but issue_id set, derives URL from github_repo."""
-    result = enrich_repo_context(
-        "/repo",
-        github_repo="owner/repo",
-        issue_url="",
-        issue_id="#99",
-    )
-    assert result["issue_url"] == "https://github.com/owner/repo/issues/99"

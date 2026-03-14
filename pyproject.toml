@@ -21,8 +21,9 @@ dev = [
 ]
 
 [project.scripts]
-kickoff = "mycrew.main:kickoff"
-run_crew = "mycrew.main:kickoff"
+mycrew = "mycrew.main:_main"
+kickoff = "mycrew.main:_main"
+run_crew = "mycrew.main:_main"
 plot = "mycrew.main:plot"
 run_with_trigger = "mycrew.main:run_with_trigger"
 webhook = "mycrew.webhook:main"
