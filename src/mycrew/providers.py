@@ -175,6 +175,13 @@ class OpenRouterProvider(IProvider):
             "HTTP-Referer": "https://github.com/anomalyco/opencode",
         }
 
+        def normalize_model_id(model_id: str) -> str:
+            """Normalize model ID by stripping openrouter/ prefix."""
+            prefix = "openrouter/"
+            if model_id.startswith(prefix):
+                return model_id[len(prefix) :]
+            return model_id
+
         try:
             response = self.session.get(
                 f"{self.base_url}/models",
@@ -188,11 +195,19 @@ class OpenRouterProvider(IProvider):
             for model in data.get("data", []):
                 model_id = model.get("id", "")
                 if model_id:
-                    available_model_ids.add(model_id)
+                    available_model_ids.add(normalize_model_id(model_id))
 
             required_list = list(required_models)
-            available = [m for m in required_list if m in available_model_ids]
-            unavailable = [m for m in required_list if m not in available_model_ids]
+            normalized_required = {normalize_model_id(m) for m in required_list}
+
+            available = [
+                m for m in required_list if normalize_model_id(m) in available_model_ids
+            ]
+            unavailable = [
+                m
+                for m in required_list
+                if normalize_model_id(m) not in available_model_ids
+            ]
 
             logger.info(
                 "Model validation: %d available, %d unavailable out of %d required",

@@ -3,66 +3,69 @@
 # All other settings have sensible defaults
 
 # Model configuration (optional - defaults exist if not specified)
+# Using free models from OpenRouter - no credit card required
+# Best for coding: qwen3-coder, deepseek-r1
+# Best for general: gemma-3-27b-it, llama-3.3-70b-instruct
 models:
   analyze_issue:
-    primary: openrouter/deepseek/deepseek-chat
+    primary: openrouter/deepseek/deepseek-r1
     fallbacks:
-      - openrouter/qwen/qwen-2.5-coder-32b-instruct
-      - openrouter/mistralai/mistral-small-24b-instruct-2501
+      - openrouter/qwen/qwen3-coder
+      - openrouter/google/gemma-3-27b-it
 
   explore:
-    primary: openrouter/qwen/qwen-2.5-coder-32b-instruct
+    primary: openrouter/qwen/qwen3-coder
     fallbacks:
-      - openrouter/deepseek/deepseek-chat
-      - openrouter/mistralai/mistral-small-24b-instruct-2501
+      - openrouter/deepseek/deepseek-r1
+      - openrouter/google/gemma-3-27b-it
 
   plan:
-    primary: openrouter/google/gemini-2.0-flash-001
+    primary: openrouter/google/gemma-3-27b-it
     fallbacks:
-      - openrouter/mistralai/mistral-small-24b-instruct-2501
-      - openrouter/deepseek/deepseek-chat
+      - openrouter/mistralai/mistral-small-3.1-24b-instruct
+      - openrouter/deepseek/deepseek-r1
 
   implement:
-    primary: openrouter/qwen/qwen-2.5-coder-32b-instruct
+    primary: openrouter/qwen/qwen3-coder
     fallbacks:
-      - openrouter/deepseek/deepseek-chat
-      - openrouter/mistralai/mistral-small-24b-instruct-2501
+      - openrouter/deepseek/deepseek-r1
+      - openrouter/mistralai/mistral-small-3.1-24b-instruct
 
   review:
-    primary: openrouter/deepseek/deepseek-chat
+    primary: openrouter/deepseek/deepseek-r1
     fallbacks:
-      - openrouter/qwen/qwen-2.5-coder-32b-instruct
-      - openrouter/mistralai/mistral-small-24b-instruct-2501
+      - openrouter/qwen/qwen3-coder
+      - openrouter/mistralai/mistral-small-3.1-24b-instruct
 
   commit:
-    primary: openrouter/google/gemini-2.0-flash-001
+    primary: openrouter/google/gemma-3-27b-it
     fallbacks:
-      - openrouter/mistralai/mistral-small-24b-instruct-2501
-      - openrouter/deepseek/deepseek-chat
+      - openrouter/mistralai/mistral-small-3.1-24b-instruct
+      - openrouter/deepseek/deepseek-r1
 
   publish:
-    primary: openrouter/google/gemini-2.0-flash-001
+    primary: openrouter/google/gemma-3-27b-it
     fallbacks:
-      - openrouter/mistralai/mistral-small-24b-instruct-2501
-      - openrouter/deepseek/deepseek-chat
+      - openrouter/mistralai/mistral-small-3.1-24b-instruct
+      - openrouter/deepseek/deepseek-r1
 
   auxiliary:
-    primary: openrouter/mistralai/mistral-small-24b-instruct-2501
+    primary: openrouter/mistralai/mistral-small-3.1-24b-instruct
     fallbacks:
-      - openrouter/google/gemini-2.0-flash-001
-      - openrouter/deepseek/deepseek-chat
+      - openrouter/google/gemma-3-27b-it
+      - openrouter/deepseek/deepseek-r1
 
   security:
-    primary: openrouter/deepseek/deepseek-chat
+    primary: openrouter/deepseek/deepseek-r1
     fallbacks:
-      - openrouter/qwen/qwen-2.5-coder-32b-instruct
-      - openrouter/mistralai/mistral-small-24b-instruct-2501
+      - openrouter/qwen/qwen3-coder
+      - openrouter/mistralai/mistral-small-3.1-24b-instruct
 
   test_validation:
-    primary: openrouter/qwen/qwen-2.5-coder-32b-instruct
+    primary: openrouter/qwen/qwen3-coder
     fallbacks:
-      - openrouter/deepseek/deepseek-chat
-      - openrouter/mistralai/mistral-small-24b-instruct-2501
+      - openrouter/deepseek/deepseek-r1
+      - openrouter/mistralai/mistral-small-3.1-24b-instruct
 
 # Global LLM settings (optional)
 settings:
