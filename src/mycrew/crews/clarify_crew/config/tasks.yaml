@@ -89,17 +89,28 @@ clarify_task:
        snippet with markdown code fences. Use the correct language (python, typescript,
        javascript, etc.) based on the codebase. Keep snippets concise — show structure,
        imports, or key patterns, not full implementations.
-       Example format for the question string:
-         Q: Where should we add the login endpoint? (Found: auth/routes.py uses FastAPI)
-         Option A (recommended): Add to auth/routes.py
-         ```python
-         @router.post("/login")
-         async def login(creds: LoginSchema): ...
-         ```
-         Option B: Create auth/v2/routes.py
-         ```python
-         router = APIRouter(prefix="/v2")
-         ```
+        Example CORRECT format - copy this EXACTLY:
+          Q: Which OAuth provider should we use?
+          Option A (recommended): Use Google OAuth
+          ```python
+          from google.oauth2 import id_token
+          ```
+          Option B: Use GitHub OAuth
+          ```python
+          from github import Github
+          ```
+        
+        CRITICAL - YOUR QUESTION MUST START WITH "Q:" ON THE FIRST LINE:
+        - Use "Q:" followed by your question (NO ## or **bold**)
+        - Use "Option A:", "Option B:", etc. on SEPARATE lines
+        - Code blocks MUST have newlines: ```python\ncode\n```
+        - NEVER use: ## header, **bold**, A) B) C), or anything else
+        
+        WRONG Examples (DO NOT USE):
+          ## OAuth Provider ...WRONG
+          **Options:** ...WRONG
+          A) Google ...WRONG
+          Option A (recommended): Use Google ```python code``` ...WRONG
     4. Based on the answers, decide if follow-ups are needed. Keep asking until
        you have no remaining open assumptions.
     5. Do NOT ask about things already clearly answered in the issue analysis.

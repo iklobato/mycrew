@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Any
+from typing import Any, Type
 
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
@@ -47,7 +47,7 @@ class RepoFileWriterTool(BaseTool):
         "content, and overwrite (true to modify existing). Paths are relative to repo root. "
         "Use overwrite=true when modifying existing files."
     )
-    args_schema: type[BaseModel] = RepoFileWriterToolInput
+    args_schema: Type[BaseModel] = RepoFileWriterToolInput
 
     repo_path: str = ""
 
@@ -57,12 +57,17 @@ class RepoFileWriterTool(BaseTool):
         content: str,
         overwrite: bool | str = False,
         directory: str | None = None,
-        **kwargs: Any,
     ) -> str:
+        logger.info(
+            f"FILE WRITER: repo_path={self.repo_path}, filename={filename}, directory={directory}"
+        )
+
         if not self.repo_path:
             return "Error: repo_path is not set."
 
         repo = os.path.abspath(self.repo_path)
+        logger.info(f"FILE WRITER: absolute repo_path={repo}")
+
         if not os.path.isdir(repo):
             return f"Error: repo_path does not exist: {repo}"
 

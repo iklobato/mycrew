@@ -71,11 +71,14 @@ class RepoShellTool(BaseTool):
 
     def _run(self, command: str) -> str:
         """Execute a shell command in the repo with safety checks."""
-        logger.info(f"Shell: {command}")
+        logger.info(f"SHELL: repo_path={self.repo_path}, command={command[:100]}")
+
         if not self.repo_path:
             return "Error: repo_path is not set."
 
         repo_path = os.path.abspath(self.repo_path)
+        logger.info(f"SHELL: working directory={repo_path}")
+
         if not os.path.isdir(repo_path):
             return f"Error: repo_path does not exist or is not a directory: {repo_path}"
 

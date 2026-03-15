@@ -36,6 +36,22 @@ implement_task:
       You MUST call this tool for each file in the plan. Paths are relative to the repository.
     - **Repo Shell Tool** — Read files before modifying: cat path, head -100 path.
       Run tests: pytest, npm test.
+      
+      Test guidance:
+      - Run specific test files, not full suite (e.g. pytest tests/test_auth.py -v, not pytest)
+      - Add timeout to long-running tests (e.g. pytest --timeout=60)
+      - If tests fail, fix the implementation, not the tests
+      - Do NOT modify test files unless explicitly asked
+      
+      To extract a specific function from a file:
+      - grep -A 15 'def function_name' path/to/file.py (shows function + 15 lines)
+      - sed -n '/def function_name/,/^def /p' path/to/file.py (extract until next def)
+      - Do NOT pipe multiple grep -v filters — extract directly instead
+      
+      To discover files, use ls:
+      - ls .github/workflows/ to see available workflow files
+      - ls path/to/directory to see contents
+      - Do NOT guess filenames with multiple || cat attempts
     - **Code Interpreter** (if Docker available) — Validate snippets. Optional.
 
     Workflow: Read each file (Repo Shell) → Write/overwrite (Repo File Writer) → Run tests.

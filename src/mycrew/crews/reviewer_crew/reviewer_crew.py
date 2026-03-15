@@ -1,8 +1,8 @@
 """Reviewer crew: reviews implementation against plan and task."""
 
-from typing import List, Literal, ClassVar
+from typing import Any, List, Literal, ClassVar
 
-from crewai import Agent, LLM, Task
+from crewai import Agent, LLM, Process, Task
 from crewai.project import CrewBase, agent, llm, task
 from pydantic import BaseModel, Field
 

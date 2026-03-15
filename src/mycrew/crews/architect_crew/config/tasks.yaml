@@ -30,6 +30,21 @@ plan_task:
       Reference architecture docs, conventions.
     - **Repo Shell Tool** — Param: command. Read files: cat path, head -50 path.
       Confirm paths exist: ls dir, find . -name "*.py".
+      
+      IMPORTANT - Always limit command output:
+      - find: always use --maxdepth 3 (e.g. find . --maxdepth 3 -name "*.py")
+      - grep: always use --exclude-dir (e.g. grep -r "pattern" src --exclude-dir=node_modules --exclude-dir=.git)
+      - Always add | head -N to limit output
+      
+      To extract a specific function from a file:
+      - grep -A 15 'def function_name' path/to/file.py (shows function + 15 lines)
+      - sed -n '/def function_name/,/^def /p' path/to/file.py (extract until next def)
+      - Do NOT pipe multiple grep -v filters — extract directly instead
+      
+      To discover files, use ls:
+      - ls .github/workflows/ to see available workflow files
+      - ls path/to/directory to see contents
+      - Do NOT guess filenames with multiple || cat attempts
 
     CRITICAL: Your output MUST include ## Files to Create and ## Files to Modify with
     concrete file paths. Do NOT respond with "I will explore" or intent—call Repo Shell

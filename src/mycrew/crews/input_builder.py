@@ -60,6 +60,21 @@ class PipelineInputBuilder:
         """Build the standard set of inputs that all crews need."""
         repo_path = state.repo_root or state.repo_path
 
+        task_value = ""
+        if state.issue_data is not None:
+            if isinstance(state.issue_data, dict):
+                task_result = state.issue_data.get("task")
+                if task_result is not None:
+                    task_value = task_result
+
+        issue_analysis_value = None
+        if state.issue_data is not None:
+            issue_analysis_value = state.issue_data
+
+        branch_value = ""
+        if hasattr(state, "branch"):
+            branch_value = state.branch
+
         return {
             "repo_context": build_repo_context(
                 repo_path=repo_path,
@@ -70,8 +85,9 @@ class PipelineInputBuilder:
             "issue_url": state.issue_url,
             "focus_paths": "",
             "exclude_paths": "",
-            "task": self._extract_task(state),
-            "issue_analysis": state.issue_data if state.issue_data else None,
+            "task": task_value,
+            "issue_analysis": issue_analysis_value,
+            "branch": branch_value,
         }
 
     def _extract_task(self, state: Any) -> str:

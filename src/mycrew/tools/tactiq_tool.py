@@ -2,7 +2,7 @@
 
 import logging
 import time
-from typing import Any
+from typing import Any, Type
 
 import requests
 from crewai.tools import BaseTool
@@ -41,7 +41,7 @@ class TactiqTool(BaseTool):
         "decisions, and action items. First call without a question to get "
         "meeting details, then call with a question to ask AI about specifics."
     )
-    args_schema: type[BaseModel] = TactiqToolInput
+    args_schema: Type[BaseModel] = TactiqToolInput
 
     def __init__(self, **kwargs):
         """Initialize with token from settings."""

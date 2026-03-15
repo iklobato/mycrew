@@ -5,7 +5,7 @@ import re
 import os
 import subprocess
 import tempfile
-from typing import Any
+from typing import Type
 
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
@@ -89,7 +89,7 @@ class CreatePRTool(BaseTool):
         "Requires: feature_branch, base_branch, task, github_repo. "
         "Optional: implementation, plan, review_verdict, issue_url, issue_id, labels."
     )
-    args_schema: type[BaseModel] = CreatePRToolInput
+    args_schema: Type[BaseModel] = CreatePRToolInput
 
     repo_path: str = ""
 
@@ -98,14 +98,13 @@ class CreatePRTool(BaseTool):
         feature_branch: str,
         base_branch: str,
         task: str,
-        implementation: str = "",
-        plan: str = "",
-        review_verdict: str = "",
-        issue_url: str = "",
-        issue_id: str = "",
-        github_repo: str = "",
-        labels: str = "",
-        **kwargs: Any,
+        github_repo: str,
+        implementation: str,
+        plan: str,
+        review_verdict: str,
+        issue_url: str,
+        issue_id: str,
+        labels: str,
     ) -> str:
         repo = os.path.abspath(self.repo_path)
         if not os.path.isdir(repo):

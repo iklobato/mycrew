@@ -110,9 +110,14 @@ class CodePipelineFlow(Flow[PipelineState]):
             issue_url=self.state.issue_url,
             programmatic=self.state.programmatic,
         )
+
+        # CRITICAL: Set context BEFORE creating crew instance
+        # Tools are initialized when @crew decorator runs, so context must be set first
         set_pipeline_context(ctx)
 
-        logger.info(f"Starting {crew_name} crew")
+        repo_path_used = self.state.repo_root or self.state.repo_path
+        logger.info(f"=== STARTING CREW: {crew_name} | repo_path: {repo_path_used} ===")
+
         try:
             crew_instance = crew_class()
             # Use the crew's build_inputs method to get standard inputs from state
@@ -120,10 +125,13 @@ class CodePipelineFlow(Flow[PipelineState]):
             # CrewBase decorated classes have a crew() method that returns the Crew
             crew = crew_instance.crew()
             result = crew.kickoff(inputs=final_inputs)
-            logger.info(f"Completed {crew_name} crew")
+            logger.info(f"=== COMPLETED CREW: {crew_name} ===")
             return result.raw
         except Exception as e:
+            import traceback
+
             logger.error(f"Failed {crew_name} crew: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return None
 
     def _run_validate_tests(self, test_command: str | None = None):
@@ -315,9 +323,10 @@ class CodePipelineFlow(Flow[PipelineState]):
             logger.error("analyze_issue: issue analysis failed")
             return self.end
 
-        # If tactiq_meeting_id is provided, run tactiq_research
+        # If tactiq_meeting_id is provided, run both tactiq_research and clarify in parallel
+        # Otherwise just run clarify
         if self.state.tactiq_meeting_id:
-            return self.tactiq_research
+            return or_(self.tactiq_research, self.clarify)
 
         return self.clarify
 
@@ -331,7 +340,7 @@ class CodePipelineFlow(Flow[PipelineState]):
             "tactiq_research",
             {
                 "task": self.state.issue_data.get("task", "")
-                if self.state.issue_data
+                if isinstance(self.state.issue_data, dict)
                 else "",
                 "issue_analysis": self.state.issue_data,
                 "exploration": self.state.exploration_result,
@@ -340,19 +349,19 @@ class CodePipelineFlow(Flow[PipelineState]):
         )
 
         if not result:
-            logger.info("tactiq_research: failed, falling back to clarify")
-            return self.clarify
+            logger.info("tactiq_research: failed")
+            return None
 
         self.state.tactiq_result = result
 
         # Check if clarification is still needed based on result
         # If "sufficient_info: true" is in the result, skip clarification
         if isinstance(result, str) and "sufficient_info: true" in result.lower():
-            logger.info("tactiq_research: sufficient info found, skipping clarify")
-            return self.architect
+            logger.info("tactiq_research: sufficient info found")
+            return "sufficient"
 
-            logger.info("tactiq_research: clarification still needed")
-        return self.clarify
+        logger.info("tactiq_research: clarification still needed")
+        return None
 
     @listen(analyze_issue)
     def clarify(self):
@@ -365,7 +374,7 @@ class CodePipelineFlow(Flow[PipelineState]):
             {
                 "issue_url": self.state.issue_url,
                 "issue_data": self.state.issue_data,
-                "exploration_result": self.state.exploration_result,
+                "exploration": self.state.exploration_result,
             },
         )
 
@@ -373,12 +382,23 @@ class CodePipelineFlow(Flow[PipelineState]):
             logger.error("clarify: clarification failed")
             return self.end
 
-        return self.architect
+        return "clarified"
 
-    @listen(clarify)
+    @listen(or_(tactiq_research, clarify))
     def architect(self):
         """Create architecture."""
         self.state.current_stage = "architect"
+
+        clarifications_for_arch = ""
+        prior_issues_for_arch = ""
+        if self.state.issue_data is not None:
+            if isinstance(self.state.issue_data, dict):
+                clar_check = self.state.issue_data.get("clarifications")
+                if clar_check is not None:
+                    clarifications_for_arch = clar_check
+                prior_check = self.state.issue_data.get("prior_issues")
+                if prior_check is not None:
+                    prior_issues_for_arch = prior_check
 
         result = self._run_crew(
             ArchitectCrew,
@@ -386,7 +406,9 @@ class CodePipelineFlow(Flow[PipelineState]):
             {
                 "issue_url": self.state.issue_url,
                 "issue_data": self.state.issue_data,
-                "exploration_result": self.state.exploration_result,
+                "exploration": self.state.exploration_result,
+                "clarifications": clarifications_for_arch,
+                "prior_issues": prior_issues_for_arch,
             },
         )
 
@@ -402,14 +424,22 @@ class CodePipelineFlow(Flow[PipelineState]):
         """Implement solution."""
         self.state.current_stage = "implement"
 
+        clarifications = ""
+        prior_issues = ""
+        if self.state.issue_data and isinstance(self.state.issue_data, dict):
+            clarifications = self.state.issue_data.get("clarifications", "")
+            prior_issues = self.state.issue_data.get("prior_issues", "")
+
         result = self._run_crew(
             ImplementerCrew,
             "implement",
             {
                 "issue_url": self.state.issue_url,
                 "issue_data": self.state.issue_data,
-                "exploration_result": self.state.exploration_result,
-                "architecture_result": self.state.architecture_result,
+                "exploration": self.state.exploration_result,
+                "plan": self.state.architecture_result,
+                "clarifications": clarifications,
+                "prior_issues": prior_issues,
             },
         )
 
@@ -425,15 +455,28 @@ class CodePipelineFlow(Flow[PipelineState]):
         """Review implementation."""
         self.state.current_stage = "review"
 
+        clarifications_for_review = ""
+        prior_issues_for_review = ""
+        if self.state.issue_data is not None:
+            if isinstance(self.state.issue_data, dict):
+                clar_check = self.state.issue_data.get("clarifications")
+                if clar_check is not None:
+                    clarifications_for_review = clar_check
+                prior_check = self.state.issue_data.get("prior_issues")
+                if prior_check is not None:
+                    prior_issues_for_review = prior_check
+
         result = self._run_crew(
             ReviewerCrew,
             "review",
             {
                 "issue_url": self.state.issue_url,
                 "issue_data": self.state.issue_data,
-                "exploration_result": self.state.exploration_result,
-                "architecture_result": self.state.architecture_result,
-                "implementation_result": self.state.implementation_result,
+                "exploration": self.state.exploration_result,
+                "plan": self.state.architecture_result,
+                "implementation": self.state.implementation_result,
+                "clarifications": clarifications_for_review,
+                "prior_issues": prior_issues_for_review,
             },
         )
 
@@ -444,7 +487,17 @@ class CodePipelineFlow(Flow[PipelineState]):
         self.state.review_result = result
 
         # Check review verdict
-        verdict = result.get("verdict", {}).get("verdict", "ISSUES")
+        verdict = "ISSUES"
+        if isinstance(result, dict):
+            inner_verdict = result.get("verdict", {})
+            if isinstance(inner_verdict, dict):
+                verdict_result = inner_verdict.get("verdict")
+                if verdict_result is not None:
+                    verdict = verdict_result
+            return
+        result_upper = str(result).upper()
+        if "APPROVED" in result_upper:
+            verdict = "APPROVED"
         if verdict == "ISSUES":
             logger.warning("review: implementation has issues")
             return self.retry_implement
@@ -460,17 +513,53 @@ class CodePipelineFlow(Flow[PipelineState]):
         result = self._run_validate_tests()
         self.state.validation_result = result
 
-        if result.get("passed", False):
+        test_passed = False
+        if isinstance(result, dict):
+            passed_value = result.get("passed")
+            if passed_value is not None:
+                test_passed = passed_value
+        if not isinstance(result, dict):
+            result_upper = result.upper()
+            if "PASS" in result_upper:
+                test_passed = True
+            if "OK" in result_upper:
+                test_passed = True
+
+        if test_passed:
             logger.info("validate_tests: tests passed")
             return self.commit
-        else:
-            logger.warning("validate_tests: tests failed")
-            return self.retry_implement
+        logger.warning("validate_tests: tests failed")
+        return self.retry_implement
 
     @listen(validate_tests)
     def commit(self):
         """Commit changes."""
         self.state.current_stage = "commit"
+
+        branch_value = ""
+        if hasattr(self.state, "branch"):
+            branch_value = self.state.branch
+
+        dry_run_value = False
+        if hasattr(self.state, "dry_run"):
+            dry_run_value = self.state.dry_run
+
+        feature_branch_name = "feature/task"
+        if isinstance(self.state.issue_data, dict):
+            issue_number = self.state.issue_data.get("number")
+            if issue_number is not None:
+                feature_branch_name = "feature/" + issue_number
+
+        issue_id_value = ""
+        if isinstance(self.state.issue_data, dict):
+            issue_id_value = self.state.issue_data.get("number", "")
+
+        github_repo_value = ""
+        if self.state.issue_data is not None:
+            if isinstance(self.state.issue_data, dict):
+                gh_check = self.state.issue_data.get("github_repo")
+                if gh_check is not None:
+                    github_repo_value = gh_check
 
         result = self._run_crew(
             CommitCrew,
@@ -478,10 +567,16 @@ class CodePipelineFlow(Flow[PipelineState]):
             {
                 "issue_url": self.state.issue_url,
                 "issue_data": self.state.issue_data,
-                "exploration_result": self.state.exploration_result,
-                "implementation_result": self.state.implementation_result,
-                "review_result": self.state.review_result,
+                "exploration": self.state.exploration_result,
+                "plan": self.state.architecture_result,
+                "implementation": self.state.implementation_result,
+                "review_verdict": self.state.review_result,
                 "validation_result": self.state.validation_result,
+                "branch": branch_value,
+                "dry_run": dry_run_value,
+                "feature_branch": feature_branch_name,
+                "issue_id": issue_id_value,
+                "github_repo": github_repo_value,
             },
         )
 
@@ -531,95 +626,102 @@ class CodePipelineFlow(Flow[PipelineState]):
         return None
 
 
-def _configure_logging(level: int | str | None = None):
-    """Configure logging."""
-    if level is None:
-        level = logging.INFO
+class PipelineRunner:
+    """Pipeline runner - handles CLI entry point and orchestration."""
 
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s | %(levelname)-8s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    @staticmethod
+    def _configure_logging(level: int | str | None = None):
+        """Configure logging."""
+        if level is None:
+            level = logging.INFO
 
+        logging.basicConfig(
+            level=level,
+            format="%(asctime)s | %(levelname)-8s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
 
-def kickoff(
-    issue_url: str,
-    branch: str = "",
-    from_scratch: bool = False,
-    max_retries: int = 3,
-    dry_run: bool = False,
-    programmatic: bool = False,
-    tactiq_meeting_id: str = "",
-    repo_path: str = "",
-):
-    """Kickoff the pipeline."""
-    validate_required_models()
+    @classmethod
+    def kickoff(
+        cls,
+        issue_url: str,
+        branch: str = "",
+        from_scratch: bool = False,
+        max_retries: int = 3,
+        dry_run: bool = False,
+        programmatic: bool = False,
+        tactiq_meeting_id: str = "",
+        repo_path: str = "",
+    ):
+        """Kickoff the pipeline."""
+        validate_required_models()
 
-    state = PipelineState(
-        id=str(uuid.uuid4()),
-        issue_url=issue_url,
-        branch=branch,
-        max_retries=max_retries,
-        dry_run=dry_run,
-        programmatic=programmatic,
-        tactiq_meeting_id=tactiq_meeting_id,
-        repo_path=repo_path,
-    )
-    flow = CodePipelineFlow(state=state)
-    # Force set state after initialization to ensure our values are used
-    flow._state = state
-    flow.kickoff()
+        state = PipelineState(
+            id=str(uuid.uuid4()),
+            issue_url=issue_url,
+            branch=branch,
+            max_retries=max_retries,
+            dry_run=dry_run,
+            programmatic=programmatic,
+            tactiq_meeting_id=tactiq_meeting_id,
+            repo_path=repo_path,
+        )
+        flow = CodePipelineFlow(state=state)
+        flow._state = state
+        flow.kickoff()
 
+    @classmethod
+    def main(cls):
+        """Main entry point."""
+        parser = argparse.ArgumentParser(description="Code Pipeline")
+        parser.add_argument("issue_url", help="GitHub issue URL", nargs="?")
+        parser.add_argument(
+            "--repo-path",
+            default="",
+            help="Local repo path (if not provided, repo will be cloned)",
+        )
+        parser.add_argument("--branch", default="", help="Branch name")
+        parser.add_argument(
+            "--from-scratch", action="store_true", help="Start from scratch"
+        )
+        parser.add_argument("--max-retries", type=int, default=3, help="Max retries")
+        parser.add_argument("--dry-run", action="store_true", help="Dry run")
+        parser.add_argument(
+            "--programmatic", action="store_true", help="Programmatic mode"
+        )
+        parser.add_argument(
+            "--tactiq-meeting-id", default="", help="Tactiq meeting ID for context"
+        )
+        parser.add_argument(
+            "--verbose", "-v", action="store_true", help="Verbose logging"
+        )
+        parser.add_argument("--debug", action="store_true", help="Debug logging")
 
-def _main():
-    """Main entry point."""
-    parser = argparse.ArgumentParser(description="Code Pipeline")
-    parser.add_argument("issue_url", help="GitHub issue URL", nargs="?")
-    parser.add_argument(
-        "--repo-path",
-        default="",
-        help="Local repo path (if not provided, repo will be cloned)",
-    )
-    parser.add_argument("--branch", default="", help="Branch name")
-    parser.add_argument(
-        "--from-scratch", action="store_true", help="Start from scratch"
-    )
-    parser.add_argument("--max-retries", type=int, default=3, help="Max retries")
-    parser.add_argument("--dry-run", action="store_true", help="Dry run")
-    parser.add_argument("--programmatic", action="store_true", help="Programmatic mode")
-    parser.add_argument(
-        "--tactiq-meeting-id", default="", help="Tactiq meeting ID for context"
-    )
-    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose logging")
-    parser.add_argument("--debug", action="store_true", help="Debug logging")
+        args = parser.parse_args()
 
-    args = parser.parse_args()
+        if not args.issue_url and not args.repo_path:
+            parser.error("Either issue_url or --repo-path is required")
 
-    # Must provide either issue_url or repo_path
-    if not args.issue_url and not args.repo_path:
-        parser.error("Either issue_url or --repo-path is required")
+        if args.debug:
+            log_level = logging.DEBUG
+        elif args.verbose:
+            log_level = logging.INFO
+        else:
+            log_level = None
 
-    if args.debug:
-        log_level = logging.DEBUG
-    elif args.verbose:
-        log_level = logging.INFO
-    else:
-        log_level = None
+        cls._configure_logging(level=log_level)
 
-    _configure_logging(level=log_level)
-
-    kickoff(
-        issue_url=args.issue_url or "",
-        repo_path=args.repo_path,
-        branch=args.branch,
-        from_scratch=args.from_scratch,
-        max_retries=args.max_retries,
-        dry_run=args.dry_run,
-        programmatic=args.programmatic,
-        tactiq_meeting_id=args.tactiq_meeting_id,
-    )
+        cls.kickoff(
+            issue_url=args.issue_url or "",
+            repo_path=args.repo_path,
+            branch=args.branch,
+            from_scratch=args.from_scratch,
+            max_retries=args.max_retries,
+            dry_run=args.dry_run,
+            programmatic=args.programmatic,
+            tactiq_meeting_id=args.tactiq_meeting_id,
+        )
 
 
 if __name__ == "__main__":
-    _main()
+    PipelineRunner.main()

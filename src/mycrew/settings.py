@@ -4,9 +4,9 @@ All env/config MUST be accessed via get_settings() or get_pipeline_context().
 No os.environ.get outside this module.
 """
 
+import logging
 import os
 from contextvars import ContextVar
-from typing import Any
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -111,6 +111,11 @@ def get_pipeline_context() -> PipelineContext:
     iu = ctx.issue_url
     if iu is None:
         iu = ""
+
+    # Debug logging to track repo_path
+    logger = logging.getLogger(__name__)
+    logger.debug(f"get_pipeline_context: repo_path={rp}, github_repo={gh}")
+
     return PipelineContext(
         repo_path=os.path.abspath(rp),
         github_repo=gh.strip(),

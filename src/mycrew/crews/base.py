@@ -28,6 +28,12 @@ class PipelineCrewBase(ABCrew):
     """Base class for pipeline crews. Subclasses add @agent and @task methods."""
 
     stage: ClassVar[str] = "auxiliary"
+    process: ClassVar[Any] = Process.sequential
+
+    @property
+    def crew_process(self) -> Any:
+        """Process type for this crew. Override in subclass to use Process.parallel."""
+        return self.process
 
     @property
     def required_agents(self) -> List[str]:
@@ -154,6 +160,6 @@ class PipelineCrewBase(ABCrew):
         return Crew(
             agents=self.agents,  # type: ignore[attr-defined]
             tasks=self.tasks,  # type: ignore[attr-defined]
-            process=Process.sequential,
+            process=self.crew_process,
             verbose=True,
         )

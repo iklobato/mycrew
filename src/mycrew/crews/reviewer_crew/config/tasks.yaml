@@ -13,10 +13,26 @@ review_task:
     Implementation summary:
     {implementation}
 
+    CLARIFICATIONS & DEVELOPMENT GUIDELINES:
+    {clarifications}
+
+    PRIOR ISSUES TO FIX:
+    {prior_issues}
+
     ## Tools
 
     - **Repo Shell Tool** — Param: command. Read files: cat path, head path.
-      List/verify: ls -la, find . -name "*.py". Run tests: pytest, npm test.
+      List/verify: ls -la, find . --maxdepth 3 -name "*.py". Run tests: pytest, npm test.
+      
+      IMPORTANT - Always limit command output:
+      - find: always use --maxdepth 3 (e.g. find . --maxdepth 3 -name "*.py")
+      - grep: always use --exclude-dir (e.g. grep -r "pattern" src --exclude-dir=node_modules --exclude-dir=.git)
+      - Always add | head -N to limit output
+      
+      Test guidance:
+      - Run specific test files, not full suite
+      - Add timeout to long-running tests
+      - Do NOT modify test files unless explicitly asked
     - **CodeDocsSearchTool** — Param: search_query. Validate against coding standards.
 
     You MUST use Repo Shell Tool to read the actual files (e.g. git status, git diff, cat <path>)
@@ -67,6 +83,7 @@ security_review_task:
     Main review output + ## Security section.
   agent: security_reviewer
   context: [review_task]
+  async_execution: true
 
 performance_review_task:
   description: >
@@ -82,7 +99,8 @@ performance_review_task:
   expected_output: >
     Previous output + ## Performance section.
   agent: performance_reviewer
-  context: [security_review_task]
+  context: [review_task]
+  async_execution: true
 
 accessibility_review_task:
   description: >
@@ -99,7 +117,8 @@ accessibility_review_task:
   expected_output: >
     Previous output + ## Accessibility section.
   agent: accessibility_checker
-  context: [performance_review_task]
+  context: [review_task]
+  async_execution: true
 
 backward_compat_task:
   description: >
@@ -114,7 +133,8 @@ backward_compat_task:
   expected_output: >
     Previous output + ## Backward Compatibility section.
   agent: backward_compat_checker
-  context: [accessibility_review_task]
+  context: [review_task]
+  async_execution: true
 
 convention_check_task:
   description: >

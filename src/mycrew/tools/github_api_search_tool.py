@@ -1,7 +1,7 @@
 """GitHub API Search Tool using GitHub REST API instead of gh CLI."""
 
 import logging
-from typing import Any
+from typing import Any, Type
 
 import requests
 from crewai.tools import BaseTool
@@ -31,7 +31,7 @@ class GitHubAPISearchTool(BaseTool):
         "Search GitHub repositories for code, issues, PRs, and discussions using GitHub REST API. "
         "Useful for finding similar implementations, documentation, or examples."
     )
-    args_schema: type[BaseModel] = GitHubAPISearchToolInput
+    args_schema: Type[BaseModel] = GitHubAPISearchToolInput
 
     # Pydantic fields
     github_token: str

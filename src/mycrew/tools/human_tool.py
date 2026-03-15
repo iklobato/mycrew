@@ -14,6 +14,13 @@ logger = logging.getLogger(__name__)
 def _print_with_highlighted_code(text: str) -> None:
     """Print text, rendering markdown code blocks (```lang ... ```) with syntax highlighting."""
     console = Console()
+
+    # First, convert markdown headers and bold to more readable format
+    # ## Header -> ══ Header ══
+    text = re.sub(r"^## (.+)$", r"╔═ \1 ══", text, flags=re.MULTILINE)
+    # **bold** -> [bold]bold[/bold]
+    text = re.sub(r"\*\*(.+?)\*\*", r"[\1]", text)
+
     pattern = r"```(\w*)\n(.*?)```"
     matches = list(re.finditer(pattern, text, re.DOTALL))
     if not matches:

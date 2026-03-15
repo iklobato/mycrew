@@ -1,0 +1,1193 @@
+================================================================================
+1. PROJECT OVERVIEW
+================================================================================
+
+Mycrew is an AI-powered development team automation system built on CrewAI that 
+autonomously implements GitHub issues. It clones a repository, analyzes the issue, 
+explores the codebase, creates an implementation plan, writes code, runs tests, 
+reviews for security/performance issues, and creates a pull request.
+
+The pipeline follows a sequential crew flow: Issue Analyst → Explorer → (optional TactiqResearch) → Clarify → Architect → Implementer → Test Validator → Reviewer → Commit
+
+Entry points:
+- CLI: python -m mycrew.main (or 'mycrew', 'kickoff', 'run_crew' commands from pyproject.toml)
+- Webhook server: python -m mycrew.webhook (FastAPI server on port 8000)
+- Kickoff client: python -m mycrew.kickoff_client (HTTP client to trigger pipeline)
+- Webhook registration: python -m mycrew.register_webhook
+
+Python version: >=3.10,<3.13
+
+Key dependencies (from pyproject.toml):
+- crewai[litellm,tools]==1.9.3
+- pyyaml>=6.0
+- fastapi>=0.104.0
+- uvicorn[standard]>=0.24.0
+- httpx>=0.25.0,<1.0.0
+- pydantic-settings>=2.10.1,<2.11
+- requests>=2.28.0
+
+Required environment variables:
+- OPENROUTER_API_KEY (required for LLM calls)
+- GITHUB_TOKEN (required for cloning repos, creating PRs)
+
+Optional environment variables:
+- HUGGINGFACE_API_KEY (alternative LLM provider)
+- SERPER_API_KEY (web search)
+- TACTIQ_TOKEN (meeting context)
+- GITHUB_WEBHOOK_SECRET (webhook verification)
+- PROVIDER_TYPE (openrouter or huggingface)
+- CODE_PIPELINE_LOG_LEVEL (DEBUG, INFO, WARNING, ERROR)
+- CREWAI_TRACING_ENABLED
+- HOST, PORT (webhook server)
+- REDIS_URL
+- DEFAULT_DRY_RUN, DEFAULT_BRANCH
+
+================================================================================
+2. FILE TREE
+================================================================================
+
+src/mycrew/
+├── __init__.py                          # Package init, re-exports
+├── main.py                              # Pipeline flow orchestration (CodePipelineFlow class)
+├── settings.py                          # Centralized configuration (Settings, PipelineContext)
+├── llm.py                               # LLM provider config, stage-specific models, fallbacks
+├── providers.py                         # OpenRouter and HuggingFace provider implementations
+├── utils.py                             # Shared utilities (clone_repo, detect_github_repo, etc.)
+├── exceptions.py                        # Custom exception hierarchy (AppError, ModelUnavailableError)
+├── models.py                            # Minimal Pydantic models (User)
+├── webhook.py                           # FastAPI webhook server for triggering pipeline
+├── kickoff_client.py                    # HTTP client for triggering pipeline via webhook
+├── register_webhook.py                  # CLI tool to register GitHub webhooks
+├── crews/                              # Crew implementations
+│   ├── __init__.py                      # Crew registry
+│   ├── base.py                          # PipelineCrewBase - shared tools, LLMs, config
+│   ├── abc_crew.py                      # ABCrew abstract base class
+│   ├── input_builder.py                  # PipelineInputBuilder - constructs standard crew inputs
+│   ├── issue_analyst_crew/
+│   │   ├── __init__.py
+│   │   ├── issue_analyst_crew.py         # Issue parsing crew (4 agents, 4 tasks)
+│   │   └── config/
+│   │       ├── agents.yaml               # Agent configs (issue_analyst, scope_validator, etc.)
+│   │       └── tasks.yaml               # Task definitions
+│   ├── explorer_crew/
+│   │   ├── __init__.py
+│   │   ├── explorer_crew.py             # Repo exploration crew (5 agents, 5 tasks)
+│   │   └── config/
+│   │       ├── agents.yaml
+│   │       └── tasks.yaml
+│   ├── tactiq_research_crew/
+│   │   ├── __init__.py
+│   │   ├── tactiq_research_crew.py      # Meeting context crew (1 agent, 1 task)
+│   │   └── config/
+│   │       ├── agents.yaml
+│   │       └── tasks.yaml
+│   ├── clarify_crew/
+│   │   ├── __init__.py
+│   │   ├── clarify_crew.py               # Ambiguity clarification crew (3 agents, 3 tasks)
+│   │   └── config/
+│   │       ├── agents.yaml
+│   │       └── tasks.yaml
+│   ├── architect_crew/
+│   │   ├── __init__.py
+│   │   ├── architect_crew.py            # Planning crew (6 agents, 6 tasks)
+│   │   └── config/
+│   │       ├── agents.yaml
+│   │       └── tasks.yaml
+│   ├── implementer_crew/
+│   │   ├── __init__.py
+│   │   ├── implementer_crew.py          # Code implementation crew (5 agents, 5 tasks)
+│   │   └── config/
+│   │       ├── agents.yaml
+│   │       └── tasks.yaml
+│   ├── test_validator_crew/
+│   │   ├── __init__.py
+│   │   ├── test_validator_crew.py       # Test writing crew (3 agents, 3 tasks)
+│   │   └── config/
+│   │       ├── agents.yaml
+│   │       └── tasks.yaml
+│   ├── reviewer_crew/
+│   │   ├── __init__.py
+│   │   ├── reviewer_crew.py             # Review crew (6 agents, 6 tasks)
+│   │   └── config/
+│   │       ├── agents.yaml
+│   │       └── tasks.yaml
+│   └── commit_crew/
+│       ├── __init__.py
+│       ├── commit_crew.py                # Git/commit/PR crew (5 agents, 5 tasks)
+│       └── config/
+│           ├── agents.yaml
+│           └── tasks.yaml
+├── tools/                              # Custom tools for crews
+│   ├── __init__.py
+│   ├── factory.py                       # Tool factory for stage-based selection
+│   ├── repo_shell_tool.py              # Shell command execution with safety checks
+│   ├── repo_file_writer_tool.py         # File writing within repo bounds
+│   ├── create_pr_tool.py               # Git push and PR creation via gh CLI
+│   ├── human_tool.py                   # Human-in-the-loop clarification tool
+│   ├── tactiq_tool.py                  # Tactiq meeting API integration
+│   ├── github_api_search_tool.py        # GitHub REST API search
+│   └── noop_tool.py                    # Fallback for disabled optional tools
+
+tests/
+├── conftest.py                         # Pytest fixtures
+├── unit/
+│   ├── __init__.py
+│   ├── test_models.py
+│   ├── test_settings.py
+│   ├── test_utils.py
+│   ├── test_llm.py
+│   ├── test_providers.py
+│   ├── test_tools.py
+│   ├── test_webhook_github.py
+│   └── test_kickoff_client.py
+└── integration/
+    ├── __init__.py
+    └── test_webhook_api.py
+
+Root files:
+├── pyproject.toml                     # Project metadata, dependencies, CLI entry points
+├── defaults.yaml                       # Default model configuration per stage
+├── precise-target.yaml                 # (unused/extra config)
+├── .env                                # Environment variables (secret)
+├── .env.example                        # Template for environment variables
+├── README.md                           # Project documentation
+├── AGENTS.md                           # Project constitution
+├── Dockerfile                          # Docker build file
+├── docker-compose.yml                  # Docker compose config
+├── webhook.http                       # HTTP request file for testing
+
+================================================================================
+3. FULL CLASS MAP
+================================================================================
+
+--- src/mycrew/main.py ---
+
+Class: PipelineState
+File: src/mycrew/main.py:43
+Responsibility: Minimal state container for CrewAI Flow persistence
+Attributes:
+  - id: str - Unique flow ID
+  - issue_url: str - GitHub issue URL
+  - branch: str - Target branch name
+  - max_retries: int - Max retry attempts
+  - dry_run: bool - Skip git operations
+  - programmatic: bool - No human interaction
+  - repo_path: str - User-provided repo path
+  - repo_path_cloned: bool - Whether repo was cloned
+  - repo_root: str|None - Absolute path to repo
+  - issue_data: dict|None - Parsed issue data
+  - exploration_result: dict|None - Explorer crew output
+  - architecture_result: dict|None - Architect crew output
+  - implementation_result: dict|None - Implementer crew output
+  - review_result: dict|None - Reviewer crew output
+  - validation_result: dict|None - Test validation result
+  - commit_result: dict|None - Commit crew output
+  - tactiq_meeting_id: str - Tactiq meeting ID
+  - tactiq_result: dict|None - Tactiq research output
+  - retry_count: int - Current retry number
+  - current_stage: str - Current pipeline stage
+Methods:
+  - (Pydantic model, all fields are attributes)
+
+Class: CodePipelineFlow
+File: src/mycrew/main.py:80
+Responsibility: Main pipeline orchestration using CrewAI Flow
+Attributes:
+  - state: PipelineState - Flow state
+Methods:
+  - __init__ - Initialize flow
+  - _get_field_from_state(field_name, default) - Get state field with fallback
+  - _run_crew(crew_class, crew_name, input_data) - Execute a crew with input construction
+  - _run_validate_tests(test_command) - Run test validation subprocess
+  - start() - Entry point, returns explore stage
+  - explore() - Explore repository stage
+  - _explore_with_repo_path(rp, url) - Handle user-provided repo path
+  - _explore_with_clone(url) - Clone repo from GitHub
+  - _run_exploration() - Run ExplorerCrew
+  - analyze_issue() - Analyze issue stage
+  - tactiq_research() - Tactiq meeting research stage
+  - clarify() - Clarification stage
+  - architect() - Architecture planning stage
+  - implement() - Implementation stage
+  - review() - Review stage
+  - validate_tests() - Test validation stage
+  - commit() - Commit and PR creation stage
+  - retry_implement() - Retry logic on failure
+  - end() - Cleanup and finish
+Dependencies: ExplorerCrew, IssueAnalystCrew, TactiqResearchCrew, ClarifyCrew, ArchitectCrew, ImplementerCrew, ReviewerCrew, TestValidatorCrew, CommitCrew, PipelineContext, clone_repo_for_issue, delete_cloned_repo
+
+--- src/mycrew/settings.py ---
+
+Class: PipelineContext
+File: src/mycrew/settings.py:23
+Responsibility: Runtime context for current flow execution
+Attributes:
+  - repo_path: str - Current repository path
+  - github_repo: str - GitHub repo (owner/repo)
+  - issue_url: str - Issue URL
+  - serper_enabled: bool - Whether Serper is enabled
+  - programmatic: bool - Programmatic mode flag
+Methods: (Pydantic frozen model)
+
+Class: Settings
+File: src/mycrew/settings.py:35
+Responsibility: Centralized settings from environment variables
+Attributes:
+  - openrouter_api_key: str - OpenRouter API key
+  - huggingface_api_key: str - HuggingFace API key
+  - github_token: str - GitHub token
+  - serper_api_key: str - Serper API key
+  - tactiq_token: str - Tactiq API token
+  - github_webhook_secret: str - Webhook secret
+  - default_dry_run: bool - Default dry run
+  - default_branch: str - Default branch
+  - tactiq_meeting_id: str - Default Tactiq meeting ID
+  - host: str - Webhook server host
+  - port: int - Webhook server port
+  - redis_url: str - Redis URL
+  - code_pipeline_log_level: str - Log level
+  - crewai_telemetry: bool - Telemetry flag
+  - provider_type: str|None - LLM provider type
+Methods:
+  - apply_crewai_telemetry() - Apply telemetry setting to environment
+Dependencies: pydantic_settings.BaseSettings
+
+--- src/mycrew/llm.py ---
+
+Class: PipelineStage (StrEnum)
+File: src/mycrew/llm.py:123
+Responsibility: Enum for pipeline stage names
+Attributes: (StrEnum values: ANALYZE_ISSUE, EXPLORE, PLAN, IMPLEMENT, REVIEW, COMMIT, PUBLISH, AUXILIARY, SECURITY, TEST_VALIDATION)
+Methods: (StrEnum)
+
+Class: ProviderType (StrEnum)
+File: src/mycrew/llm.py:138
+Responsibility: Enum for LLM provider types
+Attributes: (StrEnum values: OPENROUTER, HUGGINGFACE)
+Methods:
+  - default_stage(provider_type) - Return default stage
+
+Class: StageModelConfig (dataclass)
+File: src/mycrew/llm.py:151
+Responsibility: Primary model and fallbacks for a pipeline stage
+Attributes:
+  - primary: str - Primary model ID
+  - fallbacks: tuple[str,...] - Fallback model IDs
+Methods: (frozen dataclass)
+
+Class: _StageMapping (dataclass)
+File: src/mycrew/llm.py:158
+Responsibility: Per-stage model config with OpenRouter and HuggingFace mappings
+Attributes:
+  - openrouter_model: str
+  - openrouter_fallbacks: tuple[str,...]
+  - huggingface_model: str
+Methods:
+  - to_stage_config() - Convert to StageModelConfig
+
+Class: ModelMappings (Enum)
+File: src/mycrew/llm.py:174
+Responsibility: Unified enum for model IDs and stage mappings
+Attributes: Many model ID enums and stage mappings
+Methods:
+  - normalize_model(model) - Prepend openrouter/ if needed
+  - all_model_ids() - Return all unique model IDs
+  - for_stage(stage) - Get stage mapping
+Dependencies: create_provider, get_settings, log_exceptions
+
+--- src/mycrew/providers.py ---
+
+Class: ModelMapping (dataclass)
+File: src/mycrew/providers.py:17
+Responsibility: Mapping between OpenRouter and HuggingFace models
+Attributes:
+  - openrouter_model: str
+  - huggingface_model: str
+
+Class: IProvider (ABC)
+File: src/mycrew/providers.py:25
+Responsibility: Abstract interface for LLM providers
+Methods:
+  - generate(messages, **kwargs) - Generate LLM response
+  - create_llm(**kwargs) - Create CrewAI LLM instance
+  - convert_messages(messages) - Convert message format
+  - handle_error(error, model) - Log errors
+  - validate_models(required_models) - Validate model availability
+
+Class: OpenRouterProvider (IProvider)
+File: src/mycrew/providers.py:86
+Responsibility: OpenRouter LLM provider implementation
+Attributes:
+  - api_key: str
+  - base_url: str
+  - session: requests.Session
+Methods:
+  - __init__ - Initialize with API key
+  - _create_session() - Create retry-configured session
+  - generate(messages, **kwargs) - Call OpenRouter API
+  - create_llm(**kwargs) - Create CrewAI LLM
+  - validate_models(required_models) - Check OpenRouter model availability
+
+Class: HuggingFaceProvider (IProvider)
+File: src/mycrew/providers.py:226
+Responsibility: HuggingFace LLM provider implementation
+Attributes:
+  - api_key: str
+  - base_url: str
+  - session: requests.Session
+Methods:
+  - __init__ - Initialize with API key
+  - _create_session() - Create retry-configured session
+  - generate(messages, **kwargs) - Call HuggingFace API
+  - convert_messages_to_prompt(messages) - Convert to HF format
+  - create_llm(**kwargs) - Create CrewAI LLM
+  - validate_models(required_models) - (TODO, returns all available)
+
+Function: create_provider(provider_type) -> IProvider
+File: src/mycrew/providers.py:337
+Responsibility: Factory for creating providers
+Dependencies: get_settings
+
+--- src/mycrew/webhook.py ---
+
+Class: RequestLoggingMiddleware (BaseHTTPMiddleware)
+File: src/mycrew/webhook.py:37
+Responsibility: Log all incoming HTTP requests
+Methods:
+  - dispatch(request, call_next) - Log request details
+Dependencies: Request, JSONResponse, BaseHTTPMiddleware
+
+Function: verify_github_signature(payload_body, signature_header)
+File: src/mycrew/webhook.py:153
+Responsibility: Verify GitHub webhook HMAC signature
+
+Function: _extract_github_params(payload, event_type, action) -> dict|None
+File: src/mycrew/webhook.py:171
+Responsibility: Extract pipeline params from GitHub webhook payload
+
+Function: _handle_github(body, headers, payload, background_tasks) -> JSONResponse
+File: src/mycrew/webhook.py:188
+Responsibility: Process GitHub webhook events
+
+Function: main()
+File: src/mycrew/webhook.py:286
+Responsibility: Run uvicorn webhook server
+Dependencies: get_settings, kickoff
+
+--- src/mycrew/kickoff_client.py ---
+
+Class: KickoffClient (dataclass)
+File: src/mycrew/kickoff_client.py:10
+Responsibility: HTTP client for triggering pipeline
+Attributes:
+  - base_url: str - Webhook server URL
+  - timeout: int - Request timeout
+Methods:
+  - run(issue_url, branch, from_scratch, max_retries, dry_run, programmatic) - Trigger pipeline
+
+Function: main()
+File: src/mycrew/kickoff_client.py:44
+Responsibility: CLI entry point for kickoff client
+
+--- src/mycrew/crews/base.py ---
+
+Class: PipelineCrewBase (ABCrew)
+File: src/mycrew/crews/base.py:27
+Responsibility: Base class for all pipeline crews
+Attributes:
+  - stage: ClassVar[str] - Pipeline stage name
+Methods:
+  - required_agents -> List[str] - List of required agent keys
+  - required_tasks -> List[str] - List of required task keys
+  - _build_agent(agent_key) - Build agent from config
+  - _build_task(task_key) - Build task from config
+  - build_inputs(state, custom_inputs) - Build crew inputs from pipeline state
+  - auxiliary_llm -> LLM
+  - analyze_issue_llm -> LLM
+  - repo_shell -> BaseTool
+  - repo_file_writer -> BaseTool
+  - serper_dev -> BaseTool
+  - github_search -> BaseTool
+  - create_pr -> BaseTool
+  - scrape_website -> BaseTool
+  - code_interpreter -> BaseTool
+  - ask_human -> BaseTool
+  - tactiq_meeting -> BaseTool
+  - crew() -> Crew - Assemble crew with agents and tasks
+Dependencies: get_llm_for_stage, get_pipeline_context, get_settings, all tools, PipelineInputBuilder
+
+--- src/mycrew/crews/abc_crew.py ---
+
+Class: ABCrew (ABC)
+File: src/mycrew/crews/abc_crew.py:7
+Responsibility: Abstract base class for all crews
+Attributes:
+  - stage: ClassVar[str] - Pipeline stage
+Methods:
+  - required_agents -> List[str] - Abstract property
+  - required_tasks -> List[str] - Abstract property
+  - _build_agent(agent_key) -> Agent - Abstract method
+  - _build_task(task_key) -> Task - Abstract method
+  - crew() -> Crew - Abstract method
+
+--- src/mycrew/crews/input_builder.py ---
+
+Class: PipelineInputBuilder
+File: src/mycrew/crews/input_builder.py:8
+Responsibility: Build standard inputs for pipeline crews from state
+Methods:
+  - build(state, custom_inputs) -> dict - Build crew inputs
+  - _extract_github_repo(state) -> str - Extract github_repo from state
+  - _build_standard_inputs(state, github_repo) -> dict - Build standard inputs
+  - _extract_task(state) -> str - Extract task description
+Dependencies: build_repo_context
+
+--- src/mycrew/crews/issue_analyst_crew/issue_analyst_crew.py ---
+
+Class: IssueAnalystCrew (PipelineCrewBase)
+File: src/mycrew/crews/issue_analyst_crew/issue_analyst_crew.py:12
+Responsibility: Parse GitHub issue into structured requirements
+Stage: analyze_issue
+Agents: issue_analyst, scope_validator, similar_issues_synthesizer, acceptance_criteria_normalizer
+Tasks: similar_issues_task, analyze_task, validate_scope_task, acceptance_criteria_normalize_task
+
+--- src/mycrew/crews/explorer_crew/explorer_crew.py ---
+
+Class: ExplorerCrew (PipelineCrewBase)
+File: src/mycrew/crews/explorer_crew/explorer_crew.py:11
+Responsibility: Analyze codebase structure, dependencies, conventions
+Stage: explore
+Agents: repo_explorer, dependency_analyzer, test_layout_scout, convention_extractor, api_boundary_scout
+Tasks: explore_task, dependency_analyze_task, test_layout_task, convention_extract_task, api_boundary_scout_task
+
+--- src/mycrew/crews/tactiq_research_crew/tactiq_research_crew.py ---
+
+Class: TactiqResearchCrew (PipelineCrewBase)
+File: src/mycrew/crews/tactiq_research_crew/tactiq_research_crew.py:12
+Responsibility: Fetch meeting context, determine if clarification needed
+Stage: auxiliary
+Agents: tactiq_researcher
+Tasks: tactiq_research_task
+
+--- src/mycrew/crews/clarify_crew/clarify_crew.py ---
+
+Class: ClarifyCrew (PipelineCrewBase)
+File: src/mycrew/crews/clarify_crew/clarify_crew.py:12
+Responsibility: Detect ambiguities, prioritize questions, ask human
+Stage: auxiliary
+Agents: ambiguity_detector, question_prioritizer, clarifier
+Tasks: ambiguity_detect_task, question_prioritize_task, clarify_task
+
+--- src/mycrew/crews/architect_crew/architect_crew.py ---
+
+Class: ArchitectCrew (PipelineCrewBase)
+File: src/mycrew/crews/architect_crew/architect_crew.py:11
+Responsibility: Create file-level implementation plan
+Stage: plan
+Agents: architect, dependency_orderer, refactor_guard, test_plan_advisor, migration_checker, rollback_planner
+Tasks: plan_task, dependency_order_task, refactor_guard_task, test_plan_task, migration_check_task, rollback_plan_task
+
+--- src/mycrew/crews/implementer_crew/implementer_crew.py ---
+
+Class: ImplementerCrew (PipelineCrewBase)
+File: src/mycrew/crews/implementer_crew/implementer_crew.py:11
+Responsibility: Write code, tests, docstrings, fix lint
+Stage: implement
+Agents: implementer, docstring_writer, type_hint_checker, lint_fixer, self_reviewer
+Tasks: implement_task, docstring_write_task, type_hint_task, lint_fix_task, self_review_task
+
+--- src/mycrew/crews/test_validator_crew/test_validator_crew.py ---
+
+Class: TestValidatorCrew (PipelineCrewBase)
+File: src/mycrew/crews/test_validator_crew/test_validator_crew.py:11
+Responsibility: Write tests and validate they catch bugs
+Stage: test_validation
+Agents: test_implementer, test_quality_checker, test_coverage_checker
+Tasks: test_implement_task, test_quality_check_task, test_coverage_check_task
+
+--- src/mycrew/crews/reviewer_crew/reviewer_crew.py ---
+
+Class: ReviewVerdict (BaseModel)
+File: src/mycrew/crews/reviewer_crew/reviewer_crew.py:13
+Responsibility: Structured review verdict output
+Attributes:
+  - verdict: Literal["APPROVED", "ISSUES"]
+  - issues: List[str]
+
+Class: ReviewerCrew (PipelineCrewBase)
+File: src/mycrew/crews/reviewer_crew/reviewer_crew.py:26
+Responsibility: Review implementation for correctness, security, performance
+Stage: review
+Agents: reviewer, security_reviewer, performance_reviewer, accessibility_checker, backward_compat_checker, convention_checker
+Tasks: review_task, security_review_task, performance_review_task, accessibility_review_task, backward_compat_task, convention_check_task
+
+--- src/mycrew/crews/commit_crew/commit_crew.py ---
+
+Class: CommitCrew (PipelineCrewBase)
+File: src/mycrew/crews/commit_crew/commit_crew.py:13
+Responsibility: Create branch, commit, push, create PR
+Stage: commit
+Agents: git_agent, commit_message_reviewer, changelog_agent, pr_labels_suggester, publish_agent
+Tasks: commit_task, commit_message_review_task, changelog_task, pr_labels_suggest_task, publish_task
+
+--- src/mycrew/tools/repo_shell_tool.py ---
+
+Class: RepoShellToolInput (BaseModel)
+File: src/mycrew/tools/repo_shell_tool.py:38
+Responsibility: Input schema for RepoShellTool
+Attributes:
+  - command: str - Shell command to execute
+
+Class: RepoShellTool (BaseTool)
+File: src/mycrew/tools/repo_shell_tool.py:53
+Responsibility: Execute shell commands in repo with safety checks
+Attributes:
+  - repo_path: str - Target repository path
+  - name: str = "Repo Shell Tool"
+  - description: str - Tool description
+  - args_schema: Type[BaseModel] = RepoShellToolInput
+Methods:
+  - _run(command) -> str - Execute command with safety checks, output limits
+
+--- src/mycrew/tools/repo_file_writer_tool.py ---
+
+Class: RepoFileWriterToolInput (BaseModel)
+File: src/mycrew/tools/repo_file_writer_tool.py:24
+Responsibility: Input schema for RepoFileWriterTool
+Attributes:
+  - filename: str - Relative file path
+  - content: str - File content
+  - overwrite: bool|str - Overwrite flag
+  - directory: str|None - Optional subdirectory
+
+Class: RepoFileWriterTool (BaseTool)
+File: src/mycrew/tools/repo_file_writer_tool.py:41
+Responsibility: Write files within repo bounds
+Attributes:
+  - repo_path: str - Target repository path
+  - name: str = "Repo File Writer Tool"
+  - args_schema: Type[BaseModel] = RepoFileWriterToolInput
+Methods:
+  - _run(filename, content, overwrite, directory) -> str
+
+--- src/mycrew/tools/create_pr_tool.py ---
+
+Class: CreatePRToolInput (BaseModel)
+File: src/mycrew/tools/create_pr_tool.py:64
+Responsibility: Input schema for CreatePRTool
+Attributes:
+  - feature_branch: str
+  - base_branch: str
+  - task: str
+  - implementation: str
+  - plan: str
+  - review_verdict: str
+  - issue_url: str
+  - issue_id: str
+  - github_repo: str
+  - labels: str
+
+Class: CreatePRTool (BaseTool)
+File: src/mycrew/tools/create_pr_tool.py:83
+Responsibility: Push branch and create PR via gh CLI
+Attributes:
+  - repo_path: str
+  - name: str = "Create PR Tool"
+  - args_schema: Type[BaseModel] = CreatePRToolInput
+Methods:
+  - _run(feature_branch, base_branch, task, github_repo, implementation, plan, review_verdict, issue_url, issue_id, labels) -> str
+
+Function: _make_pr_body(task, implementation, plan, review_verdict, issue_url, issue_id) -> str
+File: src/mycrew/tools/create_pr_tool.py:16
+Responsibility: Build PR body markdown
+
+--- src/mycrew/tools/human_tool.py ---
+
+Function: ask_human(question) -> str
+File: src/mycrew/tools/human_tool.py:57
+Responsibility: Ask human clarification question (CrewAI tool)
+Dependencies: get_pipeline_context
+
+Function: _print_with_highlighted_code(text)
+File: src/mycrew/tools/human_tool.py:14
+Responsibility: Print text with syntax-highlighted code blocks
+
+Function: _is_interactive() -> bool
+File: src/mycrew/tools/human_tool.py:45
+Responsibility: Check if stdin is a TTY
+
+--- src/mycrew/tools/tactiq_tool.py ---
+
+Class: TactiqToolInput (BaseModel)
+File: src/mycrew/tools/tactiq_tool.py:21
+Responsibility: Input schema for TactiqTool
+Attributes:
+  - meeting_id: str
+  - question: str
+
+Class: TactiqTool (BaseTool)
+File: src/mycrew/tools/tactiq_tool.py:34
+Responsibility: Fetch meeting details and ask AI questions via Tactiq API
+Attributes:
+  - name: str = "TactiqMeetingTool"
+  - args_schema: Type[BaseModel] = TactiqToolInput
+  - _token: str|None
+  - _session: requests.Session|None
+Methods:
+  - _run(meeting_id, question) -> str
+  - _get_meeting(meeting_id) -> dict|None - GraphQL query
+  - _ask_ai(meeting_id, question) -> str|None - Poll for AI response
+  - _format_meeting_summary(meeting) -> str
+  - _format_ai_response(meeting, question, answer) -> str
+
+--- src/mycrew/tools/github_api_search_tool.py ---
+
+Class: GitHubAPISearchToolInput (BaseModel)
+File: src/mycrew/tools/github_api_search_tool.py:13
+Responsibility: Input schema
+Attributes:
+  - search_query: str
+  - content_types: str
+
+Class: GitHubAPISearchTool (BaseTool)
+File: src/mycrew/tools/github_api_search_tool.py:26
+Responsibility: Search GitHub via REST API
+Attributes:
+  - github_token: str
+  - github_repo: str
+  - owner: str
+  - repo: str
+  - headers: dict
+  - base_url: str
+Methods:
+  - _run(search_query, content_types) -> str
+  - _search_code(query) -> list
+  - _search_issues(query) -> list
+  - _search_pull_requests(query) -> list
+  - _search_discussions(query) -> list
+  - _search_commits(query) -> list
+  - _format_result(result, index) -> str
+
+--- src/mycrew/tools/noop_tool.py ---
+
+Class: NoOpToolInput (BaseModel)
+File: src/mycrew/tools/noop_tool.py:9
+Responsibility: Input schema (accepts any query)
+Attributes:
+  - query: str
+
+Class: NoOpTool (BaseTool)
+File: src/mycrew/tools/noop_tool.py:15
+Responsibility: Fallback for disabled optional tools
+Methods:
+  - _run(query) -> str - Returns "Tool disabled."
+
+--- src/mycrew/tools/factory.py ---
+
+Function: get_tools_for_stage(stage, repo_path, github_repo, serper_enabled) -> list[BaseTool]
+File: src/mycrew/tools/factory.py:32
+Responsibility: Return tool list for pipeline stage
+
+Function: get_github_search_tool(github_repo) -> BaseTool|None
+File: src/mycrew/tools/factory.py:199
+Responsibility: Create GitHub search tool if token/repo available
+
+Function: get_scrape_website_tool() -> BaseTool
+File: src/mycrew/tools/factory.py:212
+Responsibility: Create ScrapeWebsiteTool
+
+Function: get_code_interpreter_tool() -> BaseTool|None
+File: src/mycrew/tools/factory.py:219
+Responsibility: Create CodeInterpreterTool if Docker available
+
+Function: get_serper_tool(enabled, n_results) -> BaseTool|None
+File: src/mycrew/tools/factory.py:231
+Responsibility: Create SerperDevTool if API key available
+
+Function: get_tactiq_tool() -> BaseTool|None
+File: src/mycrew/tools/factory.py:252
+Responsibility: Create TactiqTool if token available
+
+--- src/mycrew/register_webhook.py ---
+
+Function: register_webhook(repo, webhook_url, token, secret) -> int
+File: src/mycrew/register_webhook.py:17
+Responsibility: Create/update GitHub repo webhook
+Dependencies: get_settings, httpx
+
+Function: main()
+File: src/mycrew/register_webhook.py:120
+Responsibility: CLI entry point
+
+--- src/mycrew/exceptions.py ---
+
+Class: AppError (Exception)
+File: src/mycrew/exceptions.py:4
+Responsibility: Base exception for all app errors
+
+Class: ModelUnavailableError (AppError)
+File: src/mycrew/exceptions.py:10
+Responsibility: Raised when required models unavailable
+Attributes:
+  - unavailable_models: list[str]
+  - provider: str
+
+--- src/mycrew/models.py ---
+
+Class: User (BaseModel)
+File: src/mycrew/models.py:15
+Responsibility: Minimal user model
+Attributes:
+  - id: str
+  - created_at: datetime
+  - api_keys: Dict[str, str]
+
+--- src/mycrew/utils.py ---
+
+Function: build_repo_context(repo_path, github_repo, issue_url) -> str
+File: src/mycrew/utils.py:18
+Responsibility: Build shared context string for agents
+
+Function: detect_repo_path(cwd) -> str
+File: src/mycrew/utils.py:53
+Responsibility: Get git root or cwd
+
+Function: is_git_repo(path) -> bool
+File: src/mycrew/utils.py:71
+Responsibility: Check if path is git repo root
+
+Function: clone_repo_for_issue(github_repo, parent_dir, branch, token) -> str
+File: src/mycrew/utils.py:89
+Responsibility: Clone repo with GitHub token auth
+
+Function: delete_cloned_repo(path) -> None
+File: src/mycrew/utils.py:131
+Responsibility: Remove cloned repo (safety: only /tmp)
+
+Function: detect_github_repo(repo_path) -> str
+File: src/mycrew/utils.py:153
+Responsibility: Parse owner/repo from git remote
+
+Function: derive_issue_url(github_repo, issue_id) -> str
+File: src/mycrew/utils.py:174
+Responsibility: Build GitHub issue URL from repo and ID
+
+Function: log_exceptions(message) -> Callable
+File: src/mycrew/utils.py:184
+Responsibility: Decorator to log and re-raise exceptions
+
+================================================================================
+4. FULL FUNCTION MAP (standalone functions)
+================================================================================
+
+--- src/mycrew/main.py ---
+
+Function: _configure_logging(level) -> None
+File: src/mycrew/main.py:586
+Responsibility: Configure stdlib logging
+Parameters: level: int|str|None
+Calls: logging.basicConfig
+
+Function: kickoff(issue_url, branch, from_scratch, max_retries, dry_run, programmatic, tactiq_meeting_id, repo_path) -> None
+File: src/mycrew/main.py:598
+Responsibility: Entry point to run pipeline
+Parameters: issue_url: str, branch: str = "", from_scratch: bool = False, max_retries: int = 3, dry_run: bool = False, programmatic: bool = False, tactiq_meeting_id: str = "", repo_path: str = ""
+Returns: None
+Calls: validate_required_models, CodePipelineFlow, PipelineState
+
+Function: _main() -> None
+File: src/mycrew/main.py:627
+Responsibility: CLI entry point with argparse
+Calls: kickoff, _configure_logging
+
+--- src/mycrew/llm.py ---
+
+Function: llm_with_fallback(*models, context_text, stage_name, estimated_context_tokens, provider_type) -> LLM
+File: src/mycrew/llm.py:427
+Responsibility: Try models in order, return first working
+Parameters: *models: str, context_text: str = "", stage_name: str = "", estimated_context_tokens: int = 0, provider_type: str|None = None
+Returns: LLM
+Calls: create_provider, provider.create_llm
+
+Function: get_llm_for_stage(stage, agent_name, context_text, estimated_context_tokens, provider_type) -> LLM
+File: src/mycrew/llm.py:497
+Responsibility: Get LLM for pipeline stage with fallbacks
+Parameters: stage: str|PipelineStage, agent_name: str|None = None, context_text: str = "", estimated_context_tokens: int = 0, provider_type: str|None = None
+Returns: LLM
+Calls: llm_with_fallback, PIPELINE_MODELS, ModelMappings
+
+Function: _extract_all_required_models() -> set[str]
+File: src/mycrew/llm.py:545
+Responsibility: Extract all model IDs from PIPELINE_MODELS
+Returns: set[str]
+
+Function: validate_required_models() -> None
+File: src/mycrew/llm.py:554
+Responsibility: Validate all required models available on provider
+Calls: get_settings, create_provider, provider.validate_models
+
+Function: _load_model_config_from_file(config_path) -> dict[PipelineStage, StageModelConfig]
+File: src/mycrew/llm.py:317
+Responsibility: Load model config from YAML file
+Returns: dict[PipelineStage, StageModelConfig]
+Calls: yaml.safe_load
+
+Function: _get_agent_model_config(stage, agent_name) -> StageModelConfig
+File: src/mycrew/llm.py:404
+Responsibility: Get model config for specific agent
+Returns: StageModelConfig
+
+--- src/mycrew/settings.py ---
+
+Function: get_settings() -> Settings
+File: src/mycrew/settings.py:83
+Responsibility: Return singleton Settings instance
+Returns: Settings
+
+Function: set_pipeline_context(ctx) -> None
+File: src/mycrew/settings.py:91
+Responsibility: Set current flow's runtime context
+
+Function: get_pipeline_context() -> PipelineContext
+File: src/mycrew/settings.py:96
+Responsibility: Get current flow context with resolved paths
+
+--- src/mycrew/utils.py ---
+
+(See section 3 for all utils functions)
+
+--- src/mycrew/webhook.py ---
+
+Function: _sanitize_headers(headers) -> dict
+File: src/mycrew/webhook.py:26
+Responsibility: Redact sensitive headers for logging
+
+Function: _default_params() -> dict
+File: src/mycrew/webhook.py:92
+Responsibility: Get default pipeline params from settings
+
+Function: _get_nested(obj, path) -> Any
+File: src/mycrew/webhook.py:104
+Responsibility: Get nested dict value by path tuple
+
+Function: _send_callback(callback_url, status, details) -> None
+File: src/mycrew/webhook.py:114
+Responsibility: Send callback POST to external URL
+
+Function: _run_kickoff_background(**params) -> None
+File: src/mycrew/webhook.py:127
+Responsibility: Run kickoff in background thread
+Calls: kickoff
+
+--- src/mycrew/kickoff_client.py ---
+
+(See section 3 for KickoutClient class and main)
+
+--- src/mycrew/register_webhook.py ---
+
+(See section 3)
+
+--- src/mycrew/tools/factory.py ---
+
+(See section 3)
+
+--- src/mycrew/tools/create_pr_tool.py ---
+
+(See section 3)
+
+--- src/mycrew/tools/human_tool.py ---
+
+(See section 3)
+
+================================================================================
+5. DEPENDENCY MAP
+================================================================================
+
+--- src/mycrew/main.py ---
+Imports:
+  - crewai.flow: Flow, listen, or_, start
+  - crewai.flow.persistence: SQLiteFlowPersistence, persist
+  - crewai.utilities.paths: db_storage_path
+  - pydantic: BaseModel
+  - mycrew.llm: validate_required_models
+  - mycrew.settings: get_settings
+  - mycrew.utils: clone_repo_for_issue, delete_cloned_repo, detect_github_repo
+  - mycrew.crews.*: All crew classes
+External API calls:
+  - OpenRouter (via crews/llm)
+
+--- src/mycrew/settings.py ---
+Imports:
+  - pydantic: BaseModel, Field
+  - pydantic_settings: BaseSettings, SettingsConfigDict
+External: None (reads env vars)
+
+--- src/mycrew/llm.py ---
+Imports:
+  - crewai: LLM
+  - mycrew.exceptions: ModelUnavailableError
+  - mycrew.providers: create_provider
+  - mycrew.settings: get_settings
+  - mycrew.utils: log_exceptions
+  - yaml, logging, pathlib, dataclasses, enum
+External API calls:
+  - OpenRouter (model validation via provider)
+
+--- src/mycrew/providers.py ---
+Imports:
+  - requests, requests.adapters, urllib3.util.retry
+  - mycrew.settings: get_settings
+External API calls:
+  - OpenRouter API (https://openrouter.ai/api/v1)
+  - HuggingFace Inference API (https://api-inference.huggingface.co/models)
+
+--- src/mycrew/webhook.py ---
+Imports:
+  - fastapi: FastAPI, BackgroundTasks, Request, HTTPException, JSONResponse
+  - starlette.middleware.base: BaseHTTPMiddleware
+  - uvicorn
+  - hashlib, hmac, httpx, json, logging, datetime
+  - mycrew.main: kickoff
+  - mycrew.settings: get_settings
+External API calls:
+  - Outbound: callback_url (POST), kickoff pipeline
+
+--- src/mycrew/kickoff_client.py ---
+Imports:
+  - httpx
+  - argparse
+External API calls:
+  - Webhook server (POST /webhook)
+
+--- src/mycrew/crews/base.py ---
+Imports:
+  - crewai: Agent, Crew, LLM, Process, Task
+  - crewai.project: crew, llm, tool
+  - crewai.tools: BaseTool
+  - mycrew.llm: get_llm_for_stage
+  - mycrew.settings: get_pipeline_context, get_settings
+  - mycrew.tools.*: All tools
+  - mycrew.crews.abc_crew: ABCrew
+  - mycrew.crews.input_builder: PipelineInputBuilder
+
+--- src/mycrew/tools/factory.py ---
+Imports:
+  - crewai.tools: BaseTool
+  - mycrew.settings: get_settings
+  - mycrew.tools.*: Various tool classes
+  - mycrew.utils: log_exceptions
+External API calls:
+  - crewai_tools: ScrapeWebsiteTool, SerperDevTool, CodeInterpreterTool (optional)
+
+--- src/mycrew/tools/tactiq_tool.py ---
+Imports:
+  - requests
+  - crewai.tools: BaseTool
+  - pydantic: BaseModel, Field
+  - mycrew.settings: get_settings
+External API calls:
+  - Tactiq GraphQL API (https://api2.tactiq.io/api/2/graphql)
+
+--- src/mycrew/tools/github_api_search_tool.py ---
+Imports:
+  - requests
+  - crewai.tools: BaseTool
+  - pydantic: BaseModel, Field
+External API calls:
+  - GitHub REST API (https://api.github.com)
+
+--- src/mycrew/utils.py ---
+Imports:
+  - httpx
+  - subprocess, os, shutil, re, functools, logging
+  - mycrew.settings: get_settings
+
+Circular Dependencies: None detected
+
+================================================================================
+6. DATA FLOW
+================================================================================
+
+ENTRY POINT 1: CLI (python -m mycrew.main or kickoff-client)
+1. User provides GitHub issue URL or local repo path
+2. _main() parses args, configures logging
+3. kickoff() creates PipelineState and CodePipelineFlow
+4. flow.kickoff() starts sequential pipeline
+
+ENTRY POINT 2: Webhook Server
+1. POST /webhook receives JSON payload
+2. _handle_github() verifies signature (if configured)
+3. _extract_github_params() pulls issue_url from payload
+4. _run_kickoff_background() calls kickoff() in background thread
+5. Returns 202 Accepted immediately
+
+PIPELINE FLOW (sequential crews):
+1. explore() - ExplorerCrew analyzes repo structure
+   - Input: issue_url, issue_data
+   - Output: exploration_result (tech stack, dependencies, conventions)
+
+2. analyze_issue() - IssueAnalystCrew parses issue
+   - Input: issue_url, issue_data, exploration_result
+   - Output: issue_data with task, clarifications
+
+3. tactiq_research() (optional) - TactiqResearchCrew
+   - Input: task, issue_analysis, exploration, tactiq_meeting_id
+   - Output: tactiq_result (sufficient_info flag)
+
+4. clarify() - ClarifyCrew asks human questions
+   - Input: issue_url, issue_data, exploration_result
+   - Output: issue_data updated with clarifications
+
+5. architect() - ArchitectCrew creates plan
+   - Input: issue_url, issue_data, exploration_result
+   - Output: architecture_result (file-level plan)
+
+6. implement() - ImplementerCrew writes code
+   - Input: issue_url, issue_data, exploration, plan, clarifications, prior_issues
+   - Output: implementation_result
+
+7. review() - ReviewerCrew checks implementation
+   - Input: issue_url, issue_data, exploration, plan, implementation
+   - Output: review_result (APPROVED or ISSUES)
+
+8. validate_tests() - Runs test_command subprocess
+   - Input: test_command from state
+   - Output: validation_result (passed/failed)
+
+9. commit() - CommitCrew creates PR
+   - Input: all prior results, branch, dry_run
+   - Output: commit_result (PR URL or "dry run")
+
+RETRY LOOP:
+- If review returns ISSUES, retry_implement() increments retry_count
+- Loops back to implement() up to max_retries times
+
+OUTPUT:
+- If dry_run: changes exist locally, no push/PR
+- If normal: branch pushed, PR created via gh CLI
+- Callback URL receives completion status (if provided)
+
+================================================================================
+7. CONFIGURATION
+================================================================================
+
+--- .env ---
+Variables loaded by pydantic-settings:
+- OPENROUTER_API_KEY (required)
+- HUGGINGFACE_API_KEY (optional)
+- GITHUB_TOKEN (required for clone/PR)
+- SERPER_API_KEY (optional)
+- TACTIQ_TOKEN (optional)
+- GITHUB_WEBHOOK_SECRET (optional)
+- DEFAULT_DRY_RUN (default: false)
+- DEFAULT_BRANCH (default: main)
+- TACTIQ_MEETING_ID (optional)
+- HOST (default: 0.0.0.0)
+- PORT (default: 8000)
+- REDIS_URL (optional)
+- CODE_PIPELINE_LOG_LEVEL (default: INFO)
+- CREWAI_TRACING_ENABLED (default: false)
+- PROVIDER_TYPE (optional, auto-detect)
+
+--- defaults.yaml ---
+models:
+  analyze_issue: primary + fallbacks (deepseek-r1, qwen3-coder, gemma-3-27b-it)
+  explore: primary + fallbacks (qwen3-coder, deepseek-r1, gemma-3-27b-it)
+  plan: primary + fallbacks (gemma-3-27b-it, mistral-small-3.1, deepseek-r1)
+  implement: primary + fallbacks (qwen3-coder, deepseek-r1, mistral-small-3.1)
+  review: primary + fallbacks (deepseek-r1, qwen3-coder, mistral-small-3.1)
+  commit: primary + fallbacks (gemma-3-27b-it, mistral-small-3.1, deepseek-r1)
+  publish: primary + fallbacks (gemma-3-27b-it, mistral-small-3.1, deepseek-r1)
+  auxiliary: primary + fallbacks (mistral-small-3.1, gemma-3-27b-it, deepseek-r1)
+  security: primary + fallbacks (deepseek-r1, qwen3-coder, mistral-small-3.1)
+  test_validation: primary + fallbacks (devstral-small, deepseek-v3.2, qwen3-235b-a22b)
+settings:
+  temperature: 0.7
+  max_tokens: 4096
+features:
+  serper.enabled: false
+  serper.n_results: 5
+  tactiq.enabled: false
+provider: openrouter
+
+--- Crew Config (agents.yaml per crew) ---
+Each agent has:
+- llm: reference to @llm decorated method
+- verbose: bool
+- tools: list of tool names
+- role: role description
+- goal: goal description
+- backstory: detailed persona
+
+--- Crew Config (tasks.yaml per crew) ---
+Each task has:
+- description: prompt with {placeholders}
+- expected_output: description
+- agent: agent key
+- context: list of prior task keys (for sequential output passing)
+
+HARDCODED VALUES THAT LOOK LIKE CONFIG:
+- DEFAULT_WEBHOOK_URL in register_webhook.py:13 = "https://mycrew-gw68v.ondigitalocean.app/webhook"
+- GRAPHQL_URL in tactiq_tool.py:15 = "https://api2.tactiq.io/api/2/graphql"
+- USER_AGENT in tactiq_tool.py:16 = "mycrew (https://github.com/iklobato/mycrew)"
+- WEBHOOK_EVENTS in register_webhook.py:14 = ["issues", "pull_request_review_comment"]
+- MAX_OUTPUT_SIZE in repo_shell_tool.py:121 = 16384
+- MAX_LINES in repo_shell_tool.py:127 = 200
+- TIMEOUT in repo_shell_tool.py:133 = 90
+- POLL_INTERVAL in tactiq_tool.py:17 = 2
+- MAX_POLL_ATTEMPTS in tactiq_tool.py:18 = 30
+
+================================================================================
+8. KNOWN PAIN POINTS
+================================================================================
+
+1. PipelineState is a "god model" - Contains 20+ fields for all pipeline stages.
+   All state flows through this single class, making it hard to maintain.
+   Consider: Stage-specific state classes or more focused state objects.
+
+2. CodePipelineFlow._run_crew does too much - builds inputs, sets context,
+   runs crew, handles errors all in one method. Multiple responsibilities.
+
+3. Main.py is very long (677 lines) - The flow orchestration has grown complex
+   with many stage methods. Consider extracting stage handlers or using a
+   more declarative flow definition.
+
+4. Factory functions in factory.py have long if-elif chains for stage mapping.
+   This could be refactored to a dictionary mapping or registry pattern.
+
+5. Tool initialization in PipelineCrewBase creates tools at class definition time
+   using get_pipeline_context() which may not be set yet. Potential ordering issues.
+
+6. tactiq_research() in main.py has unreachable code - after "return self.architect"
+   there's more code that will never execute (line 354-355).
+
+7. Reviewer verdict parsing is fragile - multiple isinstance checks and string
+   matching ("APPROVED" in result_upper). Consider structured output parsing.
+
+8. _make_pr_body in create_pr_tool.py has many string length checks and truncation
+   logic that could be centralized.
+
+9. get_llm_for_stage and llm_with_fallback have complex fallback logic that could
+   be simplified. The retry with sleep on rate limits is a bit naive.
+
+10. Some crews (ClarifyCrew, TactiqResearchCrew, TestValidatorCrew) override
+    the crew() method instead of relying on @crew decorator, inconsistent pattern.
+
+11. RepoShellTool._run is extremely long (200+ lines) with complex output
+    truncation and sampling logic. Could be broken into helper methods.
+
+12. Settings uses pydantic BaseSettings but then accesses via get_settings()
+    singleton pattern - could be simplified to just use the Settings instance.
+
+13. The _extract_github_repo method in input_builder.py duplicates logic that
+    exists in multiple places for extracting github_repo from issue_data.
+
+14. No separation between crew configuration (agents.yaml, tasks.yaml) and
+    runtime configuration. YAML files are loaded at import time.
+
+15. Some hardcoded values like webhook URL and timeouts should probably be
+    in config files or environment variables for easier deployment changes.
+
+================================================================================
+CONTEXT DOCUMENT COMPLETE — READY FOR REFACTOR AGENT
+================================================================================

@@ -16,6 +16,13 @@ similar_issues_task:
     - gh issue list -R "{github_repo}" --state=open -L 20
 
     NOTE: gh issue list --state= accepts ONLY open|closed|all. For merged PRs use gh pr list --state=merged.
+    
+    For GitHub issues, use gh CLI or GitHubSearchTool. Do NOT use scrape_website:
+    - gh CLI: gh issue view <number> -R "{github_repo}"
+    - GitHubSearchTool: Use search_query with content_types=issue
+    - scrape_website: Only for non-GitHub trackers (e.g., Jira, Linear)
+    
+    If scrape_website returns 404 or login page, skip that section.
 
     Produce:
     ## Similar Issues
@@ -66,6 +73,8 @@ analyze_task:
     - Synthesize recent focus and merged areas to avoid scope creep
 
     NOTE: gh issue list --state= accepts ONLY open|closed|all. For merged PRs use gh pr list --state=merged.
+    If gh command fails (e.g. repository not found, rate limited), skip that section and continue.
+    Do NOT retry failed commands multiple times.
 
     - **CodeDocsSearchTool** — Param: search_query. Semantic search over docs.
       When docs_url is provided, use to search roadmap, priorities, or conventions.

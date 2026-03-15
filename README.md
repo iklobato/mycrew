@@ -63,6 +63,14 @@ Set these before running:
 | `TACTIQ_TOKEN` | No | Tactiq API token from [Tactiq settings](https://app.tactiq.io/settings) |
 | `GITHUB_WEBHOOK_SECRET` | No | Secret for webhook signature verification |
 | `CODE_PIPELINE_LOG_LEVEL` | No | DEBUG, INFO, WARNING, ERROR |
+| `PROVIDER_TYPE` | No | LLM provider: "openrouter" (default) or "huggingface" |
+| `CREWAI_TRACING_ENABLED` | No | Enable CrewAI telemetry (default: false) |
+| `HOST` | No | Webhook server host (default: 0.0.0.0) |
+| `PORT` | No | Webhook server port (default: 8000) |
+| `REDIS_URL` | No | Redis URL for state management |
+| `DEFAULT_DRY_RUN` | No | Default dry run mode (default: false) |
+| `DEFAULT_BRANCH` | No | Default branch (default: main) |
+| `TACTIQ_MEETING_ID` | No | Default Tactiq meeting ID |
 
 *Required when using `issue_url` (to clone repo). Not required when using `--repo-path` with local repo.
 
@@ -118,18 +126,7 @@ docker rm -f mycrew-webhook
 |-------|-------------|
 | `./workspace:/workspace` | Where the pipeline clones and modifies the target repository |
 
-### Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `OPENROUTER_API_KEY` | Yes* | LLM API key from openrouter.ai. Required for AI agents to generate code |
-| `GITHUB_TOKEN` | No | Personal Access Token with `repo` scope. Used to clone repos, commit changes, create PRs |
-| `GITHUB_WEBHOOK_SECRET` | No | Secret string to verify webhook requests from GitHub |
-| `SERPER_API_KEY` | No | API key for Serper web search. Enables agents to search for best practices |
-| `DEFAULT_DRY_RUN` | No | When true, pipeline runs without git commits or PRs. Default: `false` |
-| `DEFAULT_BRANCH` | No | Base branch for feature branches. Default: `main` |
-
-*Required when using OpenRouter provider
+*See Configuration > Environment Variables for all available options.*
 
 ---
 
@@ -420,9 +417,9 @@ python -m mycrew "https://github.com/owner/repo/issues/123" -v
 
 Uses OpenRouter as the LLM backend with automatic model fallback:
 
-- **Cost-effective models**: DeepSeek, Qwen, Gemini Flash, Mistral
-- **Automatic retries**: Falls back to alternative models on rate limits
-- **No setup**: Just get an API key from [openrouter.ai](https://openrouter.ai)
+- **Models**: deepseek-r1, qwen3-coder, gemma-3-27b-it, mistral-small-3.1, devstral-small
+- **Automatic fallback**: Falls back to alternative models on rate limits
+- **Stage-specific**: Each pipeline stage uses optimized models (analyze: reasoning, explore: code, review: analysis, etc.)
 
 ### HuggingFace
 
@@ -486,20 +483,26 @@ All configuration is via environment variables (`.env`) and CLI arguments. See E
 ## Pipeline Flow
 
 ```
-Issue Analyst → Explorer → [TactiqResearch (optional)] → Clarify → Architect → Implementer → Test Validator → Reviewer → Commit
+Issue Analyst → Explorer → [TactiqResearch] → Clarify → Architect → Implementer → Test Validator → Reviewer → Commit
 ```
 
-### Crews
+### Crews (in order)
 
-1. **Issue Analyst** - Parse task into structured requirements
-2. **Explorer** - Analyze codebase structure and dependencies
-3. **TactiqResearch** - (Optional) Fetch meeting context, ask AI questions, determine if clarification needed
-4. **Clarify** - Resolve ambiguities via human questions (skipped if Tactiq resolves all)
-5. **Architect** - Create file-level implementation plan
-6. **Implementer** - Write code following the plan
-7. **Test Validator** - Write and validate tests
-8. **Reviewer** - Code review with security/perf checks
-8. **Commit** - Create branch, commit, and PR
+1. **Issue Analyst** (4 agents) - Parse issue into requirements
+2. **Explorer** (5 agents) - Analyze codebase structure
+3. **TactiqResearch** (1, optional) - Fetch meeting context, decide if clarification needed
+4. **Clarify** (3 agents) - Ask human questions for ambiguities
+5. **Architect** (6 agents) - Create file-level plan
+6. **Implementer** (5 agents) - Write code, docstrings, run linters
+7. **Test Validator** (3 agents) - Write tests, validate quality
+8. **Reviewer** (6 agents) - Security, performance, accessibility checks
+9. **Commit** (5 agents) - Create branch, commit, PR
+
+### Decision Points
+
+- **TactiqResearch**: If meeting resolves ambiguities → skip Clarify
+- **Reviewer**: If `ISSUES:` → loop to Implementer (up to max_retries)
+- **Commit**: If `dry_run=true` → skip branch/PR
 
 ---
 
@@ -557,22 +560,42 @@ mypy --strict src/mycrew
 
 ```
 src/mycrew/
-├── main.py          # Pipeline flow orchestration
-├── settings.py      # Configuration management
-├── llm.py           # LLM provider and model config
-├── providers.py     # OpenRouter & HuggingFace providers
-├── utils.py         # Shared utilities
-├── webhook.py       # Webhook API server
-├── kickoff_client.py # HTTP client for triggering pipeline
-├── crews/           # Crew implementations
-│   ├── base.py      # PipelineCrewBase
-│   ├── abc_crew.py  # ABCrew abstract base
-│   └── */           # Individual crews
-└── tools/           # Custom tools
-    ├── repo_shell_tool.py
-    ├── repo_file_writer_tool.py
-    └── ...
+├── main.py              # Pipeline flow orchestration
+├── settings.py          # Configuration management (env vars, defaults.yaml)
+├── llm.py              # LLM provider, stage-specific models, fallbacks
+├── providers.py         # OpenRouter & HuggingFace provider implementations
+├── utils.py             # Shared utilities
+├── exceptions.py        # Custom exception hierarchy
+├── webhook.py          # Webhook API server
+├── kickoff_client.py   # HTTP client for triggering pipeline
+├── crews/              # Crew implementations
+│   ├── base.py         # PipelineCrewBase (shared tools, LLMs)
+│   ├── abc_crew.py     # ABCrew abstract base
+│   └── */              # Individual crews (issue_analyst, explorer, etc.)
+└── tools/              # Custom tools
+    ├── repo_shell_tool.py         # Shell commands (ls, cat, grep, pytest)
+    ├── repo_file_writer_tool.py   # Write files to repository
+    ├── create_pr_tool.py          # Push branch, create PR via gh CLI
+    ├── human_tool.py              # ask_human - interactive clarification
+    ├── tactiq_tool.py             # Tactiq meeting API integration
+    ├── github_api_search_tool.py  # GitHub REST API search
+    ├── factory.py                 # Tool factory for stage-based selection
+    └── noop_tool.py               # No-op fallback when tools unavailable
 ```
+
+### Tools Reference
+
+| Tool | Description |
+|------|-------------|
+| `repo_shell` | Run shell commands (ls, cat, grep, pytest) |
+| `repo_file_writer` | Write files to repository |
+| `create_pr` | Push branch, create PR |
+| `ask_human` | Human clarification questions |
+| `github_search` | Search GitHub code/issues |
+| `serper_dev` | Web search |
+| `code_interpreter` | Run code in Docker |
+
+Safety: repo_shell blocks dangerous commands, 16KB output limit, 90s timeout.
 
 ---
 
