@@ -8,6 +8,7 @@ import re
 import subprocess
 import tempfile
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from crewai.flow import Flow, listen, or_, start
@@ -630,15 +631,37 @@ class PipelineRunner:
     """Pipeline runner - handles CLI entry point and orchestration."""
 
     @staticmethod
-    def _configure_logging(level: int | str | None = None):
-        """Configure logging."""
+    def _configure_logging(level: int | str | None = None, log_file: str | None = None):
+        """Configure logging to console and optional file."""
         if level is None:
             level = logging.INFO
+
+        handlers: list[logging.Handler] = []
+
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s | %(levelname)-8s | %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+        )
+        handlers.append(console_handler)
+
+        if log_file:
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setFormatter(
+                logging.Formatter(
+                    "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+                    datefmt="%Y-%m-%d %H:%M:%S",
+                )
+            )
+            handlers.append(file_handler)
 
         logging.basicConfig(
             level=level,
             format="%(asctime)s | %(levelname)-8s | %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
+            handlers=handlers,
         )
 
     @classmethod
@@ -709,7 +732,14 @@ class PipelineRunner:
         else:
             log_level = None
 
-        cls._configure_logging(level=log_level)
+        log_dir = os.path.join(os.path.expanduser("~"), ".mycrew", "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_file = os.path.join(log_dir, f"pipeline_{timestamp}.log")
+
+        cls._configure_logging(level=log_level, log_file=log_file)
+
+        logger.info(f"Logging to file: {log_file}")
 
         cls.kickoff(
             issue_url=args.issue_url or "",
