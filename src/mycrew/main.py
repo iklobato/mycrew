@@ -753,5 +753,25 @@ class PipelineRunner:
         )
 
 
+def _main():
+    """Entry point for CLI."""
+    PipelineRunner.main()
+
+
+def kickoff(issue_url: str, **kwargs):
+    """Programmatic entry point."""
+    PipelineRunner.kickoff(issue_url=issue_url, **kwargs)
+
+
+def run_with_trigger(issue_url: str, trigger_type: str, **kwargs):
+    """Entry point for webhook triggers."""
+    PipelineRunner.kickoff(issue_url=issue_url, **kwargs)
+
+
+def plot():
+    """Entry point for plotting."""
+    pass
+
+
 if __name__ == "__main__":
     PipelineRunner.main()
