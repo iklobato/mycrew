@@ -20,6 +20,7 @@ class ExplorerCrew(PipelineCrewBase):
             "dependency_analyzer",
             "test_layout_scout",
             "convention_extractor",
+            "internal_deps_scout",
             "api_boundary_scout",
         ]
 
@@ -30,6 +31,7 @@ class ExplorerCrew(PipelineCrewBase):
             "dependency_analyze_task",
             "test_layout_task",
             "convention_extract_task",
+            "internal_deps_task",
             "api_boundary_scout_task",
         ]
 
@@ -54,6 +56,10 @@ class ExplorerCrew(PipelineCrewBase):
         return self._build_agent("convention_extractor")
 
     @agent
+    def internal_deps_scout(self) -> Agent:
+        return self._build_agent("internal_deps_scout")
+
+    @agent
     def api_boundary_scout(self) -> Agent:
         return self._build_agent("api_boundary_scout")
 
@@ -72,6 +78,10 @@ class ExplorerCrew(PipelineCrewBase):
     @task
     def convention_extract_task(self) -> Task:
         return self._build_task("convention_extract_task")
+
+    @task
+    def internal_deps_task(self) -> Task:
+        return self._build_task("internal_deps_task")
 
     @task
     def api_boundary_scout_task(self) -> Task:

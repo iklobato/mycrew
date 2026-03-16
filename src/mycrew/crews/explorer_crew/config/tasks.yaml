@@ -4,60 +4,28 @@ explore_task:
 
     Context:
     {repo_context}
-    - Focus paths (if set): {focus_paths}
-    - Exclude paths (if set): {exclude_paths}
 
-    Issue context (use to focus exploration): {issue_analysis}
+    Issue context: {issue_analysis}
 
-    When focus_paths is set,
-    prioritize exploring those paths. When exclude_paths is set, avoid spending
-    time on them. Do not exhaustively document the entire codebase—only what is
-    needed for the plan.
+    **CRITICAL: When calling tools, you MUST pass a valid JSON dictionary with the exact parameter name.**
+
+    For RepoShellTool, the parameter is named "command" (singular).
     
-    **IMPORTANT: Avoid memory-intensive commands on large repositories.**
-    - Use `--include` and `--exclude-dir` flags with grep
-    - Limit output with `| head -N`
-    - Search specific directories (src/, app/) not entire repository (.)
-    - Output is limited to 64KB - excessive output will be truncated
+    GOOD: {"command": "ls -la"}
+    BAD: {"cmd": "ls -la"}
+    BAD: "ls -la"
+    BAD: ls -la
 
-    Run `git log -5 --name-only` to identify recently changed files; include them
-    in Key Files when relevant. When test_command is set, document the test
-    layout (e.g. tests/ with pytest, or test_*.py next to source) and the test
-    command in Conventions. When github_repo is set, consider checking
-    CONTRIBUTING.md, ARCHITECTURE.md, or README for project conventions.
+    Run ONE tool at a time. After each tool call, wait for the result before
+    making another call. Do NOT make multiple tool calls in one response.
 
-    ## Tools
+    Use these commands:
+    - ls (directory listing)
+    - cat FILE (read file)
+    - head -20 FILE (first 20 lines)
+    - grep "PATTERN" FILE (search in file)
 
-    - **Repo Shell Tool** — Param: command. Runs shell in repo. 
-      
-      **Directory listing - use these commands:**
-      - Use `ls` NOT `ls -la` (shorter output, no permission/size columns)
-      - Use `ls -R` for recursive but still concise
-      - Use `tree -L 2` if available
-      
-      **File reading:**
-      - find src -name "*.py", cat pyproject.toml, head -50 path/to/file, grep -r "pattern" src,
-      - git log -5 --name-only. Read-only preferred.
-      
-      **IMPORTANT - NEVER scan the entire repository with "." - THIS WILL HANG/TIMEOUT:**
-      - NEVER use: grep -r "pattern" . (will timeout!)
-      - ALWAYS use a specific directory: grep -r "pattern" src/
-      - NEVER use: find . -name (will scan everything)
-      - ALWAYS use: find src/ -name or find . --maxdepth 3 -name
-      - Example: grep -r "test_command" src/ --include="*.py" | head -20
-      
-      **For large repositories, use focused commands to avoid memory issues:**
-      - `grep -r "pattern" src --include="*.py" --exclude-dir=node_modules --exclude-dir=.git | head -100`
-      - `find . -maxdepth 3 -name "*.py" -exec grep -l "pattern" {} \; | head -50`
-      - `grep -r "def " src --include="*.py" | head -50` (not `grep -r 'def ' .`)
-      
-      To extract a specific function from a file:
-      - grep -A 15 'def function_name' path/to/file.py (shows function + 15 lines)
-      - sed -n '/def function_name/,/^def /p' path/to/file.py (extract until next def)
-      - Do NOT pipe multiple grep -v filters — extract directly instead
-      
-      To discover files, use ls:
-      - ls .github/workflows/ to see available workflow files
+    Produce sections: ## Tech Stack ## Directory Layout ## Key Files ## Conventions
       - ls path/to/directory to see contents
       - Do NOT guess filenames with multiple || cat attempts
 
@@ -178,4 +146,56 @@ api_boundary_scout_task:
   expected_output: >
     Full exploration with ## API Boundary section.
   agent: api_boundary_scout
+
+internal_deps_task:
+  description: >
+  description: >
+    Find and analyze internal/private dependencies. You receive the full exploration.
+
+    Context:
+    {repo_context}
+
+    Task: {task}
+
+    Use Repo Shell Tool:
+    - cat pyproject.toml (look for dependencies, extra-index-url)
+    - cat requirements.txt (check for private package names)
+    - cat package.json (check dependencies, resolutions)
+    - cat .npmrc (check for private registry)
+    - cat pip.conf or ~/.pip/pip.conf (check for private index)
+
+    PRIVATE PACKAGE INDICATORS:
+    - Non-public npm packages: @company/*, @org/*
+    - Non-public pip packages: company-*, internal-*
+    - Private registry URLs: https://npm.pkg.github.com, private PyPI URLs
+    - GitHub package references: owner/package@version
+    - Direct git references: git+https://...
+
+    ALSO CHECK:
+    - Look for direct GitHub repo imports in code (not via package managers)
+    - grep for "from github.com" or "git@github.com:" in source files
+
+    For each internal package found:
+    1. Use github_search to find the package repo
+    2. Document known APIs/contracts from README or code
+    3. Search for how current codebase imports it
+
+    APPEND:
+    ## Internal Dependencies
+    - List each internal package with:
+      - Source (private registry, GitHub packages, direct git)
+      - GitHub location if found
+      - Contracts/APIs used in codebase
+      - Version requirements
+
+    If no internal dependencies found, output:
+    ## Internal Dependencies
+    None found (all dependencies are public)
+
+    If internal deps inaccessible, output warning but continue:
+    ## Internal Dependencies
+    WARNING: Some internal packages detected but not accessible
+  expected_output: >
+    Full exploration document with appended ## Internal Dependencies section.
+  agent: internal_deps_scout
   context: [convention_extract_task]

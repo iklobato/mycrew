@@ -489,7 +489,13 @@ Issue Analyst → Explorer → [TactiqResearch] → Clarify → Architect → Im
 ### Crews (in order)
 
 1. **Issue Analyst** (4 agents) - Parse issue into requirements
-2. **Explorer** (5 agents) - Analyze codebase structure
+2. **Explorer** (6 agents) - Analyze codebase structure, internal dependencies
+   - repo_explorer - Tech stack, directory layout
+   - dependency_analyzer - Import graphs, blast radius
+   - test_layout_scout - Test structure
+   - convention_extractor - Lint/format config
+   - internal_deps_scout - Private/internal package contracts
+   - api_boundary_scout - Routes and endpoints
 3. **TactiqResearch** (1, optional) - Fetch meeting context, decide if clarification needed
 4. **Clarify** (3 agents) - Ask human questions for ambiguities
 5. **Architect** (6 agents) - Create file-level plan
