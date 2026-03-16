@@ -10,7 +10,10 @@ from typing import Type
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 
+from mycrew.logging_utils import PipelineLogger
+
 logger = logging.getLogger(__name__)
+_tool_logger = PipelineLogger()
 
 
 def _make_pr_body(
@@ -106,6 +109,17 @@ class CreatePRTool(BaseTool):
         issue_id: str,
         labels: str,
     ) -> str:
+        _tool_logger.log_input(
+            "CreatePRTool",
+            {
+                "repo_path": self.repo_path,
+                "feature_branch": feature_branch,
+                "base_branch": base_branch,
+                "task": task,
+                "github_repo": github_repo,
+            },
+        )
+
         repo = os.path.abspath(self.repo_path)
         if not os.path.isdir(repo):
             return f"Error: repo_path does not exist: {repo}"
@@ -203,10 +217,13 @@ class CreatePRTool(BaseTool):
                         logger.error(f"Failed to add labels: {e}", exc_info=True)
 
                 logger.info(f"PR created: {pr_url}")
+                _tool_logger.log_output("CreatePRTool", pr_url or "PR created")
                 return pr_url or "PR created"
             finally:
                 os.unlink(body_file)
         except FileNotFoundError:
+            _tool_logger.log_output("CreatePRTool", "gh CLI not found")
             return "gh CLI not found; install to create PRs"
         except Exception as e:
+            _tool_logger.log_output("CreatePRTool", f"PR creation failed: {e}")
             return f"PR creation failed: {e}"

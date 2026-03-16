@@ -7,7 +7,10 @@ import requests
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 
+from mycrew.logging_utils import PipelineLogger
+
 logger = logging.getLogger(__name__)
+_tool_logger = PipelineLogger()
 
 
 class GitHubAPISearchToolInput(BaseModel):
@@ -62,6 +65,11 @@ class GitHubAPISearchTool(BaseTool):
 
     def _run(self, search_query: str, content_types: str = "code") -> str:
         """Execute GitHub search using REST API."""
+        _tool_logger.log_input(
+            "GitHubAPISearchTool",
+            {"search_query": search_query, "content_types": content_types},
+        )
+
         try:
             # Build search query with repository filter
             repo_filter = f"repo:{self.owner}/{self.repo}"
@@ -104,11 +112,15 @@ class GitHubAPISearchTool(BaseTool):
             for i, result in enumerate(results[:10], 1):  # Limit to 10 results
                 formatted_results.append(self._format_result(result, i))
 
-            return "\n\n".join(formatted_results)
+            output = "\n\n".join(formatted_results)
+            _tool_logger.log_output("GitHubAPISearchTool", output)
+            return output
 
         except Exception as e:
             logger.error(f"GitHub API search failed: {e}")
-            return f"GitHub search failed: {str(e)}"
+            error_msg = f"GitHub search failed: {str(e)}"
+            _tool_logger.log_output("GitHubAPISearchTool", error_msg)
+            return error_msg
 
     def _search_code(self, query: str) -> list[dict[str, Any]]:
         """Search code in repository."""

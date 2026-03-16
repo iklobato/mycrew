@@ -10,7 +10,10 @@ from typing import Type
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 
+from mycrew.logging_utils import PipelineLogger
+
 logger = logging.getLogger(__name__)
+_tool_logger = PipelineLogger()
 
 
 # Dangerous patterns to block
@@ -71,7 +74,10 @@ class RepoShellTool(BaseTool):
 
     def _run(self, command: str) -> str:
         """Execute a shell command in the repo with safety checks."""
-        logger.info(f"SHELL: repo_path={self.repo_path}, command={command[:100]}")
+        # Log input at DEBUG level (SRP - logging separated from business logic)
+        _tool_logger.log_input(
+            "RepoShellTool", {"repo_path": self.repo_path, "command": command}
+        )
 
         if not self.repo_path:
             return "Error: repo_path is not set."
@@ -283,6 +289,9 @@ class RepoShellTool(BaseTool):
                 logger.info("│ Output preview: %s", preview)
 
             logger.info("└─[ RepoShellTool COMPLETE ]─")
+
+            # Log output at DEBUG level
+            _tool_logger.log_output("RepoShellTool", output)
 
             return output
 

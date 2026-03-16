@@ -7,7 +7,10 @@ from typing import Any, Type
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 
+from mycrew.logging_utils import PipelineLogger
+
 logger = logging.getLogger(__name__)
+_tool_logger = PipelineLogger()
 
 
 def _strtobool(val: Any) -> bool:
@@ -58,6 +61,17 @@ class RepoFileWriterTool(BaseTool):
         overwrite: bool | str = False,
         directory: str | None = None,
     ) -> str:
+        _tool_logger.log_input(
+            "RepoFileWriterTool",
+            {
+                "repo_path": self.repo_path,
+                "filename": filename,
+                "content_length": len(content),
+                "overwrite": overwrite,
+                "directory": directory,
+            },
+        )
+
         logger.info(
             f"FILE WRITER: repo_path={self.repo_path}, filename={filename}, directory={directory}"
         )
@@ -84,6 +98,8 @@ class RepoFileWriterTool(BaseTool):
         if not os.path.abspath(filepath).startswith(os.path.abspath(repo)):
             return f"Error: path escapes repo: {filename}"
 
+        logger.debug(f"FILE WRITER: about to write to {filepath}")
+
         try:
             overwrite_flag = _strtobool(overwrite)
 
@@ -103,6 +119,7 @@ class RepoFileWriterTool(BaseTool):
 
             rel = os.path.relpath(filepath, repo)
             logger.info(f"Wrote {rel}")
+            _tool_logger.log_output("RepoFileWriterTool", f"Wrote {rel}")
             return f"Wrote {rel}"
 
         except FileExistsError:
