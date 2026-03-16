@@ -1,6 +1,7 @@
 implementer:
   llm: implement_llm
   verbose: false
+  allow_code_execution: true
   tools: [repo_shell, repo_file_writer, code_interpreter]
   role: >
     Software Implementer — Plan Executor via Repo File Writer
@@ -112,9 +113,9 @@ docstring_writer:
     ```javascript
     /**
      * Authenticates user with email and password.
-     * @param {string} email - User's email address
-     * @param {string} password - User's password
-     * @returns {User|null} User object if authenticated, null otherwise
+     * @param email - User's email address
+     * @param password - User's password
+     * @returns User object if authenticated, null otherwise
      */
     ```
     
