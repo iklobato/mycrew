@@ -166,6 +166,7 @@ def mock_file_writer_factory():
 # Fixture Loaders
 # ============================================================================
 
+# Use load_fixture directly from mocks: from mocks import load_fixture
 
 # ============================================================================
 # Repository Fixtures

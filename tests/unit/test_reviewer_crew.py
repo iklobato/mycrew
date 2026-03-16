@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from mocks import MockLLM, MockRepoShellTool
+from mocks import MockLLM, MockRepoShellTool, load_fixture
 
 
 @pytest.mark.crew
@@ -20,7 +20,7 @@ class TestReviewerCrew:
 
         assert "def hello" in result
 
-    def test_review_returns_code_quality_section(self, load_fixture):
+    def test_review_returns_code_quality_section(self):
         """Test that review returns code quality section."""
         fixture = load_fixture("llm_responses/review/success.json")
 
@@ -28,7 +28,7 @@ class TestReviewerCrew:
 
         assert "## Code Quality" in response or "Quality" in response
 
-    def test_review_returns_security_issues(self, load_fixture):
+    def test_review_returns_security_issues(self):
         """Test that review returns security issues section."""
         fixture = load_fixture("llm_responses/review/success.json")
 
@@ -36,7 +36,7 @@ class TestReviewerCrew:
 
         assert "## Security Issues" in response or "Security" in response
 
-    def test_review_returns_suggestions(self, load_fixture):
+    def test_review_returns_suggestions(self):
         """Test that review returns suggestions section."""
         fixture = load_fixture("llm_responses/review/success.json")
 
@@ -44,7 +44,7 @@ class TestReviewerCrew:
 
         assert "## Suggestions" in response or "suggestions" in response.lower()
 
-    def test_review_approves_clean_implementation(self, load_fixture):
+    def test_review_approves_clean_implementation(self):
         """Test that review approves clean implementation."""
         fixture = load_fixture("llm_responses/review/success.json")
 
@@ -97,7 +97,7 @@ class TestReviewerCrew:
 
         assert "E302" in result or result == ""
 
-    def test_review_returns_review_complete(self, load_fixture):
+    def test_review_returns_review_complete(self):
         """Test that review returns completion status."""
         fixture = load_fixture("llm_responses/review/success.json")
 

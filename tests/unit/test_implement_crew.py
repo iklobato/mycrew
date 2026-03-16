@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from mocks import MockRepoFileWriterTool, MockRepoShellTool
+from mocks import MockRepoFileWriterTool, MockRepoShellTool, load_fixture
 
 
 @pytest.mark.crew
@@ -44,7 +44,7 @@ class TestImplementCrew:
         assert "app.py" in result
         assert "Goodbye" in writer.written_files["app.py"]
 
-    def test_implement_returns_file_changes_section(self, load_fixture):
+    def test_implement_returns_file_changes_section(self):
         """Test that implement returns file changes section."""
         fixture = load_fixture("llm_responses/implement/success.json")
 

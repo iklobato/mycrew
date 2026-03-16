@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mocks import MockLLM, MockRepoShellTool
+from mocks import MockLLM, MockRepoShellTool, load_fixture
 
 
 @pytest.mark.crew
@@ -22,7 +22,7 @@ class TestExplorerCrew:
         assert "total 224" in result
         assert "ls -la" in tool.call_history
 
-    def test_explore_returns_tech_stack_section(self, load_fixture):
+    def test_explore_returns_tech_stack_section(self):
         """Test that explore returns tech stack section."""
         fixture = load_fixture("llm_responses/explorer/success.json")
 
@@ -31,7 +31,7 @@ class TestExplorerCrew:
         assert "## Tech Stack" in response
         assert "Python" in response
 
-    def test_explore_returns_directory_layout(self, load_fixture):
+    def test_explore_returns_directory_layout(self):
         """Test that explore returns directory layout."""
         fixture = load_fixture("llm_responses/explorer/success.json")
 
@@ -39,7 +39,7 @@ class TestExplorerCrew:
 
         assert "## Directory Layout" in response or "src/" in response
 
-    def test_explore_returns_key_files(self, load_fixture):
+    def test_explore_returns_key_files(self):
         """Test that explore returns key files."""
         fixture = load_fixture("llm_responses/explorer/success.json")
 
@@ -47,7 +47,7 @@ class TestExplorerCrew:
 
         assert "## Key Files" in response or "app.py" in response
 
-    def test_explore_returns_conventions(self, load_fixture):
+    def test_explore_returns_conventions(self):
         """Test that explore returns conventions."""
         fixture = load_fixture("llm_responses/explorer/success.json")
 

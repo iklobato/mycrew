@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from mocks import MockGitHubClient, MockRepoShellTool
+from mocks import MockGitHubClient, MockRepoShellTool, load_fixture
 
 
 @pytest.mark.crew
@@ -58,7 +58,7 @@ class TestCommitCrew:
         assert pull["title"] == "Add feature X"
         assert pull["head"] == "feature/test"
 
-    def test_commit_returns_pr_url(self, load_fixture):
+    def test_commit_returns_pr_url(self):
         """Test that commit returns PR URL."""
         fixture = load_fixture("llm_responses/commit/success.json")
 
@@ -66,7 +66,7 @@ class TestCommitCrew:
 
         assert "PR" in response or "pull" in response.lower()
 
-    def test_commit_returns_commit_summary(self, load_fixture):
+    def test_commit_returns_commit_summary(self):
         """Test that commit returns commit summary."""
         fixture = load_fixture("llm_responses/commit/success.json")
 

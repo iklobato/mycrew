@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mocks import MockGitHubClient, MockLLM
+from mocks import MockGitHubClient, MockLLM, load_fixture
 
 
 @pytest.mark.crew
@@ -43,7 +43,7 @@ class TestAnalyzeCrew:
         assert "## Requirements" in issue["body"]
         assert "Tests should pass" in issue["body"]
 
-    def test_analyze_returns_requirements_section(self, load_fixture):
+    def test_analyze_returns_requirements_section(self):
         """Test that analyze returns requirements section."""
         fixture = load_fixture("llm_responses/analyze/success.json")
 
@@ -52,7 +52,7 @@ class TestAnalyzeCrew:
         assert "## Requirements" in response
         assert "Add feature" in response
 
-    def test_analyze_returns_similar_issues(self, load_fixture):
+    def test_analyze_returns_similar_issues(self):
         """Test that analyze returns similar issues section."""
         fixture = load_fixture("llm_responses/analyze/success.json")
 
@@ -60,7 +60,7 @@ class TestAnalyzeCrew:
 
         assert "## Similar Issues" in response or "Similar Issues" in response
 
-    def test_analyze_returns_company_moment(self, load_fixture):
+    def test_analyze_returns_company_moment(self):
         """Test that analyze returns company moment section."""
         fixture = load_fixture("llm_responses/analyze/success.json")
 
