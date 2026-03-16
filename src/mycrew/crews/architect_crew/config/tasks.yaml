@@ -61,11 +61,20 @@ plan_task:
     - path/to/existing.py: list changes (add X at line N, replace Y with Z)
     ## Order
     Implement in this order if dependencies exist.
-
+    
     Each path must be a valid relative path (e.g. src/module.py, tests/test_foo.py).
+    
+    CRITICAL: At the end of your output, ADD this section:
+    ## Files to Lint (one per line):
+    src/module.py
+    tests/test_foo.py
+    
+    List EVERY file from Files to Create and Files to Modify, one per line.
+    This is used by the linter to only check modified files.
   expected_output: >
     File-level plan with "Files to Create" and "Files to Modify" sections.
     One file path per bullet. No code. Exact paths only.
+    MUST include "## Files to Lint" section at end with one file path per line.
   agent: architect
 
 dependency_order_task:

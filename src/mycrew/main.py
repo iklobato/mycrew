@@ -488,6 +488,12 @@ class CodePipelineFlow(Flow[PipelineState]):
             clarifications = self.state.issue_data.get("clarifications", "")
             prior_issues = self.state.issue_data.get("prior_issues", "")
 
+        files_to_lint = self._extract_files_to_lint(
+            str(self.state.architecture_result)
+            if self.state.architecture_result
+            else ""
+        )
+
         result = self._run_crew(
             ImplementerCrew,
             "implement",
@@ -498,6 +504,7 @@ class CodePipelineFlow(Flow[PipelineState]):
                 "plan": self.state.architecture_result,
                 "clarifications": clarifications,
                 "prior_issues": prior_issues,
+                "files_to_lint": files_to_lint,
             },
         )
 
@@ -507,6 +514,29 @@ class CodePipelineFlow(Flow[PipelineState]):
 
         self.state.implementation_result = result
         return self.review
+
+    def _extract_files_to_lint(self, plan: str | None) -> str:
+        """Extract file list from architecture plan for linting.
+
+        Parses the '## Files to Lint' section from the architect output.
+        """
+        if not plan:
+            return ""
+
+        import re
+
+        if not isinstance(plan, str):
+            return ""
+
+        pattern = r"## Files to Lint.*?\n(.*?)(?:\n##|\Z)"
+        match = re.search(pattern, plan, re.DOTALL | re.IGNORECASE)
+
+        if match:
+            files_text = match.group(1).strip()
+            files = [line.strip() for line in files_text.split("\n") if line.strip()]
+            return "\n".join(files)
+
+        return ""
 
     @listen(implement)
     def review(self):

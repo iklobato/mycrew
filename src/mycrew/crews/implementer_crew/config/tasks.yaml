@@ -15,6 +15,9 @@ implement_task:
 
     Context:
     {repo_context}
+    
+    ## Files to Lint (lint ONLY these after writing):
+    {files_to_lint}
 
     ## MANDATORY STEP — You MUST use Repo File Writer Tool
 
@@ -101,36 +104,45 @@ lint_fix_task:
   description: >
     Run linter and auto-fix. You receive output from type_hint_task.
 
+    Files to lint (ONLY these files, one per line):
+    {files_to_lint}
+    
     Context: {repo_context}
     Exploration (Lint & Format): {exploration}
 
-    Note: flake8 does NOT support --fix. For Python use uvx (uvx ruff check --fix ., uvx black .)
-    so linters run without being in PATH. Use eslint --fix or npx eslint for JS/TS.
-
-    Use Repo Shell: uvx black ., uvx ruff check --fix ., npx eslint --fix ., etc.
-    based on what the exploration found. Fix auto-fixable issues. Output
-    "Lint fixes applied." or "No linter configured."
+    IMPORTANT: Only lint the files listed above. Do NOT run linter on entire repo.
+    
+    Commands for specific files:
+    Python: uvx black {files_to_lint} && uvx ruff check --fix {files_to_lint}
+    JavaScript/TypeScript: npx prettier --write {files_to_lint} && npx eslint --fix {files_to_lint}
+    
+    Note: flake8 does NOT support --fix. Use uvx ruff for Python.
   expected_output: >
-    Previous output + lint status.
+    Previous output + lint status (only for files listed in Files to Lint).
   agent: lint_fixer
-  context: [type_hint_task]
+  context: [type_hint_task, implement_task]
 
 self_review_task:
   description: >
     Self-review before submit. You receive the full implementation output from lint_fix_task.
 
     Plan: {plan}
+    
+    Files that should have been modified (from plan):
+    {files_to_lint}
+    
     Context: {repo_context}
 
     Use Repo Shell Tool: git status, git diff --name-only. Verify:
-    1. Only files from the plan were modified
-    2. Every file in "Files to Create" and "Files to Modify" was touched
-    3. No unplanned files
+    1. ONLY files from {files_to_lint} were modified
+    2. Every file in Files to Lint was touched
+    3. No other files were modified
 
     Output SELF_REVIEW: PASS if clean. If issues: SELF_REVIEW: ISSUES:- (list).
 
     Then output the complete implementation summary (from previous task).
   expected_output: >
     SELF_REVIEW status + full implementation summary.
+  context: [lint_fix_task, implement_task]
   agent: self_reviewer
   context: [lint_fix_task]
