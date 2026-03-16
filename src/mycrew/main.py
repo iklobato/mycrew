@@ -125,6 +125,23 @@ class CodePipelineFlow(Flow[PipelineState]):
         Uses the crew's build_inputs method to construct standard inputs from
         pipeline state, then merges with custom input_data.
         """
+        # Reinitialize CrewAI event bus to prevent "shutdown" errors after long
+        # API calls. This fixes: RuntimeError: cannot schedule new futures
+        try:
+            from crewai.events.event_bus import crewai_event_bus
+            from concurrent.futures import ThreadPoolExecutor
+
+            if hasattr(crewai_event_bus, "_sync_executor"):
+                try:
+                    crewai_event_bus._sync_executor.shutdown(wait=False)
+                except Exception:
+                    pass
+            crewai_event_bus._sync_executor = ThreadPoolExecutor(max_workers=2)
+        except ImportError:
+            pass  # Older CrewAI versions may not have event_bus
+        except Exception:
+            pass  # Best effort - don't block crew execution
+
         if not crew_class:
             logger.info(f"Skipping {crew_name}: crew_class is None")
             return None
@@ -144,7 +161,7 @@ class CodePipelineFlow(Flow[PipelineState]):
         )
 
         # CRITICAL: Set context BEFORE creating crew instance
-        # Tools are initialized when @crew decorator runs, so context must be set first
+        # Tools initialized when @crew decorator runs, so context must be set first
         set_pipeline_context(ctx)
 
         # Use StepContext for structured logging (SRP - logging separated from business logic)
