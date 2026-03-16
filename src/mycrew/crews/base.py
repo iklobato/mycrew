@@ -50,9 +50,23 @@ class PipelineCrewBase(ABCrew):
         config = dict(self.agents_config[agent_key])  # type: ignore[attr-defined,index,union-attr]
         llm_ref = config.get("llm", "auxiliary_llm")
 
+        # Debug logging
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.info(f"_build_agent: agent={agent_key}, llm_ref={llm_ref}")
+
+        # Check if llm_ref is a stage reference (like "explore_llm") or a full model ID
         if isinstance(llm_ref, str) and llm_ref.endswith("_llm"):
             stage = llm_ref.removesuffix("_llm")
+            logger.info(f"  -> Using stage: {stage}")
+        elif isinstance(llm_ref, str) and llm_ref.startswith("openrouter/"):
+            # Full model ID provided directly - use it as-is
+            logger.info(f"  -> Using custom_model: {llm_ref}")
+            config["llm"] = get_llm_for_stage("auxiliary", custom_model=llm_ref)
+            return Agent(config=config)
         else:
+            logger.info(f"  -> Using default auxiliary")
             stage = "auxiliary"
 
         if stage == "security_review":

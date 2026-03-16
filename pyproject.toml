@@ -41,12 +41,34 @@ type = "flow"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+pythonpath = ["src"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+]
+markers = [
+    "unit: Unit tests (no external calls)",
+    "integration: Integration tests (may need external)",
+    "crew: Crew-specific tests",
+    "pipeline: Pipeline flow tests",
+    "slow: Tests that take longer to run",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.pytest.env]
+TESTING = "1"
 
 [tool.coverage.run]
 source = ["src/mycrew"]
 omit = [
-    "src/mycrew/main.py",  # Flow orchestration; tested via integration
+    "src/mycrew/main.py",
+    "tests/",
 ]
+branch = true
 
 [tool.coverage.report]
 fail_under = 75

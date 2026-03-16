@@ -193,12 +193,12 @@ class ModelMappings(Enum):
         huggingface_model="deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
     )
     EXPLORE = _StageMapping(
-        openrouter_model="openrouter/qwen/qwen3-coder",
+        openrouter_model="openrouter/deepseek/deepseek-r1",
         openrouter_fallbacks=(
-            "openrouter/deepseek/deepseek-r1",
+            "openrouter/qwen/qwen3-coder",
             "openrouter/google/gemma-3-27b-it",
         ),
-        huggingface_model="Qwen/Qwen2.5-Coder-32B-Instruct",
+        huggingface_model="deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
     )
     PLAN = _StageMapping(
         openrouter_model="openrouter/google/gemma-3-27b-it",
@@ -241,12 +241,12 @@ class ModelMappings(Enum):
         huggingface_model="mistralai/Mistral-7B-Instruct-v0.3",
     )
     AUXILIARY = _StageMapping(
-        openrouter_model="openrouter/mistralai/mistral-small-3.1-24b-instruct",
+        openrouter_model="openrouter/deepseek/deepseek-r1",
         openrouter_fallbacks=(
             "openrouter/google/gemma-3-27b-it",
-            "openrouter/deepseek/deepseek-r1",
+            "openrouter/qwen/qwen3-coder",
         ),
-        huggingface_model="mistralai/Mistral-7B-Instruct-v0.3",
+        huggingface_model="deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
     )
     SECURITY = _StageMapping(
         openrouter_model="openrouter/deepseek/deepseek-r1",
@@ -494,8 +494,14 @@ class LLMManager:
         context_text: str = "",
         estimated_context_tokens: int = 0,
         provider_type: str | None = None,
+        custom_model: str | None = None,
     ) -> LLM:
         """Return LLM for the given pipeline stage."""
+        # If custom_model is provided, use it directly
+        if custom_model:
+            provider = create_provider(provider_type)
+            return provider.create_llm(model=custom_model, max_tokens=2048)
+
         if isinstance(stage, str):
             stage_enum = PipelineStage(stage)
         else:
@@ -595,6 +601,7 @@ def get_llm_for_stage(
     context_text: str = "",
     estimated_context_tokens: int = 0,
     provider_type: str | None = None,
+    custom_model: str | None = None,
 ) -> LLM:
     """Return LLM for the given pipeline stage."""
     return LLMManager.get_for_stage(
@@ -603,6 +610,7 @@ def get_llm_for_stage(
         context_text=context_text,
         estimated_context_tokens=estimated_context_tokens,
         provider_type=provider_type,
+        custom_model=custom_model,
     )
 
 

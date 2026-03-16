@@ -1,7 +1,7 @@
 similar_issues_synthesizer:
   llm: analyze_issue_llm
   verbose: false
-  tools: [scrape_website, repo_shell, serper_dev, github_search]
+  tools: [repo_shell]
   role: >
     Similar Issues & Company Moment Synthesizer
   goal: >
