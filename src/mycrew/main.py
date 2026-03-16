@@ -18,6 +18,10 @@ from pydantic import BaseModel
 
 # Load settings before any CrewAI imports
 from mycrew.llm import validate_required_models
+from mycrew.pipeline_state import (
+    PipelineStep,
+    PipelineStateManager,
+)
 from mycrew.settings import get_settings
 from mycrew.utils import (
     clone_repo_for_issue,
@@ -33,6 +37,7 @@ from mycrew.crews.commit_crew.commit_crew import CommitCrew  # noqa: E402
 from mycrew.crews.explorer_crew.explorer_crew import ExplorerCrew  # noqa: E402
 from mycrew.crews.implementer_crew.implementer_crew import ImplementerCrew  # noqa: E402
 from mycrew.crews.issue_analyst_crew.issue_analyst_crew import IssueAnalystCrew  # noqa: E402
+from mycrew.logging_utils import StepContext  # noqa: E402
 from mycrew.crews.reviewer_crew.reviewer_crew import ReviewerCrew  # noqa: E402
 from mycrew.crews.tactiq_research_crew.tactiq_research_crew import (
     TactiqResearchCrew,
@@ -71,6 +76,11 @@ class PipelineState(BaseModel):
     retry_count: int = 0
     current_stage: str = ""
 
+    # Step-by-step execution
+    target_steps: list[str] = []  # List of step names to execute
+    input_file: str = ""  # Path to previous step results
+    mock: bool = False  # Mock mode - return fake results
+
 
 @persist(
     SQLiteFlowPersistence(
@@ -83,6 +93,27 @@ class CodePipelineFlow(Flow[PipelineState]):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    def kickoff(self, inputs: dict | None = None, **kwargs):
+        """Override kickoff to support step-by-step execution."""
+        # Check if running in step-by-step mode
+        if self._has_target_steps():
+            logger.info(f"Running in step-by-step mode: {self.state.target_steps}")
+
+            for step in self.state.target_steps:
+                logger.info(f"=== Starting step: {step} ===")
+
+                if not self._run_step(step):
+                    logger.error(f"Step {step} failed")
+                    return None
+
+                logger.info(f"Step {step} completed successfully")
+
+            logger.info("All steps completed successfully")
+            return None
+
+        # Default: run full pipeline
+        return super().kickoff(inputs=inputs, **kwargs)
 
     def _get_field_from_state(self, field_name: str, default=None):
         """Get field from state with fallback."""
@@ -116,23 +147,32 @@ class CodePipelineFlow(Flow[PipelineState]):
         # Tools are initialized when @crew decorator runs, so context must be set first
         set_pipeline_context(ctx)
 
-        repo_path_used = self.state.repo_root or self.state.repo_path
-        logger.info(f"=== STARTING CREW: {crew_name} | repo_path: {repo_path_used} ===")
+        # Use StepContext for structured logging (SRP - logging separated from business logic)
+        with StepContext(crew_name) as step:
+            # Log inputs at DEBUG level
+            try:
+                crew_instance = crew_class()
+                final_inputs = crew_instance.build_inputs(self.state, input_data)
+                step.log_input(final_inputs)
+            except Exception as e:
+                logger.error(f"[{crew_name}] Failed to build inputs: {e}")
+                return None
 
-        try:
-            crew_instance = crew_class()
-            # Use the crew's build_inputs method to get standard inputs from state
-            final_inputs = crew_instance.build_inputs(self.state, input_data)
             # CrewBase decorated classes have a crew() method that returns the Crew
-            crew = crew_instance.crew()
-            result = crew.kickoff(inputs=final_inputs)
-            logger.info(f"=== COMPLETED CREW: {crew_name} ===")
-            return result.raw
-        except Exception as e:
-            import traceback
+            try:
+                crew = crew_instance.crew()
+                result = crew.kickoff(inputs=final_inputs)
 
-            logger.error(f"Failed {crew_name} crew: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
+                # Log outputs at DEBUG level
+                step.log_output(result.raw if result else None)
+
+                return result.raw if result else None
+            except Exception as e:
+                import traceback
+
+                logger.error(f"Failed {crew_name} crew: {e}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                return None
             return None
 
     def _run_validate_tests(self, test_command: str | None = None):
@@ -586,7 +626,75 @@ class CodePipelineFlow(Flow[PipelineState]):
             return self.end
 
         self.state.commit_result = result
+
+        if not dry_run_value and github_repo_value:
+            self._validate_commit_result(result, feature_branch_name, github_repo_value)
+
         return self.end
+
+    def _validate_commit_result(
+        self, result: str, feature_branch: str, github_repo: str
+    ) -> None:
+        """Validate that commit and PR were actually created."""
+        import re
+
+        if not result:
+            logger.error("commit validation: no result from commit crew")
+            return
+
+        result_lower = result.lower()
+
+        if "skipped" in result_lower and (
+            "dry_run" in result_lower or "no github_repo" in result_lower
+        ):
+            logger.info(
+                "commit validation: PR creation was skipped (dry_run or no github_repo)"
+            )
+            return
+
+        placeholder_patterns = [
+            r"pull/123",
+            r"pull/\d+",
+            r"example\.com",
+            r"owner/repo",
+        ]
+
+        for pattern in placeholder_patterns:
+            if re.search(pattern, result, re.IGNORECASE):
+                logger.error(
+                    f"commit validation: FAILED - Found placeholder URL in result: {result[:200]}"
+                )
+                return
+
+        pr_url_match = re.search(r"https://github\.com/[^/]+/[^/]+/pull/\d+", result)
+        if not pr_url_match:
+            logger.warning(
+                f"commit validation: WARNING - No valid PR URL found in result. "
+                f"Result: {result[:200]}"
+            )
+            return
+
+        pr_url = pr_url_match.group(0)
+        logger.info(f"commit validation: SUCCESS - PR created: {pr_url}")
+
+        repo_path = self.state.repo_root or self.state.repo_path
+        if repo_path and os.path.isdir(repo_path):
+            try:
+                import subprocess
+
+                git_log = subprocess.run(
+                    ["git", "log", "--oneline", "-3"],
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if git_log.returncode == 0:
+                    logger.info(
+                        f"commit validation: Recent commits: {git_log.stdout[:200]}"
+                    )
+            except Exception as e:
+                logger.warning(f"commit validation: Could not check git log: {e}")
 
     @listen(or_(implement, review, validate_tests))
     def retry_implement(self):
@@ -626,6 +734,265 @@ class CodePipelineFlow(Flow[PipelineState]):
         logger.info(f"Pipeline completed: {self.state.issue_url}")
         return None
 
+    # ============ Step-by-Step Execution Methods ============
+
+    def _has_target_steps(self) -> bool:
+        """Check if running in step-by-step mode."""
+        return bool(self.state.target_steps)
+
+    def _is_step_in_targets(self, step: str) -> bool:
+        """Check if step should run (None = run all, otherwise check list)."""
+        if not self.state.target_steps:
+            return True
+        return step in self.state.target_steps
+
+    def _load_step_input(self, step: str, from_step: str | None = None) -> dict | None:
+        """Load input data for a step from file or auto-load from state."""
+        # First check if input_file is provided
+        if self.state.input_file:
+            return PipelineStateManager.load_step_result(self.state.input_file)
+
+        # Determine which step to load from
+        load_from = from_step if from_step else step
+
+        # Auto-load from state directory
+        try:
+            step_enum = PipelineStep(load_from)
+        except ValueError:
+            logger.error(f"Invalid step: {load_from}")
+            return None
+
+        result = PipelineStateManager.get_latest_result_for_step(step_enum)
+        if result:
+            logger.info(f"Auto-loaded input for {step} from {load_from} in state")
+            return result.get("data")
+
+        return None
+
+    def _save_step_output(self, step: str, data: dict) -> None:
+        """Save step output to state directory."""
+        try:
+            step_enum = PipelineStep(step)
+        except ValueError:
+            logger.error(f"Invalid step: {step}")
+            return
+
+        PipelineStateManager.save_step_result(step_enum, data)
+        logger.info(f"Saved output for step: {step}")
+
+    STEP_ORDER = [
+        "EXPLORE",
+        "ANALYZE",
+        "ARCHITECT",
+        "IMPLEMENT",
+        "REVIEW",
+        "VALIDATE_TESTS",
+        "COMMIT",
+    ]
+
+    def _get_previous_step(self, step: str) -> str | None:
+        """Get the step that comes before the current step."""
+        try:
+            idx = self.STEP_ORDER.index(step)
+            if idx > 0:
+                return self.STEP_ORDER[idx - 1]
+        except ValueError:
+            pass
+        return None
+
+    def _run_step(self, step: str) -> bool:
+        """Run a single step with validation."""
+        logger.info(f"=== Executing step: {step} ===")
+
+        # Validate input for this step - load from previous step
+        if step != "EXPLORE":
+            prev_step = self._get_previous_step(step)
+            input_data = self._load_step_input(step, from_step=prev_step)
+            if not input_data:
+                logger.error(
+                    f"Step {step} requires output from {prev_step}. "
+                    f"Provide --input-file or run previous step first."
+                )
+                return False
+
+        # Map step names to methods
+        step_methods = {
+            "EXPLORE": self._run_step_explore,
+            "ANALYZE": self._run_step_analyze,
+            "ARCHITECT": self._run_step_architect,
+            "IMPLEMENT": self._run_step_implement,
+            "REVIEW": self._run_step_review,
+            "VALIDATE_TESTS": self._run_step_validate_tests,
+            "COMMIT": self._run_step_commit,
+        }
+
+        if step not in step_methods:
+            logger.error(f"Unknown step: {step}")
+            return False
+
+        # Execute the step (or return mock data if mock mode)
+        if self.state.mock:
+            result = self._get_mock_result(step)
+            logger.info(f"Mock mode: returning fake result for {step}")
+        else:
+            result = step_methods[step]()
+
+        # Save output for next step
+        if result:
+            self._save_step_output(step, result)
+
+        return result is not None
+
+    def _get_mock_result(self, step: str) -> dict:
+        """Return mock data for a step without calling LLM."""
+        mock_data = {
+            "EXPLORE": {
+                "exploration_result": "Mock exploration: Tech Stack detected, Directory Layout mapped, Key Files identified, Conventions documented."
+            },
+            "ANALYZE": {
+                "analyze_result": "Mock analysis: Issue #838 parsed into structured requirements. Xerxes Robots TXT - Conditional GET Support."
+            },
+            "ARCHITECT": {
+                "architect_result": "Mock architect: Implementation plan created with Files to Create and Files to Modify sections."
+            },
+            "IMPLEMENT": {
+                "implementation_result": "Mock implementation: Files modified in target repository. Changes ready for review."
+            },
+            "REVIEW": {
+                "review_result": "Mock review: Code reviewed, feedback provided, approved for merge."
+            },
+            "VALIDATE_TESTS": {
+                "validation_result": {
+                    "passed": True,
+                    "output": "Mock tests: All tests passed.",
+                }
+            },
+            "COMMIT": {
+                "commit_result": "Mock commit: Changes committed and PR created."
+            },
+        }
+        return mock_data.get(step, {"result": f"Mock result for {step}"})
+
+    def _run_step_explore(self) -> dict | None:
+        """Execute EXPLORE step."""
+        self.state.current_stage = "explore"
+        url = self.state.issue_url.strip() if self.state.issue_url else ""
+        rp = self.state.repo_path.strip() if self.state.repo_path else ""
+
+        if not url and not rp:
+            logger.error("EXPLORE step requires issue_url or repo_path")
+            return None
+
+        # Set up repo root and issue_data
+        if rp:
+            if not os.path.isdir(rp):
+                logger.error(f"repo_path does not exist: {rp}")
+                return None
+            self.state.repo_root = os.path.abspath(rp)
+            logger.info(f"Using provided repo path: {self.state.repo_root}")
+
+            if not url:
+                github_repo = detect_github_repo(self.state.repo_root)
+                if not github_repo:
+                    logger.error("Could not detect github_repo from local repo")
+                    return None
+                self.state.issue_data = {
+                    "owner": github_repo.split("/")[0],
+                    "repo": github_repo.split("/")[1],
+                    "kind": "repo",
+                    "number": "",
+                    "is_pull": False,
+                    "github_repo": github_repo,
+                }
+
+        # Run the exploration crew directly
+        result = self._run_crew(
+            ExplorerCrew,
+            "explore",
+            {"issue_url": url, "issue_data": self.state.issue_data},
+        )
+
+        if result:
+            self.state.exploration_result = result
+            return {"exploration_result": result}
+
+        logger.error("EXPLORE step failed")
+        return None
+
+    def _run_step_analyze(self) -> dict | None:
+        """Execute ANALYZE step."""
+        if not self._is_step_in_targets("EXPLORE"):
+            # Need exploration result from input
+            input_data = self._load_step_input("EXPLORE")
+            if input_data:
+                self.state.exploration_result = input_data.get("exploration_result")
+
+        self.state.current_stage = "analyze"
+        result = self._run_crew(
+            IssueAnalystCrew,
+            "analyze_issue",
+            {"issue_url": self.state.issue_url, "issue_data": self.state.issue_data},
+        )
+        if result:
+            return {"analyze_result": result}
+        return None
+
+    def _run_step_architect(self) -> dict | None:
+        """Execute ARCHITECT step."""
+        self.state.current_stage = "architect"
+        result = self._run_crew(
+            ArchitectCrew,
+            "architect",
+            {"issue_url": self.state.issue_url, "issue_data": self.state.issue_data},
+        )
+        if result:
+            return {"architect_result": result}
+        return None
+
+    def _run_step_implement(self) -> dict | None:
+        """Execute IMPLEMENT step."""
+        self.state.current_stage = "implement"
+        result = self._run_crew(
+            ImplementerCrew,
+            "implement",
+            {"issue_url": self.state.issue_url, "issue_data": self.state.issue_data},
+        )
+        if result:
+            return {"implementation_result": result}
+        return None
+
+    def _run_step_review(self) -> dict | None:
+        """Execute REVIEW step."""
+        self.state.current_stage = "review"
+        result = self._run_crew(
+            ReviewerCrew,
+            "review",
+            {"issue_url": self.state.issue_url, "issue_data": self.state.issue_data},
+        )
+        if result:
+            return {"review_result": result}
+        return None
+
+    def _run_step_validate_tests(self) -> dict | None:
+        """Execute VALIDATE_TESTS step."""
+        self.state.current_stage = "validate_tests"
+        result = self.validate_tests()
+        if result:
+            return {"validation_result": result}
+        return None
+
+    def _run_step_commit(self) -> dict | None:
+        """Execute COMMIT step."""
+        self.state.current_stage = "commit"
+        result = self._run_crew(
+            CommitCrew,
+            "commit",
+            {"issue_url": self.state.issue_url, "issue_data": self.state.issue_data},
+        )
+        if result:
+            return {"commit_result": result}
+        return None
+
 
 class PipelineRunner:
     """Pipeline runner - handles CLI entry point and orchestration."""
@@ -641,7 +1008,7 @@ class PipelineRunner:
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(
             logging.Formatter(
-                "%(asctime)s | %(levelname)-8s | %(message)s",
+                "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
                 datefmt="%Y-%m-%d %H:%M:%S",
             )
         )
@@ -659,10 +1026,13 @@ class PipelineRunner:
 
         logging.basicConfig(
             level=level,
-            format="%(asctime)s | %(levelname)-8s | %(message)s",
+            format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
             handlers=handlers,
         )
+
+        for lib in ["LiteLLM", "litellm", "urllib3", "httpx", "openai", "crewai"]:
+            logging.getLogger(lib).setLevel(logging.WARNING)
 
     @classmethod
     def kickoff(
@@ -675,9 +1045,25 @@ class PipelineRunner:
         programmatic: bool = False,
         tactiq_meeting_id: str = "",
         repo_path: str = "",
+        target_steps: str = "",
+        input_file: str = "",
+        mock: bool = False,
     ):
         """Kickoff the pipeline."""
-        validate_required_models()
+        if not mock:
+            validate_required_models()
+
+        # Parse target steps
+        steps_list: list[str] = []
+        if target_steps:
+            valid_step_values = {s.value for s in PipelineStep}
+            for s in target_steps.split(","):
+                step = s.strip()
+                if step not in valid_step_values:
+                    logger.error(f"Invalid step: {step}")
+                    logger.error(f"Valid steps: {list(valid_step_values)}")
+                    return
+                steps_list.append(step)
 
         state = PipelineState(
             id=str(uuid.uuid4()),
@@ -688,6 +1074,9 @@ class PipelineRunner:
             programmatic=programmatic,
             tactiq_meeting_id=tactiq_meeting_id,
             repo_path=repo_path,
+            target_steps=steps_list,
+            input_file=input_file,
+            mock=mock,
         )
         flow = CodePipelineFlow(state=state)
         flow._state = state
@@ -719,11 +1108,26 @@ class PipelineRunner:
             "--verbose", "-v", action="store_true", help="Verbose logging"
         )
         parser.add_argument("--debug", action="store_true", help="Debug logging")
+        parser.add_argument(
+            "--steps",
+            default="",
+            help="Comma-separated steps: EXPLORE,ANALYZE,ARCHITECT,IMPLEMENT,REVIEW,VALIDATE_TESTS,COMMIT",
+        )
+        parser.add_argument(
+            "--input-file",
+            default="",
+            help="Path to previous step results (JSON). If empty, auto-loads from ~/.mycrew/state/",
+        )
+        parser.add_argument(
+            "--mock",
+            action="store_true",
+            help="Mock mode - return fake results without calling LLM",
+        )
 
         args = parser.parse_args()
 
-        if not args.issue_url and not args.repo_path:
-            parser.error("Either issue_url or --repo-path is required")
+        if not args.issue_url and not args.repo_path and not args.steps:
+            parser.error("Either issue_url, --repo-path, or --steps is required")
 
         if args.debug:
             log_level = logging.DEBUG
@@ -750,6 +1154,9 @@ class PipelineRunner:
             dry_run=args.dry_run,
             programmatic=args.programmatic,
             tactiq_meeting_id=args.tactiq_meeting_id,
+            target_steps=args.steps,
+            input_file=args.input_file,
+            mock=args.mock,
         )
 
 

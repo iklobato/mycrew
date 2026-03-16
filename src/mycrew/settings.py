@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     def apply_crewai_telemetry(self) -> None:
         """Apply crewai_telemetry to os.environ for CrewAI library."""
         os.environ["CREWAI_TRACING_ENABLED"] = str(self.crewai_telemetry).lower()
+        os.environ["LITELLM_DROP_PARAMS"] = "true"
+        os.environ["LITELLM_TELEMETRY"] = "false"
+        os.environ["LITELLM_LOG"] = "false"
+        os.environ["LITELLM_REQUEST_LOGGER"] = "false"
+        os.environ["LITELLM_MAX_PARALLEL_REQUESTS"] = "0"
 
 
 def get_settings() -> Settings:
