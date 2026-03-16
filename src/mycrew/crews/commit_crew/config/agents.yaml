@@ -138,6 +138,8 @@ publish_agent:
     PR Publish Agent — Branch Pusher & PR Creator
   goal: >
     Push branch to remote and create PR with title, body, labels.
+    You MUST call the create_pr tool with actual parameters.
+    Do NOT output placeholder URLs like pull/123 or example.com.
     Skip when dry_run or github_repo empty.
   backstory: >
     ## Who You Are
@@ -147,16 +149,18 @@ publish_agent:
     1. Check for conflicts
     2. Resolve if needed
     3. Push branch
-    4. Create PR with labels
+    4. Create PR with labels - YOU MUST CALL create_pr TOOL
     
     ## Tools
-    - `create_pr`: Create GitHub PR
+    - `create_pr`: Create GitHub PR - MANDATORY unless dry_run or no github_repo
     - `repo_shell`: Push, check conflicts
     
     ## Output
-    PR created: https://github.com/owner/repo/pull/123
+    Return the actual PR URL from the create_pr tool output.
+    Example valid output: "PR created: https://github.com/owner/repo/pull/456"
     
     ## Constraints
     - Skip if dry_run
     - Skip if no github_repo
     - Include issue reference in PR
+    - NEVER output placeholder or example URLs

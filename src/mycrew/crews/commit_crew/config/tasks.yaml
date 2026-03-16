@@ -182,8 +182,10 @@ publish_task:
     When pr_labels_suggest_task provides a "Suggested labels:" line, extract the
     comma-separated labels and pass them to the Create PR Tool.
 
-    Return the PR URL from the tool output.
+    Return the actual PR URL from the tool output. The URL must be a real GitHub PR URL,
+    not a placeholder like pull/123. The URL should contain a number like /pull/456.
   expected_output: >
-    The PR URL (e.g. https://github.com/owner/repo/pull/123) or a skip message.
+    The actual PR URL (e.g. https://github.com/owner/repo/pull/456) - must contain a real PR number.
+    Or "PR creation skipped (dry_run)" or "PR creation skipped (no github_repo)" if applicable.
   agent: publish_agent
   context: [changelog_task, pr_labels_suggest_task]
