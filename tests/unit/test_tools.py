@@ -268,6 +268,12 @@ def test_create_pr_tool_empty_github_repo_returns_error(tmp_path):
         base_branch="main",
         task="Task",
         github_repo="",
+        implementation="impl",
+        plan="plan",
+        review_verdict="approved",
+        issue_url="https://github.com/test/repo/issues/1",
+        issue_id="1",
+        labels="bug",
     )
     assert "Error" in result
     assert "github_repo" in result
