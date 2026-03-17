@@ -12,7 +12,6 @@ from crewai import LLM
 from mycrew.exceptions import ModelUnavailableError
 from mycrew.providers import create_provider
 from mycrew.settings import get_settings
-from mycrew.utils import log_exceptions
 
 logger = logging.getLogger(__name__)
 
@@ -96,12 +95,14 @@ except ImportError as e:
 _original_format_messages = LLM._format_messages_for_provider
 
 
-@log_exceptions("_patched_format_messages")
 def _patched_format_messages(self, messages: list[Any]) -> list[dict[str, Any]]:
-    result = _original_format_messages(self, messages)
-    if result and result[-1].get("role") == "assistant":
-        return [*result, {"role": "user", "content": "Please continue."}]
-    return result
+    try:
+        result = _original_format_messages(self, messages)
+        if result and result[-1].get("role") == "assistant":
+            return [*result, {"role": "user", "content": "Please continue."}]
+        return result
+    except Exception:
+        raise
 
 
 LLM._format_messages_for_provider = _patched_format_messages
@@ -313,7 +314,7 @@ class LLMConfigLoader:
 
         config_path = Path(config_path)
         if not config_path.exists():
-            logger.debug(
+            logger.info(
                 "Config file not found at %s, using default models", config_path
             )
             return DEFAULT_PIPELINE_MODELS
@@ -324,9 +325,7 @@ class LLMConfigLoader:
 
             models_config = config_data.get("models", {})
             if not models_config:
-                logger.debug(
-                    "No 'models' section found in config, using default models"
-                )
+                logger.info("No 'models' section found in config, using default models")
                 return DEFAULT_PIPELINE_MODELS
 
             pipeline_models = DEFAULT_PIPELINE_MODELS.copy()
@@ -539,7 +538,7 @@ class LLMValidator:
         settings = get_settings()
 
         if not settings.openrouter_api_key:
-            logger.debug("No OpenRouter API key, skipping model validation")
+            logger.info("No OpenRouter API key, skipping model validation")
             return
 
         provider_type = settings.provider_type

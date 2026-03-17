@@ -1,3 +1,0 @@
-{
-  "response": "## Tech Stack\n- Python 3.11\n- Flask 2.0\n- pytest\n\n## Directory Layout\n- src/app.py\n- tests/test_app.py\n- pyproject.toml\n\n## Key Files\n- src/app.py: Main application\n- tests/test_app.py: Test file\n\n## Conventions\n- Testing: pytest\n- Code style: PEP 8"
-}

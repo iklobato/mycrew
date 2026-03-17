@@ -1,65 +1,65 @@
-"""Clarify crew: detects ambiguities, prioritizes, asks human before planning."""
+"""Clarify crew: identify ambiguities and ask human for clarification."""
 
-from typing import ClassVar, List
+from crewai import Agent, Crew, LLM, Process, Task
 
-from crewai import Agent, Crew, Process, Task
-from crewai.project import CrewBase, agent, crew, task
-
-from mycrew.crews.base import PipelineCrewBase
+from mycrew.llm import ModelMappings
+from mycrew.settings import Settings
 
 
-@CrewBase
-class ClarifyCrew(PipelineCrewBase):
-    """Clarify crew: ambiguity detection, prioritization, human questions."""
+class ClarifyCrew:
+    """Clarify crew: identify ambiguities and ask human for clarification."""
 
-    stage: ClassVar[str] = "auxiliary"
+    def __init__(self):
+        self.settings = Settings()
 
-    @property
-    def required_agents(self) -> List[str]:
-        return [
-            "ambiguity_detector",
-            "question_prioritizer",
-            "clarifier",
-        ]
-
-    @property
-    def required_tasks(self) -> List[str]:
-        return [
-            "ambiguity_detect_task",
-            "question_prioritize_task",
-            "clarify_task",
-        ]
-
-    @agent
-    def ambiguity_detector(self) -> Agent:
-        return self._build_agent("ambiguity_detector")
-
-    @agent
-    def question_prioritizer(self) -> Agent:
-        return self._build_agent("question_prioritizer")
-
-    @agent
     def clarifier(self) -> Agent:
-        return self._build_agent("clarifier")
+        return Agent(
+            llm=LLM(
+                model=ModelMappings.ANALYZE_ISSUE.value.openrouter_model,
+                api_key=self.settings.openrouter_api_key,
+            ),
+            role="Clarifier",
+            goal="Identify ambiguities and ask human for clarification",
+            backstory="Expert at analyzing requirements and identifying gaps",
+        )
 
-    @task
-    def ambiguity_detect_task(self) -> Task:
-        return self._build_task("ambiguity_detect_task")
-
-    @task
-    def question_prioritize_task(self) -> Task:
-        return self._build_task("question_prioritize_task")
-
-    @task
     def clarify_task(self) -> Task:
-        return self._build_task("clarify_task")
+        return Task(
+            description="""You are running the CLARIFY phase. Ask the human specific questions with options, starting with highest impact.
 
-    @crew
+## Task description
+{task}
+
+## Structured issue analysis
+{issue_analysis}
+
+## Codebase exploration results
+{exploration}
+
+## Your process
+
+1. Read all three inputs carefully — task, requirements, and exploration results.
+2. Cross-reference: look for tensions between what the spec asks for and what the
+   codebase currently looks like. Flag anything that could cause the architect to
+   make a wrong assumption.
+3. For each open question, ask ONE focused question.
+   The question string MUST include the full question plus Option A, Option B (and Option C/D if needed).
+4. Based on the answers, decide if follow-ups are needed.
+5. Do NOT ask about things already clearly answered in the issue analysis.
+6. Do NOT ask generic questions that ignore the exploration findings.
+7. Do NOT ask more than one question per turn.
+
+## Output format
+
+Produce a structured Clarifications & Development Guidelines document.""",
+            expected_output="A structured Clarifications & Development Guidelines document in Markdown.",
+            agent=self.clarifier(),
+        )
+
     def crew(self) -> Crew:
-        """Creates the ClarifyCrew crew."""
         return Crew(
-            agents=self.agents,  # type: ignore[attr-defined]
-            tasks=self.tasks,  # type: ignore[attr-defined]
+            agents=[self.clarifier()],
+            tasks=[self.clarify_task()],
             process=Process.sequential,
-            verbose=True,
+            memory=False,
         )

@@ -1,1 +1,0 @@
-{"response": "## Files to Create\n- src/new_feature.py\n\n## Files to Modify\n- src/app.py: Add new feature\n\n## Test Changes\n- tests/test_app.py: Add tests for new feature"}

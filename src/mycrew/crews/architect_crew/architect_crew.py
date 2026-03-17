@@ -1,88 +1,61 @@
-from typing import ClassVar, List
+from crewai import Agent, Crew, LLM, Process, Task
 
-from crewai import Agent, LLM, Task
-from crewai.project import CrewBase, agent, llm, task
-
-from mycrew.crews.base import PipelineCrewBase
-from mycrew.llm import get_llm_for_stage
+from mycrew.llm import ModelMappings
+from mycrew.settings import Settings
 
 
-@CrewBase
-class ArchitectCrew(PipelineCrewBase):
-    """Architect crew: produces file-level plan, no code."""
+class ArchitectCrew:
+    """Architect crew: creates implementation plans."""
 
-    stage: ClassVar[str] = "plan"
+    def __init__(self):
+        self.settings = Settings()
 
-    @property
-    def required_agents(self) -> List[str]:
-        return [
-            "architect",
-            "dependency_orderer",
-            "refactor_guard",
-            "test_plan_advisor",
-            "migration_checker",
-            "rollback_planner",
-        ]
+    def architect_agent(self) -> Agent:
+        return Agent(
+            llm=LLM(
+                model=ModelMappings.PLAN.value.openrouter_model,
+                api_key=self.settings.openrouter_api_key,
+            ),
+            role="Software Architect",
+            goal="Create implementation plans",
+            backstory="Expert at system design",
+        )
 
-    @property
-    def required_tasks(self) -> List[str]:
-        return [
-            "plan_task",
-            "dependency_order_task",
-            "refactor_guard_task",
-            "test_plan_task",
-            "migration_check_task",
-            "rollback_plan_task",
-        ]
+    def advisor_agent(self) -> Agent:
+        return Agent(
+            llm=LLM(
+                model=ModelMappings.PLAN.value.openrouter_model,
+                api_key=self.settings.openrouter_api_key,
+            ),
+            role="Technical Advisor",
+            goal="Analyze risks and migration",
+            backstory="Expert at risk assessment",
+        )
 
-    @llm
-    def plan_llm(self) -> LLM:
-        return get_llm_for_stage("plan")
-
-    @agent
-    def architect(self) -> Agent:
-        return self._build_agent("architect")
-
-    @agent
-    def dependency_orderer(self) -> Agent:
-        return self._build_agent("dependency_orderer")
-
-    @agent
-    def refactor_guard(self) -> Agent:
-        return self._build_agent("refactor_guard")
-
-    @agent
-    def test_plan_advisor(self) -> Agent:
-        return self._build_agent("test_plan_advisor")
-
-    @agent
-    def migration_checker(self) -> Agent:
-        return self._build_agent("migration_checker")
-
-    @agent
-    def rollback_planner(self) -> Agent:
-        return self._build_agent("rollback_planner")
-
-    @task
     def plan_task(self) -> Task:
-        return self._build_task("plan_task")
+        return Task(
+            description="""Create implementation plan based on:
+- Issue requirements: {issue_analysis}
+- Codebase exploration: {exploration}
+- Clarifications: {clarifications}
 
-    @task
-    def dependency_order_task(self) -> Task:
-        return self._build_task("dependency_order_task")
+Focus on WHAT files need to change and HOW, not detailed code.""",
+            expected_output="Implementation plan document",
+            agent=self.architect_agent(),
+        )
 
-    @task
-    def refactor_guard_task(self) -> Task:
-        return self._build_task("refactor_guard_task")
+    def advisor_task(self) -> Task:
+        return Task(
+            description="Analyze implementation risks from the plan",
+            expected_output="Risk analysis document",
+            agent=self.advisor_agent(),
+            context=[self.plan_task()],  # Receives output from plan_task
+        )
 
-    @task
-    def test_plan_task(self) -> Task:
-        return self._build_task("test_plan_task")
-
-    @task
-    def migration_check_task(self) -> Task:
-        return self._build_task("migration_check_task")
-
-    @task
-    def rollback_plan_task(self) -> Task:
-        return self._build_task("rollback_plan_task")
+    def crew(self) -> Crew:
+        return Crew(
+            agents=[self.architect_agent(), self.advisor_agent()],
+            tasks=[self.plan_task(), self.advisor_task()],
+            process=Process.sequential,
+            memory=False,
+        )

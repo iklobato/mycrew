@@ -1,78 +1,71 @@
-from typing import ClassVar, List
+from crewai import Agent, Crew, LLM, Process, Task
 
-from crewai import Agent, LLM, Task
-from crewai.project import CrewBase, agent, llm, task
-
-from mycrew.crews.base import PipelineCrewBase
-from mycrew.llm import get_llm_for_stage
+from mycrew.llm import ModelMappings
+from mycrew.settings import Settings, get_pipeline_context
+from mycrew.tools import DirectoryReadTool, FileReadTool
 
 
-@CrewBase
-class ImplementerCrew(PipelineCrewBase):
-    """Implementer crew: writes code, tests, and self-reviews."""
+class ImplementerCrew:
+    """Implementer crew: executes implementation plan."""
 
-    stage: ClassVar[str] = "implement"
+    def __init__(self):
+        self.settings = Settings()
 
-    @property
-    def required_agents(self) -> List[str]:
-        return [
-            "implementer",
-            "docstring_writer",
-            "type_hint_checker",
-            "lint_fixer",
-            "self_reviewer",
-        ]
+    def implementer_agent(self) -> Agent:
+        ctx = get_pipeline_context()
+        return Agent(
+            llm=LLM(
+                model=ModelMappings.IMPLEMENT.value.openrouter_model,
+                api_key=self.settings.openrouter_api_key,
+            ),
+            role="Software Implementer",
+            goal="Execute implementation plans",
+            backstory="Expert at writing code",
+            tools=[
+                DirectoryReadTool(directory=ctx.repo_path),
+                FileReadTool(),
+            ],
+        )
 
-    @property
-    def required_tasks(self) -> List[str]:
-        return [
-            "implement_task",
-            "docstring_write_task",
-            "type_hint_task",
-            "lint_fix_task",
-            "self_review_task",
-        ]
+    def polisher_agent(self) -> Agent:
+        ctx = get_pipeline_context()
+        return Agent(
+            llm=LLM(
+                model=ModelMappings.IMPLEMENT.value.openrouter_model,
+                api_key=self.settings.openrouter_api_key,
+            ),
+            role="Code Polisher",
+            goal="Add docs and fix lint",
+            backstory="Expert at code quality",
+            tools=[
+                DirectoryReadTool(directory=ctx.repo_path),
+                FileReadTool(),
+            ],
+        )
 
-    @llm
-    def implement_llm(self) -> LLM:
-        return get_llm_for_stage("implement")
-
-    @agent
-    def implementer(self) -> Agent:
-        return self._build_agent("implementer")
-
-    @agent
-    def docstring_writer(self) -> Agent:
-        return self._build_agent("docstring_writer")
-
-    @agent
-    def type_hint_checker(self) -> Agent:
-        return self._build_agent("type_hint_checker")
-
-    @agent
-    def lint_fixer(self) -> Agent:
-        return self._build_agent("lint_fixer")
-
-    @agent
-    def self_reviewer(self) -> Agent:
-        return self._build_agent("self_reviewer")
-
-    @task
     def implement_task(self) -> Task:
-        return self._build_task("implement_task")
+        return Task(
+            description="""Execute the implementation plan based on:
+- Plan: {plan}
+- Implementation context from previous: {implementation}
 
-    @task
-    def docstring_write_task(self) -> Task:
-        return self._build_task("docstring_write_task")
+Focus on writing the actual code changes.""",
+            expected_output="Implementation complete",
+            agent=self.implementer_agent(),
+        )
 
-    @task
-    def type_hint_task(self) -> Task:
-        return self._build_task("type_hint_task")
+    def polish_task(self) -> Task:
+        return Task(
+            description="Add docstrings and fix linting for the implemented code",
+            expected_output="Code polished",
+            agent=self.polisher_agent(),
+            context=[self.implement_task()],  # Receives output from implement_task
+        )
 
-    @task
-    def lint_fix_task(self) -> Task:
-        return self._build_task("lint_fix_task")
-
-    @task
-    def self_review_task(self) -> Task:
-        return self._build_task("self_review_task")
+    def crew(self) -> Crew:
+        return Crew(
+            agents=[self.implementer_agent(), self.polisher_agent()],
+            tasks=[self.implement_task(), self.polish_task()],
+            process=Process.sequential,
+            memory=False,
+        )

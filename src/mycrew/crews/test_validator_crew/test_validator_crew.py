@@ -1,68 +1,54 @@
-from typing import ClassVar, List
+"""Test Validator crew: writes tests and validates they catch bugs."""
 
 from crewai import Agent, Crew, LLM, Process, Task
-from crewai.project import CrewBase, agent, crew, llm, task
 
-from mycrew.crews.base import PipelineCrewBase
-from mycrew.llm import get_llm_for_stage
+from mycrew.llm import ModelMappings
+from mycrew.settings import Settings
 
 
-@CrewBase
-class TestValidatorCrew(PipelineCrewBase):
+class TestValidatorCrew:
     """Test Validator crew: writes tests and validates they catch bugs."""
 
-    stage: ClassVar[str] = "test_validation"
+    def __init__(self):
+        self.settings = Settings()
 
-    @property
-    def required_agents(self) -> List[str]:
-        return [
-            "test_implementer",
-            "test_quality_checker",
-            "test_coverage_checker",
-        ]
-
-    @property
-    def required_tasks(self) -> List[str]:
-        return [
-            "test_implement_task",
-            "test_quality_check_task",
-            "test_coverage_check_task",
-        ]
-
-    @llm
-    def test_validation_llm(self) -> LLM:
-        return get_llm_for_stage("test_validation")
-
-    @agent
     def test_implementer(self) -> Agent:
-        return self._build_agent("test_implementer")
+        return Agent(
+            llm=LLM(
+                model=ModelMappings.TEST_VALIDATION.value.openrouter_model,
+                api_key=self.settings.openrouter_api_key,
+            ),
+            role="Test Implementer",
+            goal="Write tests for the implementation",
+            backstory="Expert at writing test cases",
+        )
 
-    @agent
-    def test_quality_checker(self) -> Agent:
-        return self._build_agent("test_quality_checker")
-
-    @agent
-    def test_coverage_checker(self) -> Agent:
-        return self._build_agent("test_coverage_checker")
-
-    @task
     def test_implement_task(self) -> Task:
-        return self._build_task("test_implement_task")
+        return Task(
+            description="""Write tests for the implementation.
 
-    @task
-    def test_quality_check_task(self) -> Task:
-        return self._build_task("test_quality_check_task")
+Context: {repo_context}
 
-    @task
-    def test_coverage_check_task(self) -> Task:
-        return self._build_task("test_coverage_check_task")
+Plan: {plan}
+Implementation: {implementation}
+Exploration (Test Layout): {exploration}
 
-    @crew
+If test_command is empty, output "Test writing skipped (no test_command)".
+
+Otherwise:
+1. Read the plan to identify files that need tests
+2. Check exploration for test patterns and conventions
+3. Write tests following project test patterns
+
+Output "Tests written: [list of files with test counts]".""",
+            expected_output="List of test files written with test counts, or skip message.",
+            agent=self.test_implementer(),
+        )
+
     def crew(self) -> Crew:
-        """Creates the TestValidatorCrew."""
         return Crew(
-            agents=self.agents,  # type: ignore[attr-defined]
-            tasks=self.tasks,  # type: ignore[attr-defined]
+            agents=[self.test_implementer()],
+            tasks=[self.test_implement_task()],
             process=Process.sequential,
-            verbose=True,
+            memory=False,
         )

@@ -1,88 +1,52 @@
-from typing import ClassVar, List
+"""Explorer crew: repo exploration."""
 
-from crewai import Agent, LLM, Task
-from crewai.project import CrewBase, agent, llm, task
+from crewai import Agent, Crew, LLM, Process, Task
 
-from mycrew.crews.base import PipelineCrewBase
-from mycrew.llm import get_llm_for_stage
+from mycrew.llm import ModelMappings
+from mycrew.settings import Settings, get_pipeline_context
 
 
-@CrewBase
-class ExplorerCrew(PipelineCrewBase):
-    """Explorer crew: repo summary, dependency map, and test layout."""
+class ExplorerCrew:
+    """Explorer crew: repo exploration."""
 
-    stage: ClassVar[str] = "explore"
+    def __init__(self):
+        self.settings = Settings()
 
-    @property
-    def required_agents(self) -> List[str]:
-        return [
-            "repo_explorer",
-            "dependency_analyzer",
-            "test_layout_scout",
-            "convention_extractor",
-            "internal_deps_scout",
-            "api_boundary_scout",
-        ]
+    def explorer_agent(self) -> Agent:
+        ctx = get_pipeline_context()
+        return Agent(
+            llm=LLM(
+                model=ModelMappings.EXPLORE.value.openrouter_model,
+                api_key=self.settings.openrouter_api_key,
+            ),
+            role="Repository Explorer",
+            goal="Analyze codebase structure and identify relevant files",
+            backstory="Expert at understanding codebases",
+        )
 
-    @property
-    def required_tasks(self) -> List[str]:
-        return [
-            "explore_task",
-            "dependency_analyze_task",
-            "test_layout_task",
-            "convention_extract_task",
-            "internal_deps_task",
-            "api_boundary_scout_task",
-        ]
-
-    @llm
-    def explore_llm(self) -> LLM:
-        return get_llm_for_stage("explore")
-
-    @agent
-    def repo_explorer(self) -> Agent:
-        return self._build_agent("repo_explorer")
-
-    @agent
-    def dependency_analyzer(self) -> Agent:
-        return self._build_agent("dependency_analyzer")
-
-    @agent
-    def test_layout_scout(self) -> Agent:
-        return self._build_agent("test_layout_scout")
-
-    @agent
-    def convention_extractor(self) -> Agent:
-        return self._build_agent("convention_extractor")
-
-    @agent
-    def internal_deps_scout(self) -> Agent:
-        return self._build_agent("internal_deps_scout")
-
-    @agent
-    def api_boundary_scout(self) -> Agent:
-        return self._build_agent("api_boundary_scout")
-
-    @task
     def explore_task(self) -> Task:
-        return self._build_task("explore_task")
+        ctx = get_pipeline_context()
+        return Task(
+            description="""Explore the codebase at {repo_path} based on issue requirements.
 
-    @task
-    def dependency_analyze_task(self) -> Task:
-        return self._build_task("dependency_analyze_task")
+Issue requirements: {issue_analysis}
 
-    @task
-    def test_layout_task(self) -> Task:
-        return self._build_task("test_layout_task")
+Provide:
+1. Project structure overview (main directories and their purposes)
+2. Key files that are likely relevant to the implementation
+3. Tech stack (framework, language, dependencies)
+4. Test file locations and patterns
+5. Configuration files
 
-    @task
-    def convention_extract_task(self) -> Task:
-        return self._build_task("convention_extract_task")
+Do NOT attempt to read all files - just provide analysis based on typical project structures.""",
+            expected_output="Structured exploration document with project structure, tech stack, relevant files, and test patterns",
+            agent=self.explorer_agent(),
+        )
 
-    @task
-    def internal_deps_task(self) -> Task:
-        return self._build_task("internal_deps_task")
-
-    @task
-    def api_boundary_scout_task(self) -> Task:
-        return self._build_task("api_boundary_scout_task")
+    def crew(self) -> Crew:
+        return Crew(
+            agents=[self.explorer_agent()],
+            tasks=[self.explore_task()],
+            process=Process.sequential,
+            memory=False,
+        )
