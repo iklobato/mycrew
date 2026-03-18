@@ -198,7 +198,6 @@ class OpenRouterProvider(IProvider):
                     available_model_ids.add(normalize_model_id(model_id))
 
             required_list = list(required_models)
-            normalized_required = {normalize_model_id(m) for m in required_list}
 
             available = [
                 m for m in required_list if normalize_model_id(m) in available_model_ids

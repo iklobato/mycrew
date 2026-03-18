@@ -3,7 +3,7 @@
 import logging
 import yaml
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -157,9 +157,6 @@ class _StageMapping:
             primary=self.openrouter_model,
             fallbacks=self.openrouter_fallbacks,
         )
-
-
-from enum import Enum
 
 
 class ModelMappings(Enum):
@@ -457,10 +454,8 @@ class LLMManager:
         last_error = None
         for idx, model in enumerate(models):
             model_str = str(model)
-            attempt = idx + 1
-            total = len(models)
 
-            logger.info(f"LLM request: {model_str}")
+            logger.info("LLM request: %s", model_str)
 
             try:
                 llm = provider.create_llm(model=model_str, max_tokens=max_tokens)
@@ -469,7 +464,7 @@ class LLMManager:
                 last_error = e
                 error_msg = str(e)
                 if "429" in error_msg or "RateLimitError" in error_msg:
-                    logger.warning(f"Rate limited")
+                    logger.warning("Rate limited")
                     if "free" in model_str.lower():
                         import time
 
