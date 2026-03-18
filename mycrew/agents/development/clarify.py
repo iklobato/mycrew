@@ -81,6 +81,15 @@ PROCEED | BLOCK
 - Specific guidance for edge cases
 ```
 
+## Key Questions to Consider Before Proceeding
+
+- Are there ambiguities to clarify before writing any code?
+- Do you need to sync with anyone (tech lead, designer, PM)?
+- Has the approach been communicated if it deviated from what was planned?
+- Are stakeholders aware of any blockers or scope changes discovered during development?
+- Should this be split into multiple smaller cards or PRs?
+- Do you need to spike or prototype before committing to an approach?
+
 If NO clarification is needed, output:
 ```
 ## Clarifications Needed

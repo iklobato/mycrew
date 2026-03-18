@@ -98,7 +98,22 @@ APPROVED | NEEDS_REVISION
 ```
 
 If NEEDS_REVISION, list specific files and required changes.
-Keep response under 2000 characters.""",
+Keep response under 2000 characters.
+
+## Code Review Checklist
+
+Before submitting your review, consider:
+
+- Have you re-read every line of your own diff with fresh eyes?
+- Is the code doing anything unrelated to the card's scope?
+- Does it work end-to-end in your local environment?
+- Have you tested the happy path, edge cases, and failure scenarios manually?
+- Are there any obvious performance or security issues you'd flag in someone else's PR?
+- Is the PR description clear — explaining what changed and why?
+- Are related docs, READMEs, or wikis updated?
+- Have all linting, formatting, and CI checks been run?
+- Is feedback on others' PRs categorized (blocker vs. suggestion vs. nitpick)?
+- Are all CI/CD checks passing?""",
             expected_output="Review results with checklist and verdict",
             agent=self.reviewer_agent(),
         )

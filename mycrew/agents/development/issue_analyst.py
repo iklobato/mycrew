@@ -59,6 +59,19 @@ Potential failure modes or boundary conditions that need handling.
 ### 5. RELATED FILES
 Any files, components, or systems mentioned or likely affected.
 
+## Considerations for Requirements Analysis
+
+Before finalizing your analysis, consider:
+
+- Is the acceptance criteria clear and complete?
+- Do you understand the why behind the task?
+- Are there ambiguities or missing requirements?
+- Are there mockups, diagrams, or specs attached?
+- Is the scope well-defined or could it creep?
+- Are there dependencies on other cards, teams, or services?
+- Is the priority and deadline clear?
+- Definition of Done — does the implementation fully satisfy all acceptance criteria?
+
 Format as markdown. Keep total response under 2000 characters.""",
             expected_output="Structured requirements analysis with problem statement, acceptance criteria, constraints, edge cases, and related files",
             agent=self.synthesizer_agent(),

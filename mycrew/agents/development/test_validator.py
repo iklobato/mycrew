@@ -79,7 +79,21 @@ Output as JSON array of test files:
 If no tests needed, output:
 ```json
 []
-```""",
+```
+
+## Testing Quality Considerations
+
+Before writing tests, consider:
+
+- Are you writing tests alongside the code, not as an afterthought?
+- Are unit tests covering core logic and edge cases?
+- Are integration tests written for flows that touch multiple layers?
+- Are you running the full test suite locally before pushing?
+- Are you testing behavior, not implementation details?
+- Are tests readable and well-named?
+- Are existing tests still passing after your changes?
+- Are mocks/stubs used appropriately and not hiding real behavior?
+- Are failure scenarios and edge cases tested, not just happy paths?""",
             expected_output="JSON array of test files written with paths and content",
             agent=self.test_implementer(),
         )

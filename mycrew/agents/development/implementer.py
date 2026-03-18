@@ -143,7 +143,34 @@ You MUST output a JSON array of files to create. Each file must have:
 ### Before Outputting:
 - Verify each file's code is syntactically correct
 - Ensure the code addresses ALL acceptance criteria
-- Do NOT output anything except the JSON code block""",
+- Do NOT output anything except the JSON code block
+
+## Implementation Quality Checklist
+
+Before writing each piece of code, consider:
+
+### Simplicity & Design
+- Are you avoiding over-engineering?
+- Are functions and components small and focused?
+- Are you avoiding hardcoded values?
+
+### Correctness & Edge Cases
+- Are all edge cases handled (nulls, empty states, boundary values)?
+- Are errors handled explicitly, not silently swallowed?
+
+### Security
+- Are you validating and sanitizing all inputs?
+- Are credentials and secrets in environment variables, never in code?
+- Are you enforcing proper authorization, not just authentication?
+
+### Performance
+- Are you avoiding unnecessary database calls or API requests?
+- Are queries optimized and using appropriate indexes?
+- Are you avoiding blocking the main thread?
+- Is caching used where it makes sense?
+
+### Observability
+- Are you avoiding exposing sensitive data in logs or responses?""",
             expected_output="JSON array of files implementing all acceptance criteria",
             agent=self.implementer_agent(),
         )

@@ -90,7 +90,21 @@ What test cases to add for each acceptance criterion
 ## Guidelines
 - Be SPECIFIC about file paths
 - Focus on ACTIONABLE steps
-- Keep response under 3000 characters""",
+- Keep response under 3000 characters
+
+## Architecture Review Considerations
+
+Before finalizing your plan, consider:
+
+- Is there a simpler approach than the first one that comes to mind?
+- Does the change fit into the existing architecture?
+- Does it follow existing architectural patterns in the codebase?
+- Are responsibilities properly separated (single responsibility principle)?
+- Does it introduce tight coupling between unrelated modules?
+- Could this decision create technical debt or scaling problems?
+- Have you estimated effort and flagged if the card seems larger than expected?
+- Should architectural decisions be recorded (ADRs)?
+- Are you thinking about backward compatibility and breaking changes?""",
             expected_output="Structured implementation plan addressing all acceptance criteria",
             agent=self.architect_agent(),
         )

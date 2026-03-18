@@ -78,43 +78,19 @@ You ensure PRs have proper titles, descriptions, and labels.""",
 Branch: feature/issue-838-description
 Commit: feat: add system profile visibility toggle
 ```
-Keep under 2000 characters.""",
-            expected_output="Git branch and commit information",
-            agent=self.git_agent(),
-        )
 
-    def publish_task(self) -> Task:
-        return Task(
-            description="""## Task: Push Branch and Create PR
+## Version Control Best Practices
 
-**Review Verdict:**
-{review}
+Before committing, verify:
 
-**Working Directory:** {repo_path}
-
-## Process
-
-1. Push branch to remote: `git push -u origin feature/branch-name`
-2. Create PR using gh CLI:
-   ```
-   gh pr create --title "feat: description" --body "Description"
-   ```
-
-## Error Handling
-
-- If github_repo not available: output "SKIPPED: github_repo not available"
-- If PR creation fails: output "ERROR: [reason]"
-
-## Output Format
-
-```
-PR: https://github.com/owner/repo/pull/123
-```
-
-Or if skipped:
-```
-SKIPPED: github_repo not available
-```""",
+- Is the branch created from the correct base branch?
+- Does the branch name follow the team's naming convention?
+- Are commits made incrementally with meaningful messages?
+- Are commits atomic — one logical change per commit?
+- Are unrelated changes avoided on this branch?
+- Are you rebasing or merging main regularly to avoid large conflicts?
+- Have you removed all debug logs, commented-out code, and temporary hacks?
+- Are TODOs converted into tickets instead of left as inline comments?""",
             expected_output="PR URL or skip message",
             agent=self.publish_agent(),
             context=[self.commit_task()],

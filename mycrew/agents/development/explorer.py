@@ -136,6 +136,18 @@ For each file:
 - Test strategy
 - Patterns to follow
 - Dependencies (if any)
+
+## Environment & Setup Considerations
+
+Before implementing, verify:
+
+- Is your local environment up to date (latest branch)?
+- Are environment variables or config changes needed?
+- Are dependencies installed and up to date?
+- Is the feature flag, if any, configured locally?
+- Do you know how to run the relevant parts of the app and tests locally?
+- Are you following existing patterns and conventions in the codebase?
+- Are new dependencies vetted and necessary?
 """,
             expected_output="Deep exploration with project overview, code patterns, relevant files, and implementation recommendations",
             agent=self.explorer_agent(),
