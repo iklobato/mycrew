@@ -49,20 +49,18 @@ class PipelineRunner:
         issue_number = match.group(1) if match else "unknown"
 
         # Import crews here to avoid circular imports
-        from mycrew.development.crews.issue_analyst_crew.issue_analyst_crew import IssueAnalystCrew
-        from mycrew.development.crews.explorer_crew.explorer_crew import ExplorerCrew
-        from mycrew.development.crews.clarify_crew.clarify_crew import ClarifyCrew
-        from mycrew.development.crews.architect_crew.architect_crew import ArchitectCrew
-        from mycrew.development.crews.implementer_crew.implementer_crew import (
+        from mycrew.development.crews.issue_analyst_crew import IssueAnalystCrew
+        from mycrew.development.crews.explorer_crew import ExplorerCrew
+        from mycrew.development.crews.clarify_crew import ClarifyCrew
+        from mycrew.development.crews.architect_crew import ArchitectCrew
+        from mycrew.development.crews.implementer_crew import (
             ImplementerCrew,
             parse_code_blocks,
             write_files_from_specs,
         )
-        from mycrew.development.crews.test_validator_crew.test_validator_crew import (
-            TestValidatorCrew,
-        )
-        from mycrew.development.crews.reviewer_crew.reviewer_crew import ReviewerCrew
-        from mycrew.development.crews.commit_crew.commit_crew import CommitCrew
+        from mycrew.development.crews.test_validator_crew import TestValidatorCrew
+        from mycrew.development.crews.reviewer_crew import ReviewerCrew
+        from mycrew.development.crews.commit_crew import CommitCrew
 
         # Run Issue Analyst
         issue_analysis_result = IssueAnalystCrew().run(

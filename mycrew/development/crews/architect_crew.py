@@ -1,3 +1,5 @@
+"""Architect crew: creates implementation plans."""
+
 from crewai import Agent, Crew, LLM, Process, Task
 
 from mycrew.shared.llm import ModelMappings

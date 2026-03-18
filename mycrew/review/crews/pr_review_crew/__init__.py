@@ -1,4 +1,4 @@
-"""Review crew agents."""
+"""Review crew."""
 
 from mycrew.review.crews.pr_review_crew.pr_review_crew import PRReviewCrew
 from mycrew.review.crews.pr_review_crew.context_agent import ContextAgent
