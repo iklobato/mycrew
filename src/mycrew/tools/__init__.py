@@ -6,12 +6,33 @@ from crewai.tools import BaseTool
 from crewai_tools import (
     DirectoryReadTool,
     FileReadTool,
+    FileWriterTool,
     SerperDevTool,
     EXASearchTool,
     ScrapeWebsiteTool,
     CodeInterpreterTool,
 )
 from pydantic import Field
+
+
+class WriteFileTool(BaseTool):
+    """Tool for writing content to a file directly on the filesystem."""
+
+    name: str = "write_file"
+    description: str = "Write content to a file at the specified path. Creates the file if it doesn't exist."
+
+    def _run(self, file_path: str = "", content: str = "") -> str:
+        """Write content to a file."""
+        if not file_path:
+            return "Error: file_path is required"
+
+        try:
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, "w") as f:
+                f.write(content)
+            return f"Successfully wrote to {file_path}"
+        except Exception as e:
+            return f"Error writing to {file_path}: {str(e)}"
 
 
 class TactiqMeetingTool(BaseTool):
@@ -70,6 +91,8 @@ class TactiqMeetingTool(BaseTool):
 __all__ = [
     "DirectoryReadTool",
     "FileReadTool",
+    "FileWriterTool",
+    "WriteFileTool",
     "SerperDevTool",
     "EXASearchTool",
     "ScrapeWebsiteTool",
