@@ -6,7 +6,7 @@ import logging
 import os
 
 
-from mycrew.settings import set_pipeline_context, PipelineContext
+from mycrew.settings import get_settings, set_pipeline_context, PipelineContext
 from mycrew.crews.issue_analyst_crew.issue_analyst_crew import IssueAnalystCrew
 from mycrew.crews.explorer_crew.explorer_crew import ExplorerCrew
 from mycrew.crews.clarify_crew.clarify_crew import ClarifyCrew
@@ -19,6 +19,8 @@ from mycrew.crews.implementer_crew.implementer_crew import (
 from mycrew.crews.test_validator_crew.test_validator_crew import TestValidatorCrew
 from mycrew.crews.reviewer_crew.reviewer_crew import ReviewerCrew
 from mycrew.crews.commit_crew.commit_crew import CommitCrew
+from mycrew.issues import IssueHandlerFactory
+from mycrew.issues.exceptions import IssueFetchError, IssueParseError
 
 os.environ["LITELLM_REQUEST_TIMEOUT"] = "60"
 
@@ -44,15 +46,52 @@ def run_pipeline(issue_url, repo_path):
         repo_path = os.getcwd()
 
     set_pipeline_context(PipelineContext(repo_path=repo_path))
+    settings = get_settings()
 
-    # 1. Issue Analyst - only needs issue_url
-    logger.info("[1/8] Starting Issue Analyst...")
-    result = IssueAnalystCrew().crew().kickoff(inputs={"issue_url": issue_url})
+    # Fetch issue using SOLID IssueHandler
+    logger.info("[1/8] Fetching issue...")
+    try:
+        handler = IssueHandlerFactory.create(
+            github_token=settings.github_token or None,
+            gitlab_token=settings.gitlab_token or settings.github_token or None,
+        )
+        issue_content = handler.process(issue_url)
+        logger.info(f"[1/8] Issue fetched: {issue_content.title}")
+    except (IssueParseError, IssueFetchError) as e:
+        logger.error(f"Failed to fetch issue: {e}")
+        raise
+
+    # Format issue content for crews
+    issue_description = f"""# {issue_content.title}
+
+{issue_content.body}
+
+**Author:** {issue_content.author}
+**Labels:** {", ".join(issue_content.labels) if issue_content.labels else "none"}
+**State:** {issue_content.state}
+**Source:** {issue_content.source.web_url}
+"""
+
+    # Extract issue number from URL for commit branch naming
+    import re
+
+    issue_number = "unknown"
+    match = re.search(r"/issues/(\d+)", issue_url)
+    if match:
+        issue_number = match.group(1)
+
+    # 3. Issue Analyst - needs structured issue content
+    logger.info("[3/8] Starting Issue Analyst...")
+    result = (
+        IssueAnalystCrew()
+        .crew()
+        .kickoff(inputs={"issue_description": issue_description})
+    )
     issue_analysis = result.raw
-    logger.info("[1/8] Issue Analysis done")
+    logger.info("[3/8] Issue Analysis done")
 
-    # 2. Explorer - needs issue_analysis + repo_path (truncated)
-    logger.info("[2/8] Starting Explorer...")
+    # 4. Explorer - needs issue_analysis + repo_path (truncated)
+    logger.info("[4/8] Starting Explorer...")
     truncated_analysis = truncate_text(issue_analysis, max_chars=2000)
     result = (
         ExplorerCrew()
@@ -65,10 +104,10 @@ def run_pipeline(issue_url, repo_path):
         )
     )
     exploration = result.raw
-    logger.info("[2/8] Exploration done")
+    logger.info("[4/8] Exploration done")
 
-    # 3. Clarify - needs issue_analysis + exploration (both truncated)
-    logger.info("[3/8] Starting Clarify...")
+    # 5. Clarify - needs issue_analysis + exploration (both truncated)
+    logger.info("[5/8] Starting Clarify...")
     result = (
         ClarifyCrew()
         .crew()
@@ -81,15 +120,32 @@ def run_pipeline(issue_url, repo_path):
         )
     )
     clarifications = result.raw
-    logger.info("[3/8] Clarification done")
+    logger.info("[5/8] Clarification done")
 
-    # 4. Architect - needs issue_analysis + exploration + clarifications (truncated)
-    logger.info("[4/8] Starting Architect...")
+    # 6. Architect - needs issue_analysis + exploration + clarifications (truncated)
+    logger.info("[6/8] Starting Architect...")
+    result = (
+        ClarifyCrew()
+        .crew()
+        .kickoff(
+            inputs={
+                "issue_analysis": truncate_text(issue_analysis, max_chars=1500),
+                "exploration": truncate_text(exploration, max_chars=3000),
+                "repo_path": repo_path,
+            }
+        )
+    )
+    clarifications = result.raw
+    logger.info("[5/8] Clarification done")
+
+    # 6. Architect - needs issue_analysis + exploration + clarifications (truncated)
+    logger.info("[6/8] Starting Architect...")
     result = (
         ArchitectCrew()
         .crew()
         .kickoff(
             inputs={
+                "issue_description": truncate_text(issue_description, max_chars=5000),
                 "issue_analysis": truncate_text(issue_analysis, max_chars=1000),
                 "exploration": truncate_text(exploration, max_chars=2000),
                 "clarifications": truncate_text(clarifications, max_chars=2000),
@@ -98,36 +154,37 @@ def run_pipeline(issue_url, repo_path):
         )
     )
     plan = result.raw
-    logger.info("[4/8] Planning done")
+    logger.info("[6/8] Planning done")
 
-    # 5. Implementer - needs just the plan (truncated)
-    logger.info("[5/8] Starting Implementer...")
+    # 7. Implementer - needs issue + plan (both)
+    logger.info("[7/8] Starting Implementer...")
     result = (
         ImplementerCrew()
         .crew()
         .kickoff(
             inputs={
+                "issue_description": truncate_text(issue_description, max_chars=3000),
                 "plan": truncate_text(plan, max_chars=3000),
                 "repo_path": repo_path,
             }
         )
     )
     implementation = result.raw
-    logger.info("[5/8] Implementation done")
+    logger.info("[7/8] Implementation done")
 
     # Parse and write files
     files_spec = parse_code_blocks(implementation)
     if files_spec:
-        logger.info(f"[5/8] Writing {len(files_spec)} files to {repo_path}...")
+        logger.info(f"[7/8] Writing {len(files_spec)} files to {repo_path}...")
         written = write_files_from_specs(files_spec, repo_path)
-        logger.info(f"[5/8] Files written: {written}")
+        logger.info(f"[7/8] Files written: {written}")
     else:
         logger.warning(
-            "[5/8] No files to write - could not parse implementation output"
+            "[7/8] No files to write - could not parse implementation output"
         )
 
-    # 6. TestValidator - needs plan + implementation + repo_path
-    logger.info("[6/8] Starting Test Validator...")
+    # 8. TestValidator - needs plan + implementation + repo_path
+    logger.info("[8/8] Starting Test Validator...")
     result = (
         TestValidatorCrew()
         .crew()
@@ -140,10 +197,10 @@ def run_pipeline(issue_url, repo_path):
         )
     )
     tests = result.raw
-    logger.info("[6/8] Test validation done")
+    logger.info("[8/8] Test validation done")
 
-    # 7. Reviewer - needs implementation + tests + repo_path
-    logger.info("[7/8] Starting Reviewer...")
+    # 9. Reviewer - needs implementation + tests + repo_path
+    logger.info("[9/8] Starting Reviewer...")
     result = (
         ReviewerCrew()
         .crew()
@@ -156,10 +213,10 @@ def run_pipeline(issue_url, repo_path):
         )
     )
     review = result.raw
-    logger.info("[7/8] Review done")
+    logger.info("[9/8] Review done")
 
-    # 8. Commit - needs implementation + review + repo_path
-    logger.info("[8/8] Starting Commit...")
+    # 10. Commit - needs implementation + review + repo_path + issue_number
+    logger.info("[10/8] Starting Commit...")
     result = (
         CommitCrew()
         .crew()
@@ -168,6 +225,7 @@ def run_pipeline(issue_url, repo_path):
                 "implementation": truncate_text(implementation, max_chars=2000),
                 "review": truncate_text(review, max_chars=1500),
                 "repo_path": repo_path,
+                "issue_number": issue_number,
             }
         )
     )

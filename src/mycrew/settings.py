@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
     huggingface_api_key: str = Field(default="", alias="HUGGINGFACE_API_KEY")
     github_token: str = Field(default="", alias="GITHUB_TOKEN")
+    gitlab_token: str = Field(default="", alias="GITLAB_TOKEN")
     serper_api_key: str = Field(default="", alias="SERPER_API_KEY")
     tactiq_token: str = Field(default="", alias="TACTIQ_TOKEN")
 
