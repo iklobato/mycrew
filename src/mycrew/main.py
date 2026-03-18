@@ -1,43 +1,42 @@
 #!/usr/bin/env python
-"""Code Pipeline - sequential crew execution."""
+"""Code Pipeline - dispatches to development or review pipelines."""
 
-import argparse
 import logging
-import os
-
-from mycrew.pipeline_runner import PipelineRunner
-from mycrew.review_runner import ReviewRunner
-
-os.environ["LITELLM_REQUEST_TIMEOUT"] = "60"
+import sys
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(name)s - %(levelname)s - %(message)s",
 )
-logger = logging.getLogger("mycrew")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Code Pipeline")
-    parser.add_argument("issue_url", nargs="?", help="GitHub issue URL")
-    parser.add_argument("--issue-url", dest="issue_url_alt", help="GitHub issue URL")
-    parser.add_argument("--repo-path", help="Local repository path")
-    parser.add_argument("-v", "--verbose", action="store_true")
-    parser.add_argument("--review", dest="review_url", help="PR URL for review")
-    args = parser.parse_args()
+    if len(sys.argv) < 2:
+        print("Usage: python -m mycrew [development|review] [options]")
+        print("")
+        print("Pipelines:")
+        print("  development  - Issue to implementation pipeline")
+        print("  review       - PR review pipeline")
+        print("")
+        print(
+            "Run 'python -m mycrew.development --help' or 'python -m mycrew.review --help' for options"
+        )
+        sys.exit(1)
 
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+    pipeline = sys.argv[1]
 
-    if args.review_url:
-        ReviewRunner(args.repo_path).run(args.review_url)
+    if pipeline == "development":
+        from mycrew.development.cli import main as dev_main
+
+        dev_main()
+    elif pipeline == "review":
+        from mycrew.review.cli import main as review_main
+
+        review_main()
     else:
-        issue_url = args.issue_url
-        if issue_url is None:
-            issue_url = args.issue_url_alt
-        if issue_url is None:
-            issue_url = ""
-        PipelineRunner(args.repo_path).run(issue_url)
+        print(f"Unknown pipeline: {pipeline}")
+        print("Valid pipelines: development, review")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

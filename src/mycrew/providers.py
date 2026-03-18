@@ -9,7 +9,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from mycrew.settings import get_settings
+from mycrew.shared.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
