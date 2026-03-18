@@ -194,10 +194,10 @@ class ModelMappings(Enum):
         huggingface_model="deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
     )
     EXPLORE = _StageMapping(
-        openrouter_model="openrouter/google/gemini-2.0-flash-001",
+        openrouter_model="openrouter/x-ai/grok-4.1-fast",
         openrouter_fallbacks=(
+            "openrouter/google/gemini-2.0-flash-001",
             "openrouter/deepseek/deepseek-r1",
-            "openrouter/qwen/qwen3-coder",
         ),
         huggingface_model="deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
     )
