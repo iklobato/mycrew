@@ -4,6 +4,8 @@
 
 **mycrew** is like having a full software development team that works for you 24/7. Instead of hiring individual developers, you get a complete workflow system where specialized AI agents handle every step of your project—from understanding what you need, to planning, building, testing, and delivering working code.
 
+It also includes a **PR Review Pipeline** that performs comprehensive code review with 10 parallel specialized agents.
+
 ---
 
 ## Quick Start
@@ -20,22 +22,61 @@ cd mycrew
 uv sync
 
 # 3. Configure environment
-# Copy .env.example to .env and set your API keys
 cp .env.example .env
 # Edit .env and set OPENROUTER_API_KEY
 ```
 
-### Run the Pipeline
+---
+
+## Usage
+
+### CLI
 
 ```bash
-# Run with GitHub issue URL (fetches issue via GitHub API)
-python -m mycrew "https://github.com/owner/repo/issues/123"
+# From project root
+./cli.py development <issue-url>
+./cli.py dev <issue-url>
 
-# Run with GitLab issue URL (fetches issue via GitLab API)
-python -m mycrew "https://gitlab.com/owner/repo/-/issues/456"
+./cli.py review <pr-url>
+./cli.py rev <pr-url>
 
-# Use local repository with issue URL
-python -m mycrew --repo-path /path/to/local/repo "https://github.com/owner/repo/issues/123"
+# Help
+./cli.py --help
+./cli.py development --help
+./cli.py review --help
+```
+
+### Development Pipeline
+
+The development pipeline transforms GitHub/GitLab issues into implemented code.
+
+```bash
+# GitHub issue
+./cli.py development "https://github.com/owner/repo/issues/123"
+
+# GitLab issue
+./cli.py dev "https://gitlab.com/owner/repo/-/issues/456"
+
+# With local repo
+./cli.py development --repo-path /path/to/repo "https://github.com/owner/repo/issues/123"
+
+# Verbose output
+./cli.py dev "https://github.com/owner/repo/issues/123" -v
+```
+
+### Review Pipeline
+
+The review pipeline performs comprehensive PR review with 10 parallel agents and posts a comment to the PR.
+
+```bash
+# GitHub PR
+./cli.py review "https://github.com/owner/repo/pull/123"
+
+# GitLab MR
+./cli.py rev "https://gitlab.com/owner/repo/-/merge_requests/456"
+
+# With local repo (for reading files)
+./cli.py review --repo-path /path/to/repo "https://github.com/owner/repo/pull/123"
 ```
 
 ---
@@ -44,14 +85,12 @@ python -m mycrew --repo-path /path/to/local/repo "https://github.com/owner/repo/
 
 ### Environment Variables
 
-Set these before running:
-
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `OPENROUTER_API_KEY` | Yes | LLM API key from [openrouter.ai](https://openrouter.ai) |
 | `HUGGINGFACE_API_KEY` | No | HuggingFace token for local models |
-| `GITHUB_TOKEN` | No | GitHub token for GitHub issues |
-| `GITLAB_TOKEN` | No | GitLab token for GitLab issues |
+| `GITHUB_TOKEN` | No | GitHub token for GitHub issues/PRs |
+| `GITLAB_TOKEN` | No | GitLab token for GitLab issues/MRs |
 | `SERPER_API_KEY` | No | Serper API key for web search |
 | `TACTIQ_TOKEN` | No | Tactiq API token from [Tactiq settings](https://app.tactiq.io/settings) |
 | `CODE_PIPELINE_LOG_LEVEL` | No | DEBUG, INFO, WARNING, ERROR |
@@ -63,66 +102,101 @@ Set these before running:
 
 ---
 
-## Usage
+## Pipelines
 
-### Basic Usage
-
-```bash
-# GitHub issue
-python -m mycrew "https://github.com/owner/repo/issues/123"
-
-# GitLab issue
-python -m mycrew "https://gitlab.com/owner/repo/-/issues/456"
-
-# Local repo with issue URL
-python -m mycrew --repo-path /path/to/local/repo "https://github.com/owner/repo/issues/123"
-
-# Verbose output
-python -m mycrew "https://github.com/owner/repo/issues/123" -v
-```
-
-### CLI Options
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `issue_url` | GitHub or GitLab issue URL | - |
-| `--repo-path` | Local repository path | - |
-| `-v, --verbose` | Enable verbose logging | `false` |
-
----
-
-## Providers
-
-### OpenRouter (Default)
-
-Uses OpenRouter as the LLM backend:
-
-- **Models**: deepseek-r1, qwen3-coder, gemma-3-27b-it, mistral-small-3.1, devstral-small
-- **Architect**: Uses claude-3.5-sonnet for detailed planning
-- **Stage-specific**: Each pipeline stage uses optimized models
-
-### HuggingFace
-
-Uses HuggingFace Inference API. Set `PROVIDER_TYPE=huggingface` in `.env`.
-
----
-
-## Pipeline Flow
+### Development Pipeline
 
 ```
 Issue Analyst → Explorer → Clarify → Architect → Implementer → Test Validator → Reviewer → Commit
 ```
 
-### Crews (in order)
+| Agent | Description |
+|-------|-------------|
+| Issue Analyst | Parse issue into requirements (fetches via GitHub/GitLab API) |
+| Explorer | Deep codebase analysis with file reading (10 min timeout) |
+| Clarify | Identify ambiguities and ask clarifying questions |
+| Architect | Create file-level implementation plan |
+| Implementer | Write code following architect's plan |
+| Test Validator | Write tests covering all acceptance criteria |
+| Reviewer | Security, performance, code quality checks |
+| Commit | Create branch, commit, PR (if GitHub repo available) |
 
-1. **Issue Analyst** - Parse issue into requirements (fetches via GitHub/GitLab API)
-2. **Explorer** - Deep codebase analysis with file reading (10 min timeout)
-3. **Clarify** - Identify ambiguities and ask clarifying questions
-4. **Architect** - Create file-level implementation plan (uses claude-3.5-sonnet)
-5. **Implementer** - Write code following architect's plan
-6. **Test Validator** - Write tests covering all acceptance criteria
-7. **Reviewer** - Security, performance, code quality checks
-8. **Commit** - Create branch, commit, PR (if GitHub repo available)
+### Review Pipeline
+
+10 parallel agents analyze different aspects of the PR, followed by a Signoff agent:
+
+| Agent | Category |
+|-------|----------|
+| Context | PR description clarity, linked issues, scope |
+| Architecture | Design decisions, patterns, coupling |
+| Correctness | Logic errors, edge cases, async handling |
+| Security | Injection risks, secrets, auth/authz |
+| Performance | N+1 queries, blocking calls, memory |
+| Test Coverage | Unit tests, edge cases, test quality |
+| Readability | Naming, complexity, duplication |
+| Consistency | Style guide, naming conventions |
+| Error Handling | Error catching, logging, retries |
+| Documentation | Comments, API docs, changelog |
+| Signoff | Final synthesis and recommendation |
+
+---
+
+## Project Structure
+
+```
+mycrew/
+├── cli.py                    # Unified CLI (development/review)
+├── main.py                   # CLI dispatcher
+│
+├── agents/                  # All agents
+│   ├── development/          # Development pipeline agents
+│   │   ├── architect.py
+│   │   ├── clarify.py
+│   │   ├── commit.py
+│   │   ├── explorer.py
+│   │   ├── implementer.py
+│   │   ├── issue_analyst.py
+│   │   ├── reviewer.py
+│   │   └── test_validator.py
+│   │
+│   └── review/              # Review pipeline agents
+│       ├── architecture.py
+│       ├── consistency.py
+│       ├── context.py
+│       ├── correctness.py
+│       ├── documentation.py
+│       ├── error_handling.py
+│       ├── performance.py
+│       ├── pr_review.py       # Orchestrator
+│       ├── readability.py
+│       ├── security.py
+│       ├── signoff.py
+│       └── test_coverage.py
+│
+├── pipelines/                # Orchestration
+│   ├── development/
+│   │   ├── pipeline_runner.py
+│   │   └── cli.py
+│   │
+│   └── review/
+│       ├── review_runner.py
+│       └── cli.py
+│
+├── shared/                   # Shared modules
+│   ├── base.py               # BaseCrew
+│   ├── exceptions.py
+│   ├── issues.py             # Issue fetching
+│   ├── pulls.py              # PR fetching
+│   ├── llm.py               # LLM config
+│   ├── settings.py           # Settings
+│   └── tools.py              # Tools
+│
+├── git_providers/
+├── pipeline_state.py
+├── providers.py
+├── result.py
+└── utils.py
+```
 
 ---
 
@@ -134,39 +208,6 @@ Issue Analyst → Explorer → Clarify → Architect → Implementer → Test Va
 git clone https://github.com/iklobato/mycrew.git
 cd mycrew
 uv sync --all-extras
-```
-
-### Project Structure
-
-```
-src/mycrew/
-├── main.py                 # Pipeline flow orchestration
-├── settings.py             # Configuration management (env vars)
-├── llm.py                  # LLM provider, stage-specific models
-├── providers.py            # OpenRouter & HuggingFace providers
-├── utils.py                # Shared utilities
-├── exceptions.py           # Custom exception hierarchy
-├── pipeline_state.py       # Pipeline state management
-├── result.py               # Result types
-├── issues/                 # Issue fetching (GitHub/GitLab API)
-│   ├── __init__.py
-│   ├── models.py          # IssueSource, IssueContent
-│   ├── parsers.py         # URL parsers
-│   ├── fetchers.py        # GitHub/GitLab API fetchers
-│   ├── factory.py         # IssueHandler factory
-│   └── exceptions.py      # Issue-specific exceptions
-├── crews/                  # Crew implementations
-│   ├── issue_analyst_crew/
-│   ├── explorer_crew/
-│   ├── clarify_crew/
-│   ├── architect_crew/
-│   ├── implementer_crew/
-│   ├── test_validator_crew/
-│   ├── reviewer_crew/
-│   ├── commit_crew/
-│   └── tactiq_research_crew/
-└── tools/                  # Tools
-    └── __init__.py        # Native crewai_tools + custom tools
 ```
 
 ### Tools
@@ -196,7 +237,7 @@ The pipeline uses OpenRouter with automatic model fallback. If you hit rate limi
 
 ### Context Length Errors
 
-The pipeline now passes full context to all crews without truncation. If you encounter context length errors, the issue may be too large - consider breaking it into smaller issues.
+The pipeline passes full context to all crews without truncation. If you encounter context length errors, the issue may be too large—consider breaking it into smaller issues.
 
 ---
 
