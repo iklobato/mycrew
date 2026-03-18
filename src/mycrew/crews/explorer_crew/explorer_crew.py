@@ -9,8 +9,8 @@ from mycrew.settings import Settings, get_pipeline_context
 from mycrew.tools import DirectoryReadTool, FileReadTool
 
 
-def get_repo_structure(repo_path: str, max_depth: int = 2) -> str:
-    """Generate a tree-like structure of the repo."""
+def get_repo_structure(repo_path: str, max_depth: int = 3) -> str:
+    """Generate a tree-like structure of the repo without truncation."""
     lines = []
     for root, dirs, files in os.walk(repo_path):
         level = root.replace(repo_path, "").count(os.sep)
@@ -27,7 +27,7 @@ def get_repo_structure(repo_path: str, max_depth: int = 2) -> str:
                 if f.startswith("."):
                     continue
                 lines.append(f"{file_indent}{f}")
-    return "\n".join(lines[:100])
+    return "\n".join(lines)
 
 
 class ExplorerCrew:
@@ -52,48 +52,89 @@ tests, and architecture decisions.""",
                 DirectoryReadTool(directory=ctx.repo_path),
                 FileReadTool(),
             ],
+            max_execution_time=600,
         )
 
     def explore_task(self) -> Task:
         ctx = get_pipeline_context()
         repo_structure = get_repo_structure(ctx.repo_path)
         return Task(
-            description=f"""## Task: Explore Codebase
+            description=f"""## Task: Deep Codebase Exploration
 
-Explore the codebase to understand its structure for implementing:
+You MUST follow this systematic process to understand the codebase:
 
-**Requirements:**
+### Step 1: Project Overview
+Read these files to understand the project:
+- pyproject.toml / setup.py / setup.cfg → tech stack, dependencies
+- README.md / README.rst → project purpose and usage
+- main.py / __main__.py / app.py → entry point
+- config.py / settings.py → configuration
+
+### Step 2: Test Patterns
+Read 3-5 test files in tests/ directory to understand:
+- Testing framework (pytest, unittest)
+- Test file organization and naming
+- Fixtures and mocks usage
+- Assertion patterns
+
+### Step 3: Architecture Exploration
+Explore source directories to understand:
+- Code organization (models/, services/, utils/, core/)
+- Data models and schemas
+- API patterns
+- Error handling patterns
+- Import conventions
+
+### Step 4: Issue-Relevant Files
+Based on the requirements below, identify:
+- Files that need to be modified
+- Files that need to be created
+- Existing implementations to extend
+
+### Requirements to Implement:
 {{issue_analysis}}
 
-## Repository Structure:
+### Repository Structure:
 {repo_structure}
 
 ## Your Process
 
-1. Use DirectoryReadTool to explore the repo structure
-2. Identify 5-10 most relevant files for the issue
-3. Use FileReadTool to read key files:
-   - Existing patterns and conventions
-   - Test file structure and patterns
-   - Architecture decisions
-   - Model/schema definitions
-   - API/service patterns
+1. Use DirectoryReadTool to explore the full repo structure
+2. Read pyproject.toml, README.md, and entry point files
+3. Read 3-5 test files to understand testing patterns
+4. Read relevant source files for the issue
+5. Provide detailed analysis
 
 ## Output Format
 
-For each relevant file found:
+### Project Overview
+- Tech Stack: [from pyproject.toml]
+- Dependencies: [key dependencies]
+- Entry Point: [main file]
+- Configuration: [config approach]
 
-### File: path/to/file.py
-- **Purpose**: What this file does
-- **Key Patterns**: Code patterns used
-- **Relevant Code**: Important code snippets for implementation
+### Code Patterns
+- Testing: [pytest fixtures, Mock usage]
+- Models: [Pydantic, dataclasses, etc.]
+- Services: [business logic patterns]
+- Error Handling: [exception patterns]
+- Imports: [absolute vs relative]
 
-## Also Provide:
-- New files that should be created
-- Test locations and patterns
-- Dependencies needed
-- Configuration changes""",
-            expected_output="Structured exploration with file contents, patterns, and architecture analysis",
+### Relevant Files for Implementation
+For each file:
+- Path: xerxes/cache.py
+- Purpose: Cache implementation
+- Key Code: [important code snippets]
+- Changes Needed: [what to modify]
+
+### Implementation Recommendations
+- New files to create
+- Existing files to modify
+- Test strategy
+- Patterns to follow
+- Dependencies (if any)
+""",
+            expected_output="Deep exploration with project overview, code patterns, relevant files, and implementation recommendations",
             agent=self.explorer_agent(),
         )
 
