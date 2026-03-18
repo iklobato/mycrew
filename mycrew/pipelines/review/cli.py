@@ -3,7 +3,7 @@
 import argparse
 import logging
 
-from mycrew.review.review_runner import ReviewRunner
+from mycrew.pipelines.review.review_runner import ReviewRunner
 
 logging.basicConfig(
     level=logging.INFO,

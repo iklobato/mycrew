@@ -1,6 +1,7 @@
-"""Tools package for mycrew - uses native crewai_tools and custom tactiq tool."""
+"""Tools module - native crewai_tools and custom tools."""
 
 import os
+
 import requests
 from crewai.tools import BaseTool
 from crewai_tools import (

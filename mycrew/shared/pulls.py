@@ -1,9 +1,124 @@
-"""PR fetchers for GitHub and GitLab."""
+"""Pulls module - GitHub/GitLab PR fetching."""
+
+import re
+from dataclasses import dataclass
+from enum import Enum
 
 import requests
 
-from mycrew.shared.pulls.models import PRContent, PRSource
-from mycrew.shared.pulls.exceptions import PRFetchError
+from mycrew.shared.issues import IssueHandlerError
+
+
+# Exceptions
+
+
+class PRHandlerError(IssueHandlerError):
+    """Base exception for PR handling."""
+
+    pass
+
+
+class PRParseError(PRHandlerError):
+    """Raised when PR URL cannot be parsed."""
+
+    pass
+
+
+class PRFetchError(PRHandlerError):
+    """Raised when API call to fetch PR fails."""
+
+    pass
+
+
+class UnsupportedSourceError(PRHandlerError):
+    """Raised when PR URL is not from a supported source."""
+
+    pass
+
+
+# Models
+
+
+class PRSourceType(Enum):
+    GITHUB = "github"
+    GITLAB = "gitlab"
+
+
+@dataclass(frozen=True)
+class PRSource:
+    source_type: PRSourceType
+    owner: str
+    repo: str
+    pr_number: int
+    web_url: str
+
+
+@dataclass(frozen=True)
+class PRContent:
+    title: str
+    body: str
+    author: str
+    labels: list[str]
+    state: str
+    source: PRSource
+    diff: str
+    files_changed: list[str]
+
+
+# Parsers
+
+
+class GitHubPRParser:
+    _PATTERN = re.compile(
+        r"github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>\d+)"
+    )
+
+    def parse(self, url: str) -> PRSource:
+        match = self._PATTERN.search(url)
+        if not match:
+            raise PRParseError(f"Invalid GitHub PR URL: {url}")
+
+        return PRSource(
+            source_type=PRSourceType.GITHUB,
+            owner=match.group("owner"),
+            repo=match.group("repo"),
+            pr_number=int(match.group("number")),
+            web_url=url,
+        )
+
+
+class GitLabPRParser:
+    _PATTERN = re.compile(
+        r"gitlab\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/-/merge_requests/(?P<number>\d+)"
+    )
+
+    def parse(self, url: str) -> PRSource:
+        match = self._PATTERN.search(url)
+        if not match:
+            raise PRParseError(f"Invalid GitLab MR URL: {url}")
+
+        return PRSource(
+            source_type=PRSourceType.GITLAB,
+            owner=match.group("owner"),
+            repo=match.group("repo"),
+            pr_number=int(match.group("number")),
+            web_url=url,
+        )
+
+
+class PRParserFactory:
+    @classmethod
+    def parse(cls, url: str) -> PRSource:
+        url_lower = url.lower()
+        if "github.com" in url_lower:
+            return GitHubPRParser().parse(url)
+        elif "gitlab.com" in url_lower:
+            return GitLabPRParser().parse(url)
+        else:
+            raise PRParseError(f"Unsupported PR source: {url}")
+
+
+# Fetchers
 
 
 class GitHubPRFetcher:
@@ -20,7 +135,6 @@ class GitHubPRFetcher:
         if self._token:
             headers["Authorization"] = f"token {self._token}"
 
-        # Fetch PR metadata
         pr_url = f"{self._BASE_URL}/repos/{source.owner}/{source.repo}/pulls/{source.pr_number}"
         try:
             pr_response = requests.get(pr_url, headers=headers, timeout=30)
@@ -30,7 +144,6 @@ class GitHubPRFetcher:
 
         pr_data = pr_response.json()
 
-        # Fetch diff
         diff_headers = dict(headers)
         diff_headers["Accept"] = "application/vnd.github.v3.diff"
         try:
@@ -74,7 +187,6 @@ class GitLabPRFetcher:
         if self._token:
             headers["PRIVATE-TOKEN"] = self._token
 
-        # Fetch MR metadata + changes
         mr_url = (
             f"{self._BASE_URL}/projects/{source.owner}%2F{source.repo}"
             f"/merge_requests/{source.pr_number}/changes"
@@ -87,7 +199,6 @@ class GitLabPRFetcher:
 
         mr_data = response.json()
 
-        # Fetch diff
         diff_url = (
             f"{self._BASE_URL}/projects/{source.owner}%2F{source.repo}"
             f"/merge_requests/{source.pr_number}"
@@ -121,3 +232,35 @@ class GitLabPRFetcher:
                 if len(parts) == 2:
                     files.append(parts[1])
         return files
+
+
+# Factory
+
+
+class PRHandler:
+    def __init__(
+        self,
+        github_fetcher: GitHubPRFetcher,
+        gitlab_fetcher: GitLabPRFetcher,
+    ):
+        self._github_fetcher = github_fetcher
+        self._gitlab_fetcher = gitlab_fetcher
+
+    def process(self, url: str) -> PRContent:
+        source = PRParserFactory.parse(url)
+        if source.source_type == PRSourceType.GITHUB:
+            return self._github_fetcher.fetch(source)
+        else:
+            return self._gitlab_fetcher.fetch(source)
+
+
+class PRHandlerFactory:
+    @staticmethod
+    def create(
+        github_token: str | None = None,
+        gitlab_token: str | None = None,
+    ) -> PRHandler:
+        return PRHandler(
+            github_fetcher=GitHubPRFetcher(github_token),
+            gitlab_fetcher=GitLabPRFetcher(gitlab_token),
+        )

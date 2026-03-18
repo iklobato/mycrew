@@ -8,7 +8,7 @@ import requests
 
 from mycrew.shared.pulls import PRHandlerFactory
 from mycrew.shared.settings import Settings, set_pipeline_context, PipelineContext
-from mycrew.review.crews.pr_review_crew import PRReviewCrew
+from mycrew.agents.review.pr_review import PRReviewCrew
 
 logger = logging.getLogger("mycrew")
 

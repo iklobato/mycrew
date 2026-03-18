@@ -6,7 +6,7 @@ import re
 
 from mycrew.shared.settings import get_settings, set_pipeline_context, PipelineContext
 from mycrew.shared.issues import IssueHandlerFactory
-from mycrew.shared.issues.exceptions import IssueFetchError, IssueParseError
+from mycrew.shared.issues import IssueFetchError, IssueParseError
 
 logger = logging.getLogger("mycrew")
 
@@ -48,19 +48,19 @@ class PipelineRunner:
         match = re.search(r"/issues/(\d+)", issue_url)
         issue_number = match.group(1) if match else "unknown"
 
-        # Import crews here to avoid circular imports
-        from mycrew.development.crews.issue_analyst_crew import IssueAnalystCrew
-        from mycrew.development.crews.explorer_crew import ExplorerCrew
-        from mycrew.development.crews.clarify_crew import ClarifyCrew
-        from mycrew.development.crews.architect_crew import ArchitectCrew
-        from mycrew.development.crews.implementer_crew import (
+        # Import agents here to avoid circular imports
+        from mycrew.agents.development.issue_analyst import IssueAnalystCrew
+        from mycrew.agents.development.explorer import ExplorerCrew
+        from mycrew.agents.development.clarify import ClarifyCrew
+        from mycrew.agents.development.architect import ArchitectCrew
+        from mycrew.agents.development.implementer import (
             ImplementerCrew,
             parse_code_blocks,
             write_files_from_specs,
         )
-        from mycrew.development.crews.test_validator_crew import TestValidatorCrew
-        from mycrew.development.crews.reviewer_crew import ReviewerCrew
-        from mycrew.development.crews.commit_crew import CommitCrew
+        from mycrew.agents.development.test_validator import TestValidatorCrew
+        from mycrew.agents.development.reviewer import ReviewerCrew
+        from mycrew.agents.development.commit import CommitCrew
 
         # Run Issue Analyst
         issue_analysis_result = IssueAnalystCrew().run(

@@ -26,11 +26,11 @@ def main():
     pipeline = sys.argv[1]
 
     if pipeline == "development":
-        from mycrew.development.cli import main as dev_main
+        from mycrew.pipelines.development.cli import main as dev_main
 
         dev_main()
     elif pipeline == "review":
-        from mycrew.review.cli import main as review_main
+        from mycrew.pipelines.review.cli import main as review_main
 
         review_main()
     else:

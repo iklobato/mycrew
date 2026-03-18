@@ -3,7 +3,7 @@
 import argparse
 import logging
 
-from mycrew.development.pipeline_runner import PipelineRunner
+from mycrew.pipelines.development.pipeline_runner import PipelineRunner
 
 logging.basicConfig(
     level=logging.INFO,
