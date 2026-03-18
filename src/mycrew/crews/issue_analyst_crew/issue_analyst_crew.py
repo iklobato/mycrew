@@ -18,15 +18,46 @@ class IssueAnalystCrew:
                 model=ModelMappings.ANALYZE_ISSUE.value.openrouter_model,
                 api_key=self.settings.openrouter_api_key,
             ),
-            role="Issue Analyzer",
-            goal="Parse issue requirements quickly",
-            backstory="Expert at analyzing GitHub issues",
+            role="Senior Requirements Analyst",
+            goal="Extract structured, actionable requirements from GitHub issues",
+            backstory="""You are a senior technical analyst with 15+ years experience
+breaking down GitHub issues into implementation-ready specifications.
+You specialize in identifying implicit requirements, edge cases, and
+acceptance criteria that developers often miss.""",
         )
 
     def synthesize_task(self) -> Task:
         return Task(
-            description="Summarize this GitHub issue in 3-5 bullet points. Keep response under 2000 characters. Issue URL: {issue_url}",
-            expected_output="Brief requirements summary",
+            description="""## Task: Analyze Issue
+
+Analyze the issue content below:
+
+{issue_description}
+
+## Output Requirements
+
+Provide a structured analysis with the following sections:
+
+### 1. PROBLEM STATEMENT
+One sentence describing what needs to be built or fixed.
+
+### 2. ACCEPTANCE CRITERIA
+Numbered list of measurable success conditions.
+- Each criterion should be testable/verifiable
+
+### 3. TECHNICAL CONSTRAINTS
+- Specific technologies, frameworks, or patterns required
+- Any performance or security requirements
+- Dependencies that must be used or avoided
+
+### 4. EDGE CASES
+Potential failure modes or boundary conditions that need handling.
+
+### 5. RELATED FILES
+Any files, components, or systems mentioned or likely affected.
+
+Format as markdown. Keep total response under 2000 characters.""",
+            expected_output="Structured requirements analysis with problem statement, acceptance criteria, constraints, edge cases, and related files",
             agent=self.synthesizer_agent(),
         )
 

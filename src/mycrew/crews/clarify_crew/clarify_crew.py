@@ -18,32 +18,81 @@ class ClarifyCrew:
                 model=ModelMappings.ANALYZE_ISSUE.value.openrouter_model,
                 api_key=self.settings.openrouter_api_key,
             ),
-            role="Clarifier",
-            goal="Identify ambiguities and ask human for clarification",
-            backstory="Expert at analyzing requirements and identifying gaps",
+            role="Technical Product Manager",
+            goal="Resolve ambiguities or confirm assumptions before implementation",
+            backstory="""You are a TPM who bridges engineering and product. You know
+when to proceed with assumptions vs. when to block for clarification. You are
+pragmatic - you don't ask questions for trivial matters.""",
         )
 
     def clarify_task(self) -> Task:
         return Task(
-            description="""You are running the CLARIFY phase. If the issue is simple and clear, proceed with reasonable assumptions. Keep response under 2000 characters.
+            description="""## Task: Clarification Phase
 
-## Structured issue analysis
+Analyze the issue and codebase to determine if clarification is needed.
+
+**Issue Analysis:**
 {issue_analysis}
 
-## Codebase exploration results
+**Codebase Exploration:**
 {exploration}
 
-## Your process
+## Decision Process
 
-1. Read both inputs carefully — issue analysis and exploration results.
-2. If the issue is straightforward (like adding a simple function), proceed with sensible defaults.
-3. Only ask questions if there are critical ambiguities that would cause wrong implementation.
-4. Otherwise, produce development guidelines based on best practices.
+1. Review the issue requirements carefully
+2. Compare with what you know about the codebase
+3. Identify gaps, conflicts, or missing information
 
-## Output format
+## Decision Rules
 
-Produce a structured Clarifications & Development Guidelines document. If no clarification needed, state "No clarifications needed - proceeding with implementation.""",
-            expected_output="A structured Clarifications & Development Guidelines document in Markdown.",
+- **BLOCKING**: Missing critical information that would cause WRONG implementation
+  - Unclear API contracts or data models
+  - Missing security requirements
+  - Ambiguous acceptance criteria
+
+- **OPTIONAL**: Nice to have but can proceed without
+  - Naming preferences
+  - Exact UI details
+  - Performance targets
+
+## Output Format
+
+```
+## Clarifications Needed
+
+### Blocking (cannot proceed without answers)
+1. Question: ...
+   Why: Explain what wrong implementation would result
+
+### Optional (can proceed without answers)
+1. Question: ...
+
+## Assumptions Made
+- Assumption: ... (only if proceeding)
+
+## Decision
+PROCEED | BLOCK
+
+## Implementation Guidelines (only if PROCEED)
+- Note any assumptions made that developers should know
+- Specific guidance for edge cases
+```
+
+If NO clarification is needed, output:
+```
+## Clarifications Needed
+No clarifications needed.
+
+## Decision
+PROCEED
+
+## Implementation Guidelines
+- Follow standard patterns in the codebase
+- Use existing conventions for naming and structure
+```
+
+Keep response under 2000 characters.""",
+            expected_output="Structured clarification document with decision",
             agent=self.clarifier(),
         )
 

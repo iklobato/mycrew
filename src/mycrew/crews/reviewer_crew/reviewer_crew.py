@@ -8,7 +8,7 @@ from mycrew.tools import DirectoryReadTool, FileReadTool
 
 
 class ReviewerCrew:
-    """Reviewer crew: reviews implementation and checks compliance."""
+    """Reviewer crew: reviews implementation against plan and task."""
 
     def __init__(self):
         self.settings = Settings()
@@ -20,9 +20,11 @@ class ReviewerCrew:
                 model=ModelMappings.REVIEW.value.openrouter_model,
                 api_key=self.settings.openrouter_api_key,
             ),
-            role="Code Reviewer",
-            goal="Review implementation against plan",
-            backstory="Expert at code review",
+            role="Senior Code Reviewer",
+            goal="Ensure implementation matches plan and is production-ready",
+            backstory="""You are a senior engineer who catches bugs before they reach 
+production. You review for correctness, security, performance, and 
+maintainability. You provide specific, actionable feedback.""",
             tools=[
                 DirectoryReadTool(directory=ctx.repo_path),
                 FileReadTool(),
@@ -36,9 +38,10 @@ class ReviewerCrew:
                 model=ModelMappings.REVIEW.value.openrouter_model,
                 api_key=self.settings.openrouter_api_key,
             ),
-            role="Compliance Checker",
-            goal="Check security and performance",
-            backstory="Expert at security",
+            role="Security Engineer",
+            goal="Check implementation for security and performance issues",
+            backstory="""You are a security expert who identifies vulnerabilities,
+performance issues, and compliance concerns in code changes.""",
             tools=[
                 DirectoryReadTool(directory=ctx.repo_path),
                 FileReadTool(),
@@ -47,22 +50,86 @@ class ReviewerCrew:
 
     def review_task(self) -> Task:
         return Task(
-            description="""Review implementation and tests. Keep response under 2000 characters.
+            description="""## Task: Code Review
 
-Implementation: {implementation}
-Tests: {tests}
-Working directory: {repo_path}
+Review the implementation against the plan.
 
-Use FileReadTool to read changed files and review them.
+**Implementation:**
+{implementation}
 
-Provide: APPROVED or ISSUES: list of issues found.""",
-            expected_output="APPROVED or ISSUES:",
+**Tests:**
+{tests}
+
+**Working Directory:** {repo_path}
+
+## Review Checklist
+
+You MUST check EACH of the following:
+
+- [ ] All files from the plan were created
+- [ ] All modifications from the plan were applied
+- [ ] Code follows project conventions (naming, formatting)
+- [ ] No security vulnerabilities (injection, hardcoded secrets, auth bypass)
+- [ ] Error handling is present and appropriate
+- [ ] Tests cover main functionality
+- [ ] No obvious bugs or logic errors
+- [ ] Imports are correct and complete
+- [ ] Type hints are present where needed
+
+## Output Format
+
+```
+## Review Results
+
+### Checklist
+- [x] Item: PASS
+- [ ] Item: FAIL - reason
+
+### Issues Found
+1. **SEVERITY** (CRITICAL/HIGH/MEDIUM/LOW): Description
+   - File: path/to/file.py
+   - Fix: Specific fix required
+
+### Verdict
+APPROVED | NEEDS_REVISION
+```
+
+If NEEDS_REVISION, list specific files and required changes.
+Keep response under 2000 characters.""",
+            expected_output="Review results with checklist and verdict",
             agent=self.reviewer_agent(),
         )
 
     def compliance_task(self) -> Task:
         return Task(
-            description="Check implementation for security and performance issues using FileReadTool",
+            description="""## Task: Security and Performance Review
+
+Review implementation for security and performance issues.
+
+**Implementation:**
+{implementation}
+
+**Working Directory:** {repo_path}
+
+Check for:
+1. SQL injection vulnerabilities
+2. Hardcoded credentials or secrets
+3. Authentication/authorization issues
+4. Performance bottlenecks (N+1 queries, missing indexes)
+5. Resource leaks (unclosed connections, handles)
+6. Input validation
+
+Output:
+```
+## Security Issues
+- Issue: Description | File: path | Severity: ...
+
+## Performance Issues
+- Issue: Description | File: path | Impact: ...
+
+## Verdict
+SAFE | NEEDS_CHANGES
+```""",
             expected_output="Security and performance analysis",
             agent=self.compliance_agent(),
             context=[self.review_task()],

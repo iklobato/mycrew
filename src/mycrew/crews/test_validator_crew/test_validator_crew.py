@@ -20,9 +20,11 @@ class TestValidatorCrew:
                 model=ModelMappings.TEST_VALIDATION.value.openrouter_model,
                 api_key=self.settings.openrouter_api_key,
             ),
-            role="Test Implementer",
-            goal="Write tests for the implementation",
-            backstory="Expert at writing test cases",
+            role="QA Engineer",
+            goal="Write comprehensive tests that catch implementation bugs",
+            backstory="""You are a QA engineer who writes tests that fail when code breaks
+and pass when it works correctly. You follow the project's existing test patterns
+and conventions. You write tests for happy path, edge cases, and error handling.""",
             tools=[
                 DirectoryReadTool(directory=ctx.repo_path),
                 FileReadTool(),
@@ -33,15 +35,49 @@ class TestValidatorCrew:
 
     def test_implement_task(self) -> Task:
         return Task(
-            description="""Write tests for the implementation based on: Keep response under 2000 characters.
-- Plan: {plan}
-- Implementation: {implementation}
+            description="""## Task: Write Tests for Implementation
 
-Use FileReadTool to read existing test patterns, then FileWriterTool to write tests.
-Working directory: {repo_path}
+**Plan:**
+{plan}
 
-Output "Tests written: [list of files with test counts]".""",
-            expected_output="List of test files written with test counts, or skip message.",
+**Implementation:**
+{implementation}
+
+**Working Directory:** {repo_path}
+
+## Process
+
+1. Read existing test files in tests/ to understand:
+   - Test file naming conventions
+   - Test framework used (pytest, unittest, etc.)
+   - Test structure and patterns
+   - Fixtures and mocks used
+
+2. Identify what needs to be tested based on implementation
+
+3. Write tests covering:
+   - Happy path functionality
+   - Edge cases from requirements
+   - Error handling
+   - Boundary conditions
+
+## Output Format
+
+Output as JSON array of test files:
+```json
+[
+  {
+    "path": "tests/test_module.py",
+    "content": "import pytest\\n\\ndef test_function():\\n    assert function() == expected\\n"
+  }
+]
+```
+
+If no tests needed, output:
+```json
+[]
+```""",
+            expected_output="JSON array of test files written with paths and content",
             agent=self.test_implementer(),
         )
 

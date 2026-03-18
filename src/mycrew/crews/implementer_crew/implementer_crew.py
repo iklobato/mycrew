@@ -86,9 +86,11 @@ class ImplementerCrew:
                 model="openrouter/anthropic/claude-3.5-sonnet",
                 api_key=self.settings.openrouter_api_key,
             ),
-            role="Software Implementer",
-            goal="Write code files based on implementation plan",
-            backstory="Expert at writing code that solves problems",
+            role="Senior Software Engineer",
+            goal="Write complete, working code files from implementation plans",
+            backstory="""You are a senior software engineer who writes production-ready code 
+that passes review the first time. You follow project conventions, include necessary 
+imports, error handling, and type hints. Your code is clean, testable, and maintainable.""",
             tools=[],
             max_iter=2,
             max_execution_time=120,
@@ -96,24 +98,50 @@ class ImplementerCrew:
 
     def implement_task(self) -> Task:
         return Task(
-            description="""Execute the implementation plan. Issue: {plan}.
-Working directory: {repo_path}.
+            description="""## Task: Implement the following plan
 
-IMPORTANT: Output your implementation as a JSON array of files to create.
-Each file must have:
+**Original Issue Requirements:**
+{issue_description}
+
+**Implementation Plan:**
+{plan}
+
+**Working Directory:** {repo_path}
+
+## CRITICAL: You MUST implement ALL acceptance criteria from the issue:
+
+1. Robots fetch requests include If-None-Match and/or If-Modified-Since when validators are available
+2. HTTP 304 updates cache freshness/expiry without rewriting unchanged body
+3. HTTP 200 updates body and validator fields (etag, last_modified) correctly
+4. Tests cover 200, 304, and fallback behavior when validators are absent
+
+## Output Format
+
+You MUST output a JSON array of files to create. Each file must have:
 - "path": relative path from repo root (e.g., "xerxes/utils/hello.py")
-- "content": the complete file content
+- "content": complete file content as a JSON string
 
-Format your response as:
+### JSON Format Requirements:
+1. Use triple backticks with "json" language tag
+2. Escape newlines as \\n, quotes as \", backslashes as \\\\
+3. Each file's "content" must be a properly escaped JSON string
+4. Include ALL necessary imports, docstrings, and type hints
+
+### Output Format:
 ```json
 [
-  {"path": "xerxes/utils/hello.py", "content": "print('hello world')"},
-  {"path": "xerxes/models/user.py", "content": "class User:\\n    pass"}
+  {
+    "path": "xerxes/utils/hello.py",
+    "content": "def hello() -> str:\\n    \\\"\\\"\\\"Return a greeting.\\\"\\\"\\\"\\n    return \\\"Hello, World!\\\"\\n"
+  }
 ]
 ```
 
-Do NOT write anything else - only output the JSON code block.""",
-            expected_output="JSON array of files created with paths and content",
+### Before Outputting:
+- Verify each file's code is syntactically correct
+- Ensure the code addresses ALL acceptance criteria
+- Do NOT output anything except the JSON code block""",
+            expected_output="JSON array of files implementing all acceptance criteria",
             agent=self.implementer_agent(),
         )
 

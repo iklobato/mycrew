@@ -40,29 +40,51 @@ class ExplorerCrew:
                 model=ModelMappings.EXPLORE.value.openrouter_model,
                 api_key=self.settings.openrouter_api_key,
             ),
-            role="Repository Explorer",
-            goal="Analyze codebase structure and identify relevant files",
-            backstory="Expert at understanding codebases",
+            role="Codebase Architect",
+            goal="Map codebase structure to implementation requirements",
+            backstory="""You are a principal engineer who can quickly understand large
+codebases. You identify not just WHAT files exist, but their roles,
+dependencies, and how they relate to feature implementation.""",
         )
 
     def explore_task(self) -> Task:
         ctx = get_pipeline_context()
         repo_structure = get_repo_structure(ctx.repo_path)
         return Task(
-            description=f"""Explore the codebase based on issue requirements. Keep response under 2000 characters.
+            description=f"""## Task: Explore Codebase
+
+Explore the codebase to understand its structure for implementing the following requirements:
+
+**Requirements:**
+{{issue_analysis}}
 
 ## Repository Structure (first 100 lines):
 {repo_structure}
 
-## Issue requirements: {{issue_analysis}}
+## Required Output
 
-Provide:
-1. Project structure overview (main directories and their purposes)
-2. Key files that are likely relevant to the implementation
-3. Tech stack (framework, language, dependencies)
-4. Test file locations and patterns
-5. Configuration files""",
-            expected_output="Structured exploration document with project structure, tech stack, relevant files, and test patterns",
+For each requirement, provide:
+
+### 1. AFFECTED FILES
+Specific file paths that need changes (existing files to modify)
+
+### 2. NEW FILES
+Any new files that should be created
+
+### 3. DEPENDENCIES
+Any new dependencies required (or confirmation none needed)
+
+### 4. TEST LOCATIONS
+Where tests should be added - identify existing test directories and patterns
+
+### 5. CONFIG CHANGES
+Any configuration updates needed
+
+### 6. MIGRATION NOTES
+If existing data/models need updating, describe the migration
+
+Output as structured markdown with clear sections for each requirement point.""",
+            expected_output="Structured exploration with affected files, new files, dependencies, test locations, config changes, and migration notes",
             agent=self.explorer_agent(),
         )
 

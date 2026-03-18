@@ -18,9 +18,11 @@ class CommitCrew:
                 model=ModelMappings.COMMIT.value.openrouter_model,
                 api_key=self.settings.openrouter_api_key,
             ),
-            role="Git Agent",
-            goal="Create feature branch and commit changes",
-            backstory="Expert at git operations",
+            role="DevOps Engineer",
+            goal="Safely create branches and commits with proper conventions",
+            backstory="""You are a DevOps engineer who ensures all Git operations follow
+team conventions. You handle errors gracefully and provide clear feedback.
+You use Conventional Commits format.""",
         )
 
     def publish_agent(self) -> Agent:
@@ -29,42 +31,87 @@ class CommitCrew:
                 model=ModelMappings.PUBLISH.value.openrouter_model,
                 api_key=self.settings.openrouter_api_key,
             ),
-            role="Publish Agent",
-            goal="Push branch and create PR",
-            backstory="Expert at GitHub operations",
+            role="Release Engineer",
+            goal="Push branch and create PR following team workflows",
+            backstory="""You are a release engineer who creates PRs using gh CLI.
+You ensure PRs have proper titles, descriptions, and labels.""",
         )
 
     def commit_task(self) -> Task:
         return Task(
-            description="""Create a feature branch and commit changes based on the implementation. Keep response under 2000 characters.
+            description="""## Task: Create Branch and Commit
 
-Implementation summary: {implementation}
-Review verdict: {review}
-Working directory: {repo_path}
+**Implementation Summary:**
+{implementation}
 
-Steps:
-1. git status - see what files changed
-2. git stash -u - stash all changes
-3. git checkout main (or develop)
-4. git checkout -b feature/issue-description
-5. git stash pop
-6. git add -A && git reset -- .code_pipeline
-7. git commit -m "feat: implemented issue"
+**Review Verdict:**
+{review}
 
-Use Conventional Commits format. Exclude .code_pipeline from commit.""",
-            expected_output="Git commit output with branch name",
+**Working Directory:** {repo_path}
+
+## Process
+
+1. Run `git status` to see all changes
+2. Create branch: `feature/issue-{issue_number}-implementation`
+   - Use lowercase, hyphens only
+3. Stage files: `git add -A` then `git reset -- .code_pipeline`
+4. Create commit with Conventional Commits format:
+   - `feat:` for new features
+   - `fix:` for bug fixes
+   - `refactor:` for code improvements
+   - `test:` for test additions
+   - `docs:` for documentation
+5. Output the branch name and commit hash
+
+## Error Handling
+
+- If merge conflicts: output "CONFLICTS: [list files]"
+- If git not available: output "SKIPPED: git not available"
+- If no changes: output "SKIPPED: no changes to commit"
+
+## Output Format
+
+```
+Branch: feature/issue-838-description
+Commit: feat: add system profile visibility toggle
+```
+Keep under 2000 characters.""",
+            expected_output="Git branch and commit information",
             agent=self.git_agent(),
         )
 
     def publish_task(self) -> Task:
         return Task(
-            description="""After commit, push branch and create PR.
+            description="""## Task: Push Branch and Create PR
 
-Review verdict: {review}
-Working directory: {repo_path}
+**Review Verdict:**
+{review}
 
-If github_repo is not available, output 'PR creation skipped'.
-Otherwise, push branch and create PR using gh CLI.""",
+**Working Directory:** {repo_path}
+
+## Process
+
+1. Push branch to remote: `git push -u origin feature/branch-name`
+2. Create PR using gh CLI:
+   ```
+   gh pr create --title "feat: description" --body "Description"
+   ```
+
+## Error Handling
+
+- If github_repo not available: output "SKIPPED: github_repo not available"
+- If PR creation fails: output "ERROR: [reason]"
+
+## Output Format
+
+```
+PR: https://github.com/owner/repo/pull/123
+```
+
+Or if skipped:
+```
+SKIPPED: github_repo not available
+```""",
             expected_output="PR URL or skip message",
             agent=self.publish_agent(),
             context=[self.commit_task()],
