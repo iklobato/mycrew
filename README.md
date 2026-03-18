@@ -28,13 +28,13 @@ cp .env.example .env
 ### Run the Pipeline
 
 ```bash
-# Clone repo from issue URL (requires GITHUB_TOKEN)
+# Run with GitHub issue URL (fetches issue via GitHub API)
 python -m mycrew "https://github.com/owner/repo/issues/123"
 
-# Use local repository instead of cloning
-python -m mycrew --repo-path /path/to/local/repo
+# Run with GitLab issue URL (fetches issue via GitLab API)
+python -m mycrew "https://gitlab.com/owner/repo/-/issues/456"
 
-# Use local repo with issue URL (uses local repo, parses issue from URL)
+# Use local repository with issue URL
 python -m mycrew --repo-path /path/to/local/repo "https://github.com/owner/repo/issues/123"
 ```
 
@@ -50,7 +50,8 @@ Set these before running:
 |----------|----------|-------------|
 | `OPENROUTER_API_KEY` | Yes | LLM API key from [openrouter.ai](https://openrouter.ai) |
 | `HUGGINGFACE_API_KEY` | No | HuggingFace token for local models |
-| `GITHUB_TOKEN` | No* | GitHub token for cloning repos, creating PRs |
+| `GITHUB_TOKEN` | No | GitHub token for GitHub issues |
+| `GITLAB_TOKEN` | No | GitLab token for GitLab issues |
 | `SERPER_API_KEY` | No | Serper API key for web search |
 | `TACTIQ_TOKEN` | No | Tactiq API token from [Tactiq settings](https://app.tactiq.io/settings) |
 | `CODE_PIPELINE_LOG_LEVEL` | No | DEBUG, INFO, WARNING, ERROR |
@@ -60,8 +61,6 @@ Set these before running:
 | `DEFAULT_BRANCH` | No | Default branch (default: main) |
 | `TACTIQ_MEETING_ID` | No | Default Tactiq meeting ID |
 
-*Required when using `issue_url` (to clone repo). Not required when using `--repo-path` with local repo.
-
 ---
 
 ## Usage
@@ -69,31 +68,25 @@ Set these before running:
 ### Basic Usage
 
 ```bash
-# Clone repo from issue URL (requires GITHUB_TOKEN)
+# GitHub issue
 python -m mycrew "https://github.com/owner/repo/issues/123"
 
-# Use local repository instead of cloning
-python -m mycrew --repo-path /path/to/local/repo
+# GitLab issue
+python -m mycrew "https://gitlab.com/owner/repo/-/issues/456"
 
-# With repository path and issue URL
+# Local repo with issue URL
 python -m mycrew --repo-path /path/to/local/repo "https://github.com/owner/repo/issues/123"
 
-# Dry run (skip git commit/PR)
-python -m mycrew "https://github.com/owner/repo/issues/123" --dry-run
+# Verbose output
+python -m mycrew "https://github.com/owner/repo/issues/123" -v
 ```
 
 ### CLI Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `issue_url` | GitHub issue URL (required if --repo-path not provided) | - |
+| `issue_url` | GitHub or GitLab issue URL | - |
 | `--repo-path` | Local repository path | - |
-| `-b, --branch` | Base branch for feature branches | `main` |
-| `--from-scratch` | Start from scratch ignoring checkpoints | `false` |
-| `-n, --max-retries` | Maximum retry attempts | `3` |
-| `--dry-run` | Skip git commit/PR | `false` |
-| `--programmatic` | No human interaction | `false` |
-| `--tactiq-meeting-id` | Tactiq meeting ID for context | - |
 | `-v, --verbose` | Enable verbose logging | `false` |
 
 ---
@@ -102,37 +95,34 @@ python -m mycrew "https://github.com/owner/repo/issues/123" --dry-run
 
 ### OpenRouter (Default)
 
-Uses OpenRouter as the LLM backend with automatic model fallback:
+Uses OpenRouter as the LLM backend:
 
 - **Models**: deepseek-r1, qwen3-coder, gemma-3-27b-it, mistral-small-3.1, devstral-small
-- **Automatic fallback**: Falls back to alternative models on rate limits
-- **Stage-specific**: Each pipeline stage uses optimized models (analyze: reasoning, explore: code, review: analysis, etc.)
+- **Architect**: Uses claude-3.5-sonnet for detailed planning
+- **Stage-specific**: Each pipeline stage uses optimized models
 
 ### HuggingFace
 
 Uses HuggingFace Inference API. Set `PROVIDER_TYPE=huggingface` in `.env`.
-
-Supported models are defined in `src/mycrew/llm.py` under `ModelMappings`.
 
 ---
 
 ## Pipeline Flow
 
 ```
-Issue Analyst → Explorer → [TactiqResearch] → Clarify → Architect → Implementer → Test Validator → Reviewer → Commit
+Issue Analyst → Explorer → Clarify → Architect → Implementer → Test Validator → Reviewer → Commit
 ```
 
 ### Crews (in order)
 
-1. **Issue Analyst** - Parse issue into requirements
-2. **Explorer** - Analyze codebase structure, dependencies
-3. **TactiqResearch** (optional) - Fetch meeting context, decide if clarification needed
-4. **Clarify** - Ask human questions for ambiguities
-5. **Architect** - Create file-level plan
-6. **Implementer** - Write code, docstrings, run linters
-7. **Test Validator** - Write tests, validate quality
-8. **Reviewer** - Security, performance, accessibility checks
-9. **Commit** - Create branch, commit, PR
+1. **Issue Analyst** - Parse issue into requirements (fetches via GitHub/GitLab API)
+2. **Explorer** - Deep codebase analysis with file reading (10 min timeout)
+3. **Clarify** - Identify ambiguities and ask clarifying questions
+4. **Architect** - Create file-level implementation plan (uses claude-3.5-sonnet)
+5. **Implementer** - Write code following architect's plan
+6. **Test Validator** - Write tests covering all acceptance criteria
+7. **Reviewer** - Security, performance, code quality checks
+8. **Commit** - Create branch, commit, PR (if GitHub repo available)
 
 ---
 
@@ -141,7 +131,6 @@ Issue Analyst → Explorer → [TactiqResearch] → Clarify → Architect → Im
 ### Install for Development
 
 ```bash
-# Clone and install with dev dependencies
 git clone https://github.com/iklobato/mycrew.git
 cd mycrew
 uv sync --all-extras
@@ -151,17 +140,24 @@ uv sync --all-extras
 
 ```
 src/mycrew/
-├── main.py              # Pipeline flow orchestration (CrewAI Flow)
-├── settings.py          # Configuration management (env vars)
-├── llm.py              # LLM provider, stage-specific models, fallbacks
-├── providers.py         # OpenRouter & HuggingFace provider implementations
-├── utils.py             # Shared utilities
-├── exceptions.py        # Custom exception hierarchy
-├── pipeline_state.py    # Pipeline state management
-├── result.py            # Result types
-├── crews/              # Crew implementations (simple Python classes)
-│   ├── explorer_crew/
+├── main.py                 # Pipeline flow orchestration
+├── settings.py             # Configuration management (env vars)
+├── llm.py                  # LLM provider, stage-specific models
+├── providers.py            # OpenRouter & HuggingFace providers
+├── utils.py                # Shared utilities
+├── exceptions.py           # Custom exception hierarchy
+├── pipeline_state.py       # Pipeline state management
+├── result.py               # Result types
+├── issues/                 # Issue fetching (GitHub/GitLab API)
+│   ├── __init__.py
+│   ├── models.py          # IssueSource, IssueContent
+│   ├── parsers.py         # URL parsers
+│   ├── fetchers.py        # GitHub/GitLab API fetchers
+│   ├── factory.py         # IssueHandler factory
+│   └── exceptions.py      # Issue-specific exceptions
+├── crews/                  # Crew implementations
 │   ├── issue_analyst_crew/
+│   ├── explorer_crew/
 │   ├── clarify_crew/
 │   ├── architect_crew/
 │   ├── implementer_crew/
@@ -169,8 +165,8 @@ src/mycrew/
 │   ├── reviewer_crew/
 │   ├── commit_crew/
 │   └── tactiq_research_crew/
-└── tools/              # Tools (native crewai_tools + custom TactiqMeetingTool)
-    └── __init__.py
+└── tools/                  # Tools
+    └── __init__.py        # Native crewai_tools + custom tools
 ```
 
 ### Tools
@@ -181,6 +177,7 @@ The pipeline uses native CrewAI tools:
 |------|-------------|
 | `FileReadTool` | Read files from repository |
 | `DirectoryReadTool` | List directory contents |
+| `WriteFileTool` | Write files to repository |
 | `SerperDevTool` | Web search |
 | `EXASearchTool` | Code/web search |
 | `ScrapeWebsiteTool` | Scrape web content |
@@ -193,13 +190,13 @@ The pipeline uses native CrewAI tools:
 
 ### Rate Limit Errors
 
-The pipeline automatically retries with fallback models. If you hit rate limits frequently:
+The pipeline uses OpenRouter with automatic model fallback. If you hit rate limits frequently:
 - Use a paid OpenRouter plan
 - Or switch to HuggingFace provider
 
 ### Context Length Errors
 
-Reduce task scope or focus on specific files by creating a more focused issue.
+The pipeline now passes full context to all crews without truncation. If you encounter context length errors, the issue may be too large - consider breaking it into smaller issues.
 
 ---
 
