@@ -28,6 +28,7 @@ class PipelineContext(BaseModel):
     repo_path: str = ""
     github_repo: str = ""
     issue_url: str = ""
+    pr_url: str = ""
     serper_enabled: bool = False
     programmatic: bool = False
 

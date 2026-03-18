@@ -6,6 +6,7 @@ import logging
 import os
 
 from mycrew.pipeline_runner import PipelineRunner
+from mycrew.review_runner import ReviewRunner
 
 os.environ["LITELLM_REQUEST_TIMEOUT"] = "60"
 
@@ -22,18 +23,21 @@ def main():
     parser.add_argument("--issue-url", dest="issue_url_alt", help="GitHub issue URL")
     parser.add_argument("--repo-path", help="Local repository path")
     parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument("--review", dest="review_url", help="PR URL for review")
     args = parser.parse_args()
-
-    issue_url = args.issue_url
-    if issue_url is None:
-        issue_url = args.issue_url_alt
-    if issue_url is None:
-        issue_url = ""
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    PipelineRunner(args.repo_path).run(issue_url)
+    if args.review_url:
+        ReviewRunner(args.repo_path).run(args.review_url)
+    else:
+        issue_url = args.issue_url
+        if issue_url is None:
+            issue_url = args.issue_url_alt
+        if issue_url is None:
+            issue_url = ""
+        PipelineRunner(args.repo_path).run(issue_url)
 
 
 if __name__ == "__main__":
