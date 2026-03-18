@@ -1,10 +1,12 @@
 """Explorer crew: repo exploration."""
 
 import os
+
 from crewai import Agent, Crew, LLM, Process, Task
 
 from mycrew.llm import ModelMappings
 from mycrew.settings import Settings, get_pipeline_context
+from mycrew.tools import DirectoryReadTool, FileReadTool
 
 
 def get_repo_structure(repo_path: str, max_depth: int = 2) -> str:
@@ -25,7 +27,7 @@ def get_repo_structure(repo_path: str, max_depth: int = 2) -> str:
                 if f.startswith("."):
                     continue
                 lines.append(f"{file_indent}{f}")
-    return "\n".join(lines[:100])  # Limit to first 100 lines
+    return "\n".join(lines[:100])
 
 
 class ExplorerCrew:
@@ -35,16 +37,21 @@ class ExplorerCrew:
         self.settings = Settings()
 
     def explorer_agent(self) -> Agent:
+        ctx = get_pipeline_context()
         return Agent(
             llm=LLM(
                 model=ModelMappings.EXPLORE.value.openrouter_model,
                 api_key=self.settings.openrouter_api_key,
             ),
-            role="Codebase Architect",
-            goal="Map codebase structure to implementation requirements",
-            backstory="""You are a principal engineer who can quickly understand large
-codebases. You identify not just WHAT files exist, but their roles,
-dependencies, and how they relate to feature implementation.""",
+            role="Codebase Explorer",
+            goal="Understand project structure, read relevant files, identify patterns",
+            backstory="""You are a principal engineer who quickly understands large codebases.
+You identify relevant files, read their contents, and understand existing patterns,
+tests, and architecture decisions.""",
+            tools=[
+                DirectoryReadTool(directory=ctx.repo_path),
+                FileReadTool(),
+            ],
         )
 
     def explore_task(self) -> Task:
@@ -53,38 +60,40 @@ dependencies, and how they relate to feature implementation.""",
         return Task(
             description=f"""## Task: Explore Codebase
 
-Explore the codebase to understand its structure for implementing the following requirements:
+Explore the codebase to understand its structure for implementing:
 
 **Requirements:**
 {{issue_analysis}}
 
-## Repository Structure (first 100 lines):
+## Repository Structure:
 {repo_structure}
 
-## Required Output
+## Your Process
 
-For each requirement, provide:
+1. Use DirectoryReadTool to explore the repo structure
+2. Identify 5-10 most relevant files for the issue
+3. Use FileReadTool to read key files:
+   - Existing patterns and conventions
+   - Test file structure and patterns
+   - Architecture decisions
+   - Model/schema definitions
+   - API/service patterns
 
-### 1. AFFECTED FILES
-Specific file paths that need changes (existing files to modify)
+## Output Format
 
-### 2. NEW FILES
-Any new files that should be created
+For each relevant file found:
 
-### 3. DEPENDENCIES
-Any new dependencies required (or confirmation none needed)
+### File: path/to/file.py
+- **Purpose**: What this file does
+- **Key Patterns**: Code patterns used
+- **Relevant Code**: Important code snippets for implementation
 
-### 4. TEST LOCATIONS
-Where tests should be added - identify existing test directories and patterns
-
-### 5. CONFIG CHANGES
-Any configuration updates needed
-
-### 6. MIGRATION NOTES
-If existing data/models need updating, describe the migration
-
-Output as structured markdown with clear sections for each requirement point.""",
-            expected_output="Structured exploration with affected files, new files, dependencies, test locations, config changes, and migration notes",
+## Also Provide:
+- New files that should be created
+- Test locations and patterns
+- Dependencies needed
+- Configuration changes""",
+            expected_output="Structured exploration with file contents, patterns, and architecture analysis",
             agent=self.explorer_agent(),
         )
 

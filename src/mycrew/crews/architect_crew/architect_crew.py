@@ -13,13 +13,13 @@ class ArchitectCrew:
     def architect_agent(self) -> Agent:
         return Agent(
             llm=LLM(
-                model=ModelMappings.PLAN.value.openrouter_model,
+                model="openrouter/anthropic/claude-3.5-sonnet",
                 api_key=self.settings.openrouter_api_key,
             ),
             role="Technical Lead",
             goal="Create detailed implementation plans at the file level",
-            backstory="""You are a technical lead who writes implementation plans that 
-engineers can execute directly. Your plans are precise, actionable, and include 
+            backstory="""You are a technical lead who writes implementation plans that
+engineers can execute directly. Your plans are precise, actionable, and include
 specific file paths, line numbers, and code snippets where needed.""",
         )
 

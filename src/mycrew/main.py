@@ -31,13 +31,6 @@ logging.basicConfig(
 logger = logging.getLogger("mycrew")
 
 
-def truncate_text(text: str, max_chars: int = 5000) -> str:
-    """Truncate text to max characters."""
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars] + "\n\n[truncated]"
-
-
 def run_pipeline(issue_url, repo_path):
     # Setup
     if repo_path:
@@ -90,15 +83,14 @@ def run_pipeline(issue_url, repo_path):
     issue_analysis = result.raw
     logger.info("[3/8] Issue Analysis done")
 
-    # 4. Explorer - needs issue_analysis + repo_path (truncated)
+    # 4. Explorer - needs issue_analysis + repo_path
     logger.info("[4/8] Starting Explorer...")
-    truncated_analysis = truncate_text(issue_analysis, max_chars=2000)
     result = (
         ExplorerCrew()
         .crew()
         .kickoff(
             inputs={
-                "issue_analysis": truncated_analysis,
+                "issue_analysis": issue_analysis,
                 "repo_path": repo_path,
             }
         )
@@ -106,15 +98,15 @@ def run_pipeline(issue_url, repo_path):
     exploration = result.raw
     logger.info("[4/8] Exploration done")
 
-    # 5. Clarify - needs issue_analysis + exploration (both truncated)
+    # 5. Clarify - needs issue_analysis + exploration
     logger.info("[5/8] Starting Clarify...")
     result = (
         ClarifyCrew()
         .crew()
         .kickoff(
             inputs={
-                "issue_analysis": truncate_text(issue_analysis, max_chars=1500),
-                "exploration": truncate_text(exploration, max_chars=3000),
+                "issue_analysis": issue_analysis,
+                "exploration": exploration,
                 "repo_path": repo_path,
             }
         )
@@ -122,33 +114,17 @@ def run_pipeline(issue_url, repo_path):
     clarifications = result.raw
     logger.info("[5/8] Clarification done")
 
-    # 6. Architect - needs issue_analysis + exploration + clarifications (truncated)
-    logger.info("[6/8] Starting Architect...")
-    result = (
-        ClarifyCrew()
-        .crew()
-        .kickoff(
-            inputs={
-                "issue_analysis": truncate_text(issue_analysis, max_chars=1500),
-                "exploration": truncate_text(exploration, max_chars=3000),
-                "repo_path": repo_path,
-            }
-        )
-    )
-    clarifications = result.raw
-    logger.info("[5/8] Clarification done")
-
-    # 6. Architect - needs issue_analysis + exploration + clarifications (truncated)
+    # 6. Architect - needs all context (full, no truncation)
     logger.info("[6/8] Starting Architect...")
     result = (
         ArchitectCrew()
         .crew()
         .kickoff(
             inputs={
-                "issue_description": truncate_text(issue_description, max_chars=5000),
-                "issue_analysis": truncate_text(issue_analysis, max_chars=1000),
-                "exploration": truncate_text(exploration, max_chars=2000),
-                "clarifications": truncate_text(clarifications, max_chars=2000),
+                "issue_description": issue_description,
+                "issue_analysis": issue_analysis,
+                "exploration": exploration,
+                "clarifications": clarifications,
                 "repo_path": repo_path,
             }
         )
@@ -156,15 +132,15 @@ def run_pipeline(issue_url, repo_path):
     plan = result.raw
     logger.info("[6/8] Planning done")
 
-    # 7. Implementer - needs issue + plan (both)
+    # 7. Implementer - needs issue + plan (full context)
     logger.info("[7/8] Starting Implementer...")
     result = (
         ImplementerCrew()
         .crew()
         .kickoff(
             inputs={
-                "issue_description": truncate_text(issue_description, max_chars=3000),
-                "plan": truncate_text(plan, max_chars=3000),
+                "issue_description": issue_description,
+                "plan": plan,
                 "repo_path": repo_path,
             }
         )
@@ -190,8 +166,8 @@ def run_pipeline(issue_url, repo_path):
         .crew()
         .kickoff(
             inputs={
-                "plan": truncate_text(plan, max_chars=2000),
-                "implementation": truncate_text(implementation, max_chars=3000),
+                "plan": plan,
+                "implementation": implementation,
                 "repo_path": repo_path,
             }
         )
@@ -206,8 +182,8 @@ def run_pipeline(issue_url, repo_path):
         .crew()
         .kickoff(
             inputs={
-                "implementation": truncate_text(implementation, max_chars=3000),
-                "tests": truncate_text(tests, max_chars=2000),
+                "implementation": implementation,
+                "tests": tests,
                 "repo_path": repo_path,
             }
         )
@@ -222,15 +198,15 @@ def run_pipeline(issue_url, repo_path):
         .crew()
         .kickoff(
             inputs={
-                "implementation": truncate_text(implementation, max_chars=2000),
-                "review": truncate_text(review, max_chars=1500),
+                "implementation": implementation,
+                "review": review,
                 "repo_path": repo_path,
                 "issue_number": issue_number,
             }
         )
     )
     commit = result.raw
-    logger.info("[8/8] Commit done")
+    logger.info("[10/8] Commit done")
 
     return {
         "issue_analysis": issue_analysis,
