@@ -4,10 +4,13 @@ from crewai import Agent, Crew, LLM, Process, Task
 
 from mycrew.llm import ModelMappings
 from mycrew.settings import Settings
+from mycrew.crews.base import BaseCrew
 
 
-class CommitCrew:
+class CommitCrew(BaseCrew):
     """Commit crew: creates branch, commits, then pushes and creates PR via publish agent."""
+
+    name = "Commit"
 
     def __init__(self):
         self.settings = Settings()

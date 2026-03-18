@@ -5,10 +5,13 @@ from crewai import Agent, Crew, LLM, Process, Task
 from mycrew.llm import ModelMappings
 from mycrew.settings import Settings, get_pipeline_context
 from mycrew.tools import DirectoryReadTool, FileReadTool
+from mycrew.crews.base import BaseCrew
 
 
-class ReviewerCrew:
+class ReviewerCrew(BaseCrew):
     """Reviewer crew: reviews implementation against plan and task."""
+
+    name = "Reviewer"
 
     def __init__(self):
         self.settings = Settings()

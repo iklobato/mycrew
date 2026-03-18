@@ -7,6 +7,7 @@ from crewai import Agent, Crew, LLM, Process, Task
 from mycrew.llm import ModelMappings
 from mycrew.settings import Settings, get_pipeline_context
 from mycrew.tools import DirectoryReadTool, FileReadTool
+from mycrew.crews.base import BaseCrew
 
 
 def get_repo_structure(repo_path: str, max_depth: int = 3) -> str:
@@ -30,8 +31,10 @@ def get_repo_structure(repo_path: str, max_depth: int = 3) -> str:
     return "\n".join(lines)
 
 
-class ExplorerCrew:
+class ExplorerCrew(BaseCrew):
     """Explorer crew: repo exploration."""
+
+    name = "Explorer"
 
     def __init__(self):
         self.settings = Settings()

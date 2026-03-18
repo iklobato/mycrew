@@ -8,6 +8,7 @@ import re
 from crewai import Agent, Crew, LLM, Process, Task
 
 from mycrew.settings import Settings
+from mycrew.crews.base import BaseCrew
 
 
 logger = logging.getLogger("mycrew")
@@ -74,8 +75,10 @@ def write_files_from_specs(files: list[dict[str, str]], base_path: str) -> list[
     return written
 
 
-class ImplementerCrew:
+class ImplementerCrew(BaseCrew):
     """Implementer crew: executes implementation plan by outputting structured code."""
+
+    name = "Implementer"
 
     def __init__(self):
         self.settings = Settings()

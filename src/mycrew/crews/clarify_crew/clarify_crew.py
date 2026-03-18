@@ -4,10 +4,13 @@ from crewai import Agent, Crew, LLM, Process, Task
 
 from mycrew.llm import ModelMappings
 from mycrew.settings import Settings
+from mycrew.crews.base import BaseCrew
 
 
-class ClarifyCrew:
+class ClarifyCrew(BaseCrew):
     """Clarify crew: identify ambiguities and ask human for clarification."""
+
+    name = "Clarify"
 
     def __init__(self):
         self.settings = Settings()

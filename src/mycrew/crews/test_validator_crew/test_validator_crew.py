@@ -5,10 +5,13 @@ from crewai import Agent, Crew, LLM, Process, Task
 from mycrew.llm import ModelMappings
 from mycrew.settings import Settings, get_pipeline_context
 from mycrew.tools import DirectoryReadTool, FileReadTool, FileWriterTool
+from mycrew.crews.base import BaseCrew
 
 
-class TestValidatorCrew:
+class TestValidatorCrew(BaseCrew):
     """Test Validator crew: writes tests and validates they catch bugs."""
+
+    name = "Test Validator"
 
     def __init__(self):
         self.settings = Settings()

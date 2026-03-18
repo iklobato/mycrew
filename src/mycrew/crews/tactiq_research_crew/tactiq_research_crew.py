@@ -5,10 +5,13 @@ from crewai import Agent, Crew, LLM, Process, Task
 from mycrew.llm import ModelMappings
 from mycrew.settings import Settings
 from mycrew.tools import TactiqMeetingTool
+from mycrew.crews.base import BaseCrew
 
 
-class TactiqResearchCrew:
+class TactiqResearchCrew(BaseCrew):
     """Tactiq Research crew: synthesize meeting context and determine if clarification needed."""
+
+    name = "Tactiq Research"
 
     def __init__(self):
         self.settings = Settings()
