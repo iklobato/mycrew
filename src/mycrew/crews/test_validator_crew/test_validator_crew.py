@@ -3,7 +3,8 @@
 from crewai import Agent, Crew, LLM, Process, Task
 
 from mycrew.llm import ModelMappings
-from mycrew.settings import Settings
+from mycrew.settings import Settings, get_pipeline_context
+from mycrew.tools import DirectoryReadTool, FileReadTool, FileWriterTool
 
 
 class TestValidatorCrew:
@@ -13,6 +14,7 @@ class TestValidatorCrew:
         self.settings = Settings()
 
     def test_implementer(self) -> Agent:
+        ctx = get_pipeline_context()
         return Agent(
             llm=LLM(
                 model=ModelMappings.TEST_VALIDATION.value.openrouter_model,
@@ -21,24 +23,22 @@ class TestValidatorCrew:
             role="Test Implementer",
             goal="Write tests for the implementation",
             backstory="Expert at writing test cases",
+            tools=[
+                DirectoryReadTool(directory=ctx.repo_path),
+                FileReadTool(),
+                FileWriterTool(),
+            ],
+            max_iter=2,
         )
 
     def test_implement_task(self) -> Task:
         return Task(
-            description="""Write tests for the implementation.
+            description="""Write tests for the implementation based on: Keep response under 2000 characters.
+- Plan: {plan}
+- Implementation: {implementation}
 
-Context: {repo_context}
-
-Plan: {plan}
-Implementation: {implementation}
-Exploration (Test Layout): {exploration}
-
-If test_command is empty, output "Test writing skipped (no test_command)".
-
-Otherwise:
-1. Read the plan to identify files that need tests
-2. Check exploration for test patterns and conventions
-3. Write tests following project test patterns
+Use FileReadTool to read existing test patterns, then FileWriterTool to write tests.
+Working directory: {repo_path}
 
 Output "Tests written: [list of files with test counts]".""",
             expected_output="List of test files written with test counts, or skip message.",

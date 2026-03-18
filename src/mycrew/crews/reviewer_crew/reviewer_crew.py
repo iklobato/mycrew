@@ -3,7 +3,8 @@
 from crewai import Agent, Crew, LLM, Process, Task
 
 from mycrew.llm import ModelMappings
-from mycrew.settings import Settings
+from mycrew.settings import Settings, get_pipeline_context
+from mycrew.tools import DirectoryReadTool, FileReadTool
 
 
 class ReviewerCrew:
@@ -13,6 +14,7 @@ class ReviewerCrew:
         self.settings = Settings()
 
     def reviewer_agent(self) -> Agent:
+        ctx = get_pipeline_context()
         return Agent(
             llm=LLM(
                 model=ModelMappings.REVIEW.value.openrouter_model,
@@ -21,9 +23,14 @@ class ReviewerCrew:
             role="Code Reviewer",
             goal="Review implementation against plan",
             backstory="Expert at code review",
+            tools=[
+                DirectoryReadTool(directory=ctx.repo_path),
+                FileReadTool(),
+            ],
         )
 
     def compliance_agent(self) -> Agent:
+        ctx = get_pipeline_context()
         return Agent(
             llm=LLM(
                 model=ModelMappings.REVIEW.value.openrouter_model,
@@ -32,15 +39,21 @@ class ReviewerCrew:
             role="Compliance Checker",
             goal="Check security and performance",
             backstory="Expert at security",
+            tools=[
+                DirectoryReadTool(directory=ctx.repo_path),
+                FileReadTool(),
+            ],
         )
 
     def review_task(self) -> Task:
         return Task(
-            description="""Review implementation against plan and acceptance criteria.
+            description="""Review implementation and tests. Keep response under 2000 characters.
 
 Implementation: {implementation}
-Plan: {plan}
 Tests: {tests}
+Working directory: {repo_path}
+
+Use FileReadTool to read changed files and review them.
 
 Provide: APPROVED or ISSUES: list of issues found.""",
             expected_output="APPROVED or ISSUES:",
@@ -49,10 +62,10 @@ Provide: APPROVED or ISSUES: list of issues found.""",
 
     def compliance_task(self) -> Task:
         return Task(
-            description="Check implementation for security and performance issues",
+            description="Check implementation for security and performance issues using FileReadTool",
             expected_output="Security and performance analysis",
             agent=self.compliance_agent(),
-            context=[self.review_task()],  # Receives output from review_task
+            context=[self.review_task()],
         )
 
     def crew(self) -> Crew:

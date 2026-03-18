@@ -34,7 +34,7 @@ class ArchitectCrew:
 
     def plan_task(self) -> Task:
         return Task(
-            description="""Create implementation plan based on:
+            description="""Create implementation plan based on: Keep response under 2000 characters.
 - Issue requirements: {issue_analysis}
 - Codebase exploration: {exploration}
 - Clarifications: {clarifications}
@@ -49,7 +49,7 @@ Focus on WHAT files need to change and HOW, not detailed code.""",
             description="Analyze implementation risks from the plan",
             expected_output="Risk analysis document",
             agent=self.advisor_agent(),
-            context=[self.plan_task()],  # Receives output from plan_task
+            context=[self.plan_task()],
         )
 
     def crew(self) -> Crew:

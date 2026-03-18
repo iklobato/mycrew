@@ -186,82 +186,82 @@ class ModelMappings(Enum):
     GEMMA_3_27B = "openrouter/google/gemma-3-27b-it"
 
     ANALYZE_ISSUE = _StageMapping(
-        openrouter_model="openrouter/deepseek/deepseek-r1",
+        openrouter_model="openrouter/google/gemini-2.0-flash-001",
         openrouter_fallbacks=(
+            "openrouter/deepseek/deepseek-r1",
             "openrouter/qwen/qwen3-coder",
-            "openrouter/google/gemma-3-27b-it",
         ),
         huggingface_model="deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
     )
     EXPLORE = _StageMapping(
-        openrouter_model="openrouter/deepseek/deepseek-r1",
+        openrouter_model="openrouter/google/gemini-2.0-flash-001",
         openrouter_fallbacks=(
+            "openrouter/deepseek/deepseek-r1",
             "openrouter/qwen/qwen3-coder",
-            "openrouter/google/gemma-3-27b-it",
         ),
         huggingface_model="deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
     )
     PLAN = _StageMapping(
-        openrouter_model="openrouter/google/gemma-3-27b-it",
+        openrouter_model="openrouter/google/gemini-2.0-flash-001",
         openrouter_fallbacks=(
-            "openrouter/mistralai/mistral-small-3.1-24b-instruct",
             "openrouter/deepseek/deepseek-r1",
+            "openrouter/qwen/qwen3-coder",
         ),
         huggingface_model="google/gemma-2-2b-it",
     )
     IMPLEMENT = _StageMapping(
-        openrouter_model="openrouter/qwen/qwen3-coder",
+        openrouter_model="openrouter/google/gemini-2.0-flash-001",
         openrouter_fallbacks=(
+            "openrouter/qwen/qwen3-coder",
             "openrouter/deepseek/deepseek-r1",
-            "openrouter/mistralai/mistral-small-3.1-24b-instruct",
         ),
         huggingface_model="Qwen/Qwen2.5-Coder-32B-Instruct",
     )
     REVIEW = _StageMapping(
-        openrouter_model="openrouter/deepseek/deepseek-r1",
+        openrouter_model="openrouter/google/gemini-2.0-flash-001",
         openrouter_fallbacks=(
+            "openrouter/deepseek/deepseek-r1",
             "openrouter/qwen/qwen3-coder",
-            "openrouter/mistralai/mistral-small-3.1-24b-instruct",
         ),
         huggingface_model="deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
     )
     COMMIT = _StageMapping(
-        openrouter_model="openrouter/google/gemma-3-27b-it",
+        openrouter_model="openrouter/google/gemini-2.0-flash-001",
         openrouter_fallbacks=(
-            "openrouter/mistralai/mistral-small-3.1-24b-instruct",
             "openrouter/deepseek/deepseek-r1",
+            "openrouter/qwen/qwen3-coder",
         ),
         huggingface_model="mistralai/Mistral-7B-Instruct-v0.3",
     )
     PUBLISH = _StageMapping(
-        openrouter_model="openrouter/google/gemma-3-27b-it",
+        openrouter_model="openrouter/google/gemini-2.0-flash-001",
         openrouter_fallbacks=(
-            "openrouter/mistralai/mistral-small-3.1-24b-instruct",
             "openrouter/deepseek/deepseek-r1",
+            "openrouter/qwen/qwen3-coder",
         ),
         huggingface_model="mistralai/Mistral-7B-Instruct-v0.3",
     )
     AUXILIARY = _StageMapping(
-        openrouter_model="openrouter/deepseek/deepseek-r1",
+        openrouter_model="openrouter/google/gemini-2.0-flash-001",
         openrouter_fallbacks=(
-            "openrouter/google/gemma-3-27b-it",
+            "openrouter/deepseek/deepseek-r1",
             "openrouter/qwen/qwen3-coder",
         ),
         huggingface_model="deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
     )
     SECURITY = _StageMapping(
-        openrouter_model="openrouter/deepseek/deepseek-r1",
+        openrouter_model="openrouter/google/gemini-2.0-flash-001",
         openrouter_fallbacks=(
+            "openrouter/deepseek/deepseek-r1",
             "openrouter/qwen/qwen3-coder",
-            "openrouter/mistralai/mistral-small-3.1-24b-instruct",
         ),
         huggingface_model="deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
     )
     TEST_VALIDATION = _StageMapping(
-        openrouter_model="openrouter/mistralai/devstral-small",
+        openrouter_model="openrouter/google/gemini-2.0-flash-001",
         openrouter_fallbacks=(
-            "openrouter/deepseek/deepseek-v3.2",
-            "openrouter/qwen/qwen3-235b-a22b-2507",
+            "openrouter/deepseek/deepseek-r1",
+            "openrouter/qwen/qwen3-coder",
         ),
         huggingface_model="Qwen/Qwen2.5-Coder-32B-Instruct",
     )

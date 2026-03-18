@@ -25,7 +25,7 @@ class IssueAnalystCrew:
 
     def synthesize_task(self) -> Task:
         return Task(
-            description="Summarize this GitHub issue in 3-5 bullet points. Issue URL: {issue_url}",
+            description="Summarize this GitHub issue in 3-5 bullet points. Keep response under 2000 characters. Issue URL: {issue_url}",
             expected_output="Brief requirements summary",
             agent=self.synthesizer_agent(),
         )

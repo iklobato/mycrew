@@ -36,81 +36,36 @@ class CommitCrew:
 
     def commit_task(self) -> Task:
         return Task(
-            description="""Create a feature branch and commit changes.
+            description="""Create a feature branch and commit changes based on the implementation. Keep response under 2000 characters.
 
-Context: {repo_context}
-
-Base branch (branch from): {branch}
-Feature branch (create and commit to): {feature_branch}
-Dry run: {dry_run}
-Issue ID (include in commit message if provided): {issue_id}
+Implementation summary: {implementation}
+Review verdict: {review}
+Working directory: {repo_path}
 
 Steps:
-1. git stash -u  (stash all changes including untracked files)
-2. git checkout {branch}  (ensure we're on base branch)
-3. git checkout -b {feature_branch}  (create and switch to feature branch)
-4. git stash pop  (apply stashed changes to new branch)
+1. git status - see what files changed
+2. git stash -u - stash all changes
+3. git checkout main (or develop)
+4. git checkout -b feature/issue-description
+5. git stash pop
+6. git add -A && git reset -- .code_pipeline
+7. git commit -m "feat: implemented issue"
 
-If conflicts occur at step 4:
-- Run git status to see conflicting files
-- For each conflict, open the file and look for <<< === >>> markers
-- Keep your changes (the stashed changes), remove conflict markers
-- Run git add <file> for each resolved file
-- Continue with git stash drop
-
-5. git add -A && git reset -- .code_pipeline
-6. git commit -m "your message"
-
-Exclude .code_pipeline from the commit (pipeline state, not application code).
-If issue_id is provided, include "fixes #X" or similar in the commit message.
-
-If dry_run is "true", do NOT run git commands. List: the feature branch
-you would create, files that would be staged, and the commit message.
-If dry_run is "false", run the steps above.
-
-ALWAYS use Conventional Commits format for the commit message:
-  <type>[optional scope]: <description>
-
-Conventions:
-  - feat: new feature
-  - fix: bug fix  
-  - docs: documentation only
-  - style: formatting, whitespace, no code change
-  - refactor: code change that neither fixes nor adds a feature
-  - test: adding or updating tests
-  - chore: maintenance, deps, tooling
-  - perf: performance improvement
-  - ci: CI config or scripts
-
-Avoid committing .env, secrets, or large binaries; check git status first.""",
-            expected_output="Either the git commit output (including the new branch name) or a message listing the feature branch, files to stage, and proposed commit message (if dry_run).",
+Use Conventional Commits format. Exclude .code_pipeline from commit.""",
+            expected_output="Git commit output with branch name",
             agent=self.git_agent(),
         )
 
     def publish_task(self) -> Task:
         return Task(
-            description="""After the commit is done, publish the branch and create a PR.
+            description="""After commit, push branch and create PR.
 
-Context: {repo_context}
-Dry run: {dry_run}
-Feature branch: {feature_branch}
-Base branch: {branch}
-Task: {task}
-Implementation: {implementation}
-Plan: {plan}
-Review_verdict: {review_verdict}
+Review verdict: {review}
+Working directory: {repo_path}
 
-Steps:
-1. Check for conflicts: git fetch origin {branch} && git merge-base origin/{branch} HEAD
-2. If conflicts exist or branch diverged significantly, analyze and resolve intelligently
-3. Merge or rebase as appropriate to ensure clean integration
-4. Run tests if test_command is available
-5. If dry_run is "true" OR github_repo is empty, do NOT create PR.
-   Output: "PR creation skipped (dry_run)" or "PR creation skipped (no github_repo)".
-6. If dry_run is "false" AND github_repo is set, push the branch and create the PR.
-
-Return the actual PR URL from the tool output.""",
-            expected_output="The actual PR URL (e.g. https://github.com/owner/repo/pull/456) - must contain a real PR number. Or 'PR creation skipped (dry_run)' or 'PR creation skipped (no github_repo)' if applicable.",
+If github_repo is not available, output 'PR creation skipped'.
+Otherwise, push branch and create PR using gh CLI.""",
+            expected_output="PR URL or skip message",
             agent=self.publish_agent(),
             context=[self.commit_task()],
         )

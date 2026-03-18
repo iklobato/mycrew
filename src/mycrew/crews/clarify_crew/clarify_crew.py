@@ -25,10 +25,7 @@ class ClarifyCrew:
 
     def clarify_task(self) -> Task:
         return Task(
-            description="""You are running the CLARIFY phase. Ask the human specific questions with options, starting with highest impact.
-
-## Task description
-{task}
+            description="""You are running the CLARIFY phase. If the issue is simple and clear, proceed with reasonable assumptions. Keep response under 2000 characters.
 
 ## Structured issue analysis
 {issue_analysis}
@@ -38,20 +35,14 @@ class ClarifyCrew:
 
 ## Your process
 
-1. Read all three inputs carefully — task, requirements, and exploration results.
-2. Cross-reference: look for tensions between what the spec asks for and what the
-   codebase currently looks like. Flag anything that could cause the architect to
-   make a wrong assumption.
-3. For each open question, ask ONE focused question.
-   The question string MUST include the full question plus Option A, Option B (and Option C/D if needed).
-4. Based on the answers, decide if follow-ups are needed.
-5. Do NOT ask about things already clearly answered in the issue analysis.
-6. Do NOT ask generic questions that ignore the exploration findings.
-7. Do NOT ask more than one question per turn.
+1. Read both inputs carefully — issue analysis and exploration results.
+2. If the issue is straightforward (like adding a simple function), proceed with sensible defaults.
+3. Only ask questions if there are critical ambiguities that would cause wrong implementation.
+4. Otherwise, produce development guidelines based on best practices.
 
 ## Output format
 
-Produce a structured Clarifications & Development Guidelines document.""",
+Produce a structured Clarifications & Development Guidelines document. If no clarification needed, state "No clarifications needed - proceeding with implementation.""",
             expected_output="A structured Clarifications & Development Guidelines document in Markdown.",
             agent=self.clarifier(),
         )
