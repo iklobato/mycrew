@@ -6,3 +6,4 @@ lib/
 logs.txt
 .code_pipeline/
 webhook.http
+*.pyc

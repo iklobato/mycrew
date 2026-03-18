@@ -41,7 +41,7 @@ type = "flow"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
-pythonpath = ["src"]
+pythonpath = ["."]
 addopts = [
     "-v",
     "--strict-markers",
@@ -63,9 +63,9 @@ filterwarnings = [
 TESTING = "1"
 
 [tool.coverage.run]
-source = ["src/mycrew"]
+source = ["mycrew"]
 omit = [
-    "src/mycrew/main.py",
+    "mycrew/main.py",
     "tests/",
 ]
 branch = true
@@ -77,7 +77,7 @@ fail_under = 75
 exclude = ["*.md", "docs/**", "*.yaml"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/mycrew/main.py" = ["E402"]
+"mycrew/main.py" = ["E402"]
 
 [tool.uv]
 # onnxruntime 1.24+ dropped macOS x86_64 wheels; 1.19.2 has universal2 (Intel + ARM)
